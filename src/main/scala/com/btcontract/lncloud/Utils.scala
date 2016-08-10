@@ -1,25 +1,79 @@
 package com.btcontract.lncloud
 
-import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
+import java.awt.image.BufferedImage._
+
 import com.btcontract.lncloud.crypto.RandomGenerator
-import org.slf4j.LoggerFactory
-import java.math.BigInteger
+
+import scala.concurrent.duration.{Duration, DurationInt}
+import com.google.zxing.{BarcodeFormat, EncodeHintType}
+import rx.lang.scala.{Scheduler, Observable => Obs}
+import org.bitcoinj.core.{ECKey, Sha256Hash}
+import concurrent.ExecutionContext.Implicits.global
+import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.google.zxing.qrcode.QRCodeWriter
+import com.btcontract.lncloud.Utils.Bytes
+import java.io.ByteArrayOutputStream
+import java.awt.image.BufferedImage
 
 import org.bitcoinj.core.Utils.HEX
-import com.btcontract.lncloud.Utils.Bytes
-import courier.Mailer
-import org.bitcoinj.core.{ECKey, Sha256Hash, Transaction}
+import org.slf4j.LoggerFactory
+import javax.imageio.ImageIO
+import java.math.BigInteger
+import javax.mail.internet.InternetAddress
+
+import courier.{Envelope, Mailer, Text}
 
 
 object Utils {
   type Bytes = Array[Byte]
+  type SeqString = Seq[String]
 
   var values: Vals = null
   implicit val formats = org.json4s.DefaultFormats
   lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
+  lazy val params = org.bitcoinj.params.MainNetParams.get
   val logger = LoggerFactory getLogger "LNCloud"
   val rand = new RandomGenerator
   val oneDay = 86400000
+}
+
+object JsonHttpUtils {
+  def pickInc(err: Throwable, next: Int) = next.second
+
+  def obsOn[T](provider: => T, scheduler: Scheduler) =
+    Obs.just(null).subscribeOn(scheduler).map(_ => provider)
+
+  def retry[T](obs: Obs[T], pick: (Throwable, Int) => Duration, times: Range) =
+    obs.retryWhen(_.zipWith(Obs from times)(pick) flatMap Obs.timer)
+}
+
+object QRGen {
+  val writer = new QRCodeWriter
+  val hints = new java.util.Hashtable[EncodeHintType, Any]
+  hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.H)
+  hints.put(EncodeHintType.MARGIN, 1)
+
+  def get(txt: String, size: Int) = {
+    val bitMatrix = writer.encode(txt, BarcodeFormat.QR_CODE, size, size, hints)
+    val (wid, height) = (bitMatrix.getWidth, bitMatrix.getHeight)
+    val pixels = new Array[Int](wid * height)
+
+    for (y <- 0 until height) for (x <- 0 until wid)
+      pixels(y * wid + x) = bitMatrix.get(x, y) match {
+        case true => 0xFF000000 case false => 0xFFFFFFFF
+      }
+
+    val outStream = new ByteArrayOutputStream
+    val bufImg = new BufferedImage(wid, height, TYPE_BYTE_GRAY)
+    bufImg.setRGB(0, 0, wid, height, pixels, 0, wid)
+    ImageIO.write(bufImg, "png", outStream)
+    outStream.toByteArray
+  }
+}
+
+trait Cleanable {
+  def clean(stamp: Long)
 }
 
 // k is session private key, a source for signerR
@@ -49,12 +103,11 @@ case class SignedMail(email: String, pubKey: String, signature: String) {
 // Utility classes
 case class CacheItem[T](data: T, stamp: Long)
 case class BlindParams(privKey: BigInteger, quantity: Int, price: Long)
+case class WatchdogTx(parentTxId: String, txEnc: String, ivHex: String)
 case class EmailParams(server: String, account: String, password: String) {
   def mailer = Mailer(server, 587).auth(true).as(account, password).startTtls(true).apply
-}
-
-case class WatchdogTx(txHex: String, ivHex: String) {
-  def decode(tx: Transaction) = ???
+  def to(address: String) = Envelope from new InternetAddress(account) to new InternetAddress(address)
+  def notifyError(message: String) = mailer(to(account) content Text(message) subject "Malfunction")
 }
 
 // Server secrets and parameters, MUST NOT be stored in config file
