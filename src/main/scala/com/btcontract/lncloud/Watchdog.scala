@@ -39,7 +39,7 @@ class Watchdog(db: Database) { me =>
     }
 
   def resolveError(exception: Throwable): Unit = exception match {
-    case _: ConnectException => values.emailParams.notifyError(connectError)
+    case _: ConnectException => values.emailParams notifyError connectError
     case _ => logger error exception.getMessage
   }
 
