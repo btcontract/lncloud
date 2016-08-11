@@ -8,6 +8,7 @@ import scala.concurrent.duration.{Duration, DurationInt}
 import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import org.bitcoinj.core.{ECKey, Sha256Hash}
+
 import concurrent.ExecutionContext.Implicits.global
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
@@ -20,9 +21,12 @@ import org.bitcoinj.core.Utils.HEX
 import org.slf4j.LoggerFactory
 import javax.imageio.ImageIO
 import java.math.BigInteger
+import java.net.{InetSocketAddress, SocketAddress}
 import javax.mail.internet.InternetAddress
 
 import courier.{Envelope, Mailer, Text}
+import org.bitcoinj.core.ECKey.ECDSASignature
+import org.json4s.jackson.JsonMethods._
 
 
 object Utils {
@@ -36,16 +40,16 @@ object Utils {
   val logger = LoggerFactory getLogger "LNCloud"
   val rand = new RandomGenerator
   val oneDay = 86400000
+
+  def extract[T](src: Map[String, String], fn: String => T, args: String*) = args.map(src andThen fn)
+  def getIp(sock: SocketAddress) = sock.asInstanceOf[InetSocketAddress].getAddress.getHostAddress
+  def toCase[T : Manifest](raw: String) = parse(raw, useBigDecimalForDouble = true).extract[T]
+  def uid = HEX.encode(rand getBytes 64)
 }
 
 object JsonHttpUtils {
-  def pickInc(err: Throwable, next: Int) = next.second
-
   def obsOn[T](provider: => T, scheduler: Scheduler) =
     Obs.just(null).subscribeOn(scheduler).map(_ => provider)
-
-  def retry[T](obs: Obs[T], pick: (Throwable, Int) => Duration, times: Range) =
-    obs.retryWhen(_.zipWith(Obs from times)(pick) flatMap Obs.timer)
 }
 
 object QRGen {
@@ -97,7 +101,11 @@ case class ServerSignedMail(client: SignedMail, signature: String)
 case class SignedMail(email: String, pubKey: String, signature: String) {
   def totalHash = Sha256Hash.of(email + pubKey + signature getBytes "UTF-8")
   def identityPubECKey = ECKey.fromPublicOnly(HEX decode pubKey)
-  def emailHash = Sha256Hash.of(email getBytes "UTF-8")
+
+  def checkSig = {
+    val sig = ECDSASignature.decodeFromDER(HEX decode signature)
+    identityPubECKey.verify(Sha256Hash.of(email getBytes "UTF-8"), sig)
+  }
 }
 
 // Utility classes
@@ -106,7 +114,7 @@ case class BlindParams(privKey: BigInteger, quantity: Int, price: Long)
 case class WatchdogTx(parentTxId: String, txEnc: String, ivHex: String)
 case class EmailParams(server: String, account: String, password: String) {
   def mailer = Mailer(server, 587).auth(true).as(account, password).startTtls(true).apply
-  def to(address: String) = Envelope from new InternetAddress(account) to new InternetAddress(address)
+  def to(adr: String) = Envelope from new InternetAddress(account, "Lightning wallet") to new InternetAddress(adr)
   def notifyError(message: String) = mailer(to(account) content Text(message) subject "Malfunction")
 }
 

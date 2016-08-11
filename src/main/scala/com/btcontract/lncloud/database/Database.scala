@@ -1,7 +1,7 @@
 package com.btcontract.lncloud.database
 
 import com.mongodb.casbah.Imports._
-import com.btcontract.lncloud.{BlindData, ServerSignedMail, WatchdogTx, Wrap}
+import com.btcontract.lncloud._
 import com.btcontract.lncloud.Utils.SeqString
 import com.mongodb.WriteResult
 import java.util.Date
@@ -9,7 +9,7 @@ import java.util.Date
 
 abstract class Database {
   // Mapping from email to public key
-  def putSignedMail(container: ServerSignedMail): WriteResult
+  def putSignedMail(container: ServerSignedMail)
   def getSignedMail(something: String): Option[ServerSignedMail]
 
   // sesPubKey is R which we get from k, rval is Lightning r-value
@@ -19,7 +19,7 @@ abstract class Database {
   def putClearToken(clearToken: String)
 
   // Messages
-  def getAllWraps: Seq[Wrap]
+  def getAllWraps: List[Wrap]
   def putWrap(wrap: Wrap)
 
   // Delayed txs for broken channels
@@ -30,7 +30,7 @@ abstract class Database {
   // Watchdog encrypted txs
   def putWatchdogTx(watch: WatchdogTx)
   def setWatchdogTxSpent(parentTxId: String)
-  def getWatchdogTxs(txIds: SeqString): Seq[WatchdogTx]
+  def getWatchdogTxs(txIds: SeqString): List[WatchdogTx]
 
   // Watchdog height memo
   def putLastBlockHeight(height: Int)
@@ -41,6 +41,18 @@ abstract class MongoDatabase extends Database {
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
   val mongo = MongoClient("localhost")("lncloud")
+
+  // Mapping from email to public key
+  def putSignedMail(ssm: ServerSignedMail) =
+    mongo("keymail").update("email" $eq ssm.client.email, $set("serverSignature" -> ssm.signature,
+      "email" -> ssm.client.email, "pubKey" -> ssm.client.pubKey, "signature" -> ssm.client.signature),
+      upsert = true, multi = false, WriteConcern.Safe)
+
+  def getSignedMail(something: String) =
+    mongo("keymail") findOne $or("email" $eq something, "pubKey" $eq something) map { res =>
+      val signedMail = SignedMail(res get "email", res get "pubKey", res get "signature")
+      ServerSignedMail(signedMail, res get "serverSignature")
+    }
 
   // Delayed transactions for broken channels
   def putDelayTx(txHex: String, height: Int) =

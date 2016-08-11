@@ -38,7 +38,7 @@ class Watchdog(db: Database) { me =>
       case _ => db setDelayTxSpent transactionHex
     }
 
-  def resolveError(exception: Throwable): Unit = exception match {
+  def informError(exception: Throwable): Unit = exception match {
     case _: ConnectException => values.emailParams notifyError connectError
     case _ => logger error exception.getMessage
   }
@@ -46,11 +46,11 @@ class Watchdog(db: Database) { me =>
   // For n last blocks, take all the txid from each block and try to find matching breaches in a database
   Obs.interval(10.seconds).zip(obsOn(blocksRange, IOScheduler.apply) flatMap Obs.just).map(bitcoin getBlock _._2)
     .map(db getWatchdogTxs _.tx.asScala).flatMap(Obs.just).doOnCompleted(db putLastBlockHeight bitcoin.getBlockCount)
-    .doOnCompleted(logger info "Breach watch done").doOnError(resolveError).repeatWhen(_ delay 10.minutes)
+    .doOnCompleted(logger info "Breach watch done").doOnError(informError).repeatWhen(_ delay 10.minutes)
     .retryWhen(_ delay 10.minutes).subscribe(processBreach _)
 
   // For each new block, take all unspent transactions with lesser height and broadcast them
   Obs.interval(5.millis).zip(obsOn(db.getDelayTxs(bitcoin.getBlockCount).toList, IOScheduler.apply) flatMap Obs.just)
-    .map(_._2).doOnError(resolveError).doOnCompleted(logger info "Height watch done").repeatWhen(_ delay 10.minutes)
+    .map(_._2).doOnError(informError).doOnCompleted(logger info "Height watch done").repeatWhen(_ delay 10.minutes)
     .retryWhen(_ delay 10.minutes).subscribe(processDelayTx _)
 }
