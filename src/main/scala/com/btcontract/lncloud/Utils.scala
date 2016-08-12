@@ -1,32 +1,28 @@
 package com.btcontract.lncloud
 
 import java.awt.image.BufferedImage._
+import org.json4s.jackson.JsonMethods._
 
-import com.btcontract.lncloud.crypto.RandomGenerator
-
-import scala.concurrent.duration.{Duration, DurationInt}
 import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import rx.lang.scala.{Scheduler, Observable => Obs}
+import java.net.{InetSocketAddress, SocketAddress}
 import org.bitcoinj.core.{ECKey, Sha256Hash}
+import courier.{Envelope, Mailer, Text}
 
-import concurrent.ExecutionContext.Implicits.global
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import com.btcontract.lncloud.crypto.RandomGenerator
+import concurrent.ExecutionContext.Implicits.global
+import org.bitcoinj.core.ECKey.ECDSASignature
 import com.google.zxing.qrcode.QRCodeWriter
+import javax.mail.internet.InternetAddress
 import com.btcontract.lncloud.Utils.Bytes
 import java.io.ByteArrayOutputStream
 import java.awt.image.BufferedImage
-
 import org.bitcoinj.core.Utils.HEX
 import org.slf4j.LoggerFactory
 import javax.imageio.ImageIO
 import java.math.BigInteger
-import java.net.{InetSocketAddress, SocketAddress}
-import javax.mail.internet.InternetAddress
-
-import courier.{Envelope, Mailer, Text}
-import org.bitcoinj.core.ECKey.ECDSASignature
-import org.json4s.jackson.JsonMethods._
 
 
 object Utils {
@@ -43,7 +39,7 @@ object Utils {
 
   def extract[T](src: Map[String, String], fn: String => T, args: String*) = args.map(src andThen fn)
   def getIp(sock: SocketAddress) = sock.asInstanceOf[InetSocketAddress].getAddress.getHostAddress
-  def toCase[T : Manifest](raw: String) = parse(raw, useBigDecimalForDouble = true).extract[T]
+  def toClass[T : Manifest](raw: String) = parse(raw, useBigDecimalForDouble = true).extract[T]
   def uid = HEX.encode(rand getBytes 64)
 }
 
@@ -80,11 +76,10 @@ trait Cleanable {
   def clean(stamp: Long)
 }
 
-// k is session private key, a source for signerR
-// tokens is a list of yet unsigned blind BigInts from client
 case class BlindData(tokens: Seq[String], rval: String, k: String) {
-  def tokensBigInts = for (token <- tokens) yield new BigInteger(token)
-  def kBigInt = new BigInteger(k)
+  // tokens is a list of yet unsigned blind BigInts provided from client
+  // k is session private key, a source for signerR
+  val kBigInt = new BigInteger(k)
 }
 
 // A "response-to" ephemeral key, it's private part should be stored in a database

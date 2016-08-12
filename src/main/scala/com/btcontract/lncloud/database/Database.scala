@@ -1,9 +1,9 @@
 package com.btcontract.lncloud.database
 
-import com.mongodb.casbah.Imports._
 import com.btcontract.lncloud._
+import com.mongodb.casbah.Imports._
 import com.btcontract.lncloud.Utils.SeqString
-import com.mongodb.WriteResult
+import org.bitcoinj.core.Utils.HEX
 import java.util.Date
 
 
@@ -13,7 +13,7 @@ abstract class Database {
   def getSignedMail(something: String): Option[ServerSignedMail]
 
   // sesPubKey is R which we get from k, rval is Lightning r-value
-  def getPendingTokens(rval: String, sesPubKey: String): Option[BlindData]
+  def getPendingTokens(rVal: String, sesPubKey: String): Option[BlindData]
   def putPendingTokens(data: BlindData, sesPubKey: String)
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
@@ -37,10 +37,38 @@ abstract class Database {
   def getLastBlockHeight: Option[Int]
 }
 
-abstract class MongoDatabase extends Database {
+class MongoDatabase extends Database {
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
+  val clearTokensMongo = MongoClient("localhost")("clearTokens")
   val mongo = MongoClient("localhost")("lncloud")
+
+  // Blind tokens management, k is sesPrivKey
+  def putPendingTokens(data: BlindData, sesPubKey: String) =
+    mongo("blindTokens").update("sesPubKey" $eq sesPubKey, $set("sesPubKey" -> sesPubKey,
+      "tokens" -> data.tokens, "rval" -> data.rval, "k" -> data.k, "date" -> new Date),
+      upsert = true, multi = false, WriteConcern.Safe)
+
+  def getPendingTokens(rVal: String, sesPubKey: String) =
+    mongo("blindTokens") findOne $and("sesPubKey" $eq sesPubKey, "rval" $eq rVal) map { res =>
+      BlindData(res.get("tokens").asInstanceOf[BasicDBList].map(_.toString), res get "rval", res get "k")
+    }
+
+  // 16 collections to store clear tokens since there will be a lot and we have to keep them all forever
+  def isClearTokenUsed(clear: String) = clearTokensMongo(clear.head).findOne("clearToken" $eq clear).isDefined
+  def putClearToken(clear: String) = clearTokensMongo(clear.head).insert("clearToken" $eq clear)
+
+  // Messages
+  def putWrap(wrap: Wrap) = mongo("wraps").insert(MongoDBObject("stamp" -> wrap.stamp,
+    "pubKey" -> HEX.encode(wrap.data.pubKey), "content" -> HEX.encode(wrap.data.content),
+    "date" -> new Date), WriteConcern.Safe)
+
+  def getAllWraps = mongo("wraps").find.map { res =>
+    val contents = HEX.decode(res get "content")
+    val pubKey = HEX.decode(res get "pubKey")
+    val msg = Message(pubKey, contents)
+    Wrap(msg, res get "stamp")
+  }.toList
 
   // Mapping from email to public key
   def putSignedMail(ssm: ServerSignedMail) =

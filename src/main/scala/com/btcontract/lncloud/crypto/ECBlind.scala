@@ -29,7 +29,7 @@ class ECBlindSign(masterPriv: BigInteger) {
   val masterPrivECKey = ECKey fromPrivate masterPriv
   val masterPubKeyHex = masterPrivECKey.getPublicKeyAsHex
 
-  def blindSign(k: BigInteger)(msg: BigInteger) =
+  def blindSign(msg: BigInteger, k: BigInteger) =
     masterPriv.multiply(msg).add(k) mod ECKey.CURVE.getN
 
   def verifyClearSignature(clearMessage: BigInteger, clearSignature: BigInteger, key: ECPoint) = {

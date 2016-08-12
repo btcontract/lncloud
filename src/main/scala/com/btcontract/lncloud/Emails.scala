@@ -1,16 +1,16 @@
 package com.btcontract.lncloud
 
+import com.btcontract.lncloud.Utils._
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import com.btcontract.lncloud.database.Database
 import java.util.concurrent.ConcurrentHashMap
 import org.bitcoinj.core.ECKey.ECDSASignature
-import com.btcontract.lncloud.Utils.oneDay
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
 import courier.Multipart
 
 
-class Emails(db: Database, values: Vals) extends Cleanable {
+class Emails(db: Database) extends Cleanable {
   val cache = new ConcurrentHashMap[String, CacheItemSignedMail].asScala
   val masterPrivECKey = ECKey fromPrivate values.emailPrivKey
   type CacheItemSignedMail = CacheItem[SignedMail]
@@ -36,9 +36,9 @@ class Emails(db: Database, values: Vals) extends Cleanable {
       serverSignedMail
     }
 
-  // value is either an email or LN identity key
-  def getEmail(value: String) = db getSignedMail value map { ssm =>
-    val serverSig = ECDSASignature.decodeFromDER(HEX decode ssm.signature)
-    ssm.client -> masterPrivECKey.verify(ssm.client.totalHash, serverSig)
-  }
+  def getEmail(value: String) =
+    db getSignedMail value map { ssm =>
+      val serverSig = ECDSASignature.decodeFromDER(HEX decode ssm.signature)
+      ssm.client -> masterPrivECKey.verify(ssm.client.totalHash, serverSig)
+    }
 }
