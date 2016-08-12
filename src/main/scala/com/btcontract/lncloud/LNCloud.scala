@@ -40,6 +40,8 @@ object LNCloud extends App {
     case Array(config, "email") =>
       values = toClass[Vals](raw = config)
       values.emailParams.notifyError("It works")
+      // Let it actually send a message
+      Thread sleep 10000
 
     case Array(config) =>
       values = toClass[Vals](config)

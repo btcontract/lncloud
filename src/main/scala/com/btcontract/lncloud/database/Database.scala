@@ -54,9 +54,10 @@ class MongoDatabase extends Database {
       BlindData(res.get("tokens").asInstanceOf[BasicDBList].map(_.toString), res get "rval", res get "k")
     }
 
-  // Many collections to store clear tokens since there will be a lot and we have to keep them all forever
-  def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 2).findOne("clearToken" $eq clear).isDefined
-  def putClearToken(clear: String) = clearTokensMongo(clear take 2).insert("clearToken" $eq clear)
+  // Many collections to store clear tokens because we have to keep them all forever
+  def isClearTokenUsed(clear: String) = getClearTokenCol(clear).findOne("clearToken" $eq clear).isDefined
+  def putClearToken(clear: String) = getClearTokenCol(clear).insert("clearToken" $eq clear)
+  def getClearTokenCol(name: String) = clearTokensMongo("col" + name.head)
 
   // Messages
   def putWrap(wrap: Wrap) = mongo("wraps").insert(MongoDBObject("stamp" -> wrap.stamp,
