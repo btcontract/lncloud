@@ -12,7 +12,7 @@ import scala.concurrent.Future
 import java.math.BigInteger
 
 
-class BlindTokens(db: Database) extends Cleanable {
+class BlindTokens(db: Database) {
   val cache = new ConcurrentHashMap[String, SessionKeyCacheItem].asScala
   val signer = new ECBlindSign(values.blindParams.privKey)
   type SessionKeyCacheItem = CacheItem[BigInteger]
@@ -20,9 +20,6 @@ class BlindTokens(db: Database) extends Cleanable {
   val languages = Map.empty updated
     ("eng", "Blind signatures purchase") updated
     ("rus", "Покупка слепых подписей")
-
-  def clean(stamp: Long) = for (Tuple2(hex, item) <- cache)
-    if (item.stamp < stamp - oneDay / 6) cache remove hex
 
   def getHTLCData: Future[proto.payment_data] = ???
 
@@ -38,7 +35,6 @@ class BlindTokens(db: Database) extends Cleanable {
     for (blindToken <- bd.tokens) yield signer.blindSign(new BigInteger(blindToken), bd.kBigInt)
   }
 
-  def verifyClearSig(token: String, sig: String, keyPoint: Bytes) =
-    signer.verifyClearSignature(new BigInteger(token), new BigInteger(sig),
-      ECKey.CURVE.getCurve decodePoint keyPoint)
+  def verifyClearSig(token: BigInteger, sig: BigInteger, keyPoint: Bytes) =
+    signer.verifyClearSignature(token, sig, ECKey.CURVE.getCurve decodePoint keyPoint)
 }

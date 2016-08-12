@@ -33,13 +33,18 @@ object Utils {
   implicit val formats = org.json4s.DefaultFormats
   lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
   lazy val params = org.bitcoinj.params.MainNetParams.get
+
+  val hex2Json = (raw: String) => new String(HEX decode raw, "UTF-8")
   val logger = LoggerFactory getLogger "LNCloud"
   val rand = new RandomGenerator
   val oneDay = 86400000
 
+  implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
+  class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*) = for (fun <- fs) yield fun apply wrap }
   def extract[T](src: Map[String, String], fn: String => T, args: String*) = args.map(src andThen fn)
   def getIp(sock: SocketAddress) = sock.asInstanceOf[InetSocketAddress].getAddress.getHostAddress
   def toClass[T : Manifest](raw: String) = parse(raw, useBigDecimalForDouble = true).extract[T]
+  def anyway[T, V](execute: => V): PartialFunction[T, V] = { case _ => execute }
   def uid = HEX.encode(rand getBytes 64)
 }
 
@@ -70,10 +75,6 @@ object QRGen {
     ImageIO.write(bufImg, "png", outStream)
     outStream.toByteArray
   }
-}
-
-trait Cleanable {
-  def clean(stamp: Long)
 }
 
 case class BlindData(tokens: Seq[String], rval: String, k: String) {

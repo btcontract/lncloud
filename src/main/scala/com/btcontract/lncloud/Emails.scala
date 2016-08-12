@@ -2,6 +2,7 @@ package com.btcontract.lncloud
 
 import com.btcontract.lncloud.Utils._
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
+import concurrent.ExecutionContext.Implicits.global
 import com.btcontract.lncloud.database.Database
 import java.util.concurrent.ConcurrentHashMap
 import org.bitcoinj.core.ECKey.ECDSASignature
@@ -10,7 +11,7 @@ import org.bitcoinj.core.ECKey
 import courier.Multipart
 
 
-class Emails(db: Database) extends Cleanable {
+class Emails(db: Database) {
   val cache = new ConcurrentHashMap[String, CacheItemSignedMail].asScala
   val masterPrivECKey = ECKey fromPrivate values.emailPrivKey
   type CacheItemSignedMail = CacheItem[SignedMail]
@@ -18,9 +19,6 @@ class Emails(db: Database) extends Cleanable {
   val languages = Map.empty updated
     ("eng", "Confirm your email address" :: "Use your wallet to scan an attached QR-code" :: Nil) updated
     ("rus", "Подтвердите ваш почтовый адрес" :: "Отсканируйте QR-код с помощью вашего кошелька" :: Nil)
-
-  def clean(stamp: Long) = for (Tuple2(secret, item) <- cache)
-    if (item.stamp < stamp - oneDay) cache remove secret
 
   def sendEmail(secret: String, lang: String, address: String) = {
     val title :: message :: Nil = languages.getOrElse(lang, languages apply "eng")
@@ -36,9 +34,8 @@ class Emails(db: Database) extends Cleanable {
       serverSignedMail
     }
 
-  def getEmail(value: String) =
-    db getSignedMail value map { ssm =>
-      val serverSig = ECDSASignature.decodeFromDER(HEX decode ssm.signature)
-      ssm.client -> masterPrivECKey.verify(ssm.client.totalHash, serverSig)
-    }
+  def servSigOk(ssm: ServerSignedMail) = {
+    val serverSig = ECDSASignature.decodeFromDER(HEX decode ssm.signature)
+    masterPrivECKey.verify(ssm.client.totalHash, serverSig)
+  }
 }
