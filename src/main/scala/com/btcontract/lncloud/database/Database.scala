@@ -22,11 +22,6 @@ abstract class Database {
   def getAllWraps: List[Wrap]
   def putWrap(wrap: Wrap)
 
-  // Delayed txs for broken channels
-  def getDelayTxs(height: Int): SeqString
-  def putDelayTx(txHex: String, height: Int)
-  def setDelayTxSpent(txHex: String)
-
   // Watchdog encrypted txs
   def putWatchdogTx(watch: WatchdogTx)
   def setWatchdogTxSpent(parentTxId: String)
@@ -83,34 +78,19 @@ class MongoDatabase extends Database {
       ServerSignedMail(signedMail, res get "serverSignature")
     }
 
-  // Delayed transactions for broken channels
-  def putDelayTx(txHex: String, height: Int) =
-    mongo("delayTxs").update("txHex" $eq txHex, $set("txHex" -> txHex,
-      "height" -> height, "spent" -> false, "date" -> new Date),
-      upsert = true, multi = false, WriteConcern.Safe)
-
-  def getDelayTxs(height: Int) = {
-    val query = $and("height" $lt height, "spent" $eq false)
-    mongo("delayTxs").find(query).map(_ as[String] "txHex").toList
-  }
-
-  def setDelayTxSpent(txHex: String) =
-    mongo("delayTxs").update("txHex" $eq txHex, $set("spent" -> true),
-      upsert = true, multi = false, WriteConcern.Unacknowledged)
-
   // Watchdog encrypted txs
   def putWatchdogTx(watch: WatchdogTx) =
-    mongo("watchTxs").update("parentTxId" $eq watch.parentTxId, $set("parentTxId" -> watch.parentTxId,
+    mongo("watchTxs").update("prefix" $eq watch.prefix, $set("prefix" -> watch.prefix,
       "txEnc" -> watch.txEnc, "ivHex" -> watch.ivHex, "spent" -> false, "date" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
-  def setWatchdogTxSpent(parentTxId: String) =
-    mongo("watchTxs").update("parentTxId" $eq parentTxId, $set("spent" -> true),
+  def setWatchdogTxSpent(prefix: String) =
+    mongo("watchTxs").update("prefix" $eq prefix, $set("spent" -> true),
       upsert = true, multi = false, WriteConcern.Unacknowledged)
 
-  def getWatchdogTxs(txIds: SeqString) = {
-    def toWatchTx(res: DBObject) = WatchdogTx(res get "parentTxId", res get "txEnc", res get "ivHex")
-    val iterator = mongo("watchTxs") find $and("parentTxId" $in txIds, "spent" $eq false) map toWatchTx
+  def getWatchdogTxs(prefixes: SeqString) = {
+    def toWatchTx(res: DBObject) = WatchdogTx(res get "prefix", res get "txEnc", res get "ivHex")
+    val iterator = mongo("watchTxs") find $and("prefix" $in prefixes, "spent" $eq false) map toWatchTx
     iterator.toList
   }
 

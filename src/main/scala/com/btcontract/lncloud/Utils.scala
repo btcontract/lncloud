@@ -3,6 +3,7 @@ package com.btcontract.lncloud
 import java.awt.image.BufferedImage._
 import org.json4s.jackson.JsonMethods._
 
+import com.btcontract.lncloud.crypto.{AES, RandomGenerator}
 import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import java.net.{InetSocketAddress, SocketAddress}
@@ -11,7 +12,6 @@ import courier.{Envelope, Mailer, Text}
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
-import com.btcontract.lncloud.crypto.RandomGenerator
 import concurrent.ExecutionContext.Implicits.global
 import org.bitcoinj.core.ECKey.ECDSASignature
 import com.google.zxing.qrcode.QRCodeWriter
@@ -107,7 +107,13 @@ case class SignedMail(email: String, pubKey: String, signature: String) {
 // Utility classes
 case class CacheItem[T](data: T, stamp: Long)
 case class BlindParams(privKey: BigInteger, quantity: Int, price: Long)
-case class WatchdogTx(parentTxId: String, txEnc: String, ivHex: String)
+
+// Prefix is first 16 bytes of txId, key is last 16 bytes
+case class WatchdogTx(prefix: String, txEnc: String, ivHex: String) {
+  def decodeTx(key: Bytes) = AES.dec(HEX decode txEnc, key, HEX decode ivHex)
+}
+
+// Sending emails
 case class EmailParams(server: String, account: String, password: String) {
   def mailer = Mailer(server, 587).auth(true).as(account, password).startTtls(true).apply
   def to(adr: String) = Envelope from new InternetAddress(account, "Lightning wallet") to new InternetAddress(adr)

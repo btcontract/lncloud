@@ -28,8 +28,8 @@ class Emails(db: Database) {
 
   def confirmEmail(secret: String) =
     cache get secret map { case CacheItem(data, stamp) =>
-      val serverSig = HEX encode masterPrivECKey.sign(data.totalHash).encodeToDER
-      val serverSignedMail = ServerSignedMail(data, serverSig)
+      val serverSig = masterPrivECKey.sign(data.totalHash).encodeToDER
+      val serverSignedMail = ServerSignedMail(data, HEX encode serverSig)
       db putSignedMail serverSignedMail
       serverSignedMail
     }

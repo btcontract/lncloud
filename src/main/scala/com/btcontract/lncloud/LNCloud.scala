@@ -59,8 +59,8 @@ class Server {
   val db = new MongoDatabase
   private val wraps = new Wraps(db)
   private val emails = new Emails(db)
-  private val watchdog = new Watchdog(db)
   private val blindTokens = new BlindTokens(db)
+  new Watchdog(db).run
 
   // Track connected websockets by their ip addresses
   private val connects = new ConcurrentHashMap[String, Hooks]
@@ -153,14 +153,7 @@ class Server {
         case None => Ok apply error("notfound")
       }
 
-    // BREACH AND UNICLOSE TXS
-
-    // Record a tx to be broadcasted at a given height
-    case req @ POST -> Root / "tx" / "putat" => check(req.params) {
-      val Seq(tx, height) = extract(req.params, identity, "tx", "height")
-      db.putDelayTx(txHex = tx, height.toInt)
-      Ok apply okSingle("done")
-    }
+    // BREACH TXS
 
     // Record a tx to be broadcasted on channel breach
     case req @ POST -> Root / "tx" / "putbreach" => check(req.params) {
