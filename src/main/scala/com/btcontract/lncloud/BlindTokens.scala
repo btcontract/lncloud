@@ -24,11 +24,11 @@ class BlindTokens(db: Database) {
   def getHTLCData: Future[proto.payment_data] = ???
 
   def getCharge(tokens: SeqString, lang: String, sesKey: String) =
-    for (CacheItem(privKey, stamp) <- cache get sesKey) yield getHTLCData map { proto =>
-      db.putPendingTokens(BlindData(tokens, HEX encode proto.r.encode, privKey.toString), sesKey)
+    for (CacheItem(privKey, stamp) <- cache get sesKey) yield getHTLCData map { payData =>
+      db.putPendingTokens(BlindData(tokens, HEX encode payData.r.encode, privKey.toString), sesKey)
       val purposeDescription = languages.getOrElse(key = lang, default = languages apply "eng")
       val request = Request(None, values.blindParams.price, purposeDescription, uid)
-      Charge(request, proto.htlc.encode)
+      Charge(request, payData.htlc.encode)
     }
 
   def redeemTokens(rVal: String, key: String) = db.getPendingTokens(rVal, key) map { bd =>

@@ -81,7 +81,7 @@ class MongoDatabase extends Database {
   // Watchdog encrypted txs
   def putWatchdogTx(watch: WatchdogTx) =
     mongo("watchTxs").update("prefix" $eq watch.prefix, $set("prefix" -> watch.prefix,
-      "txEnc" -> watch.txEnc, "ivHex" -> watch.ivHex, "spent" -> false, "date" -> new Date),
+      "txEnc" -> watch.txEnc, "iv" -> watch.iv, "spent" -> false, "date" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def setWatchdogTxSpent(prefix: String) =
@@ -89,7 +89,7 @@ class MongoDatabase extends Database {
       upsert = true, multi = false, WriteConcern.Unacknowledged)
 
   def getWatchdogTxs(prefixes: SeqString) = {
-    def toWatchTx(res: DBObject) = WatchdogTx(res get "prefix", res get "txEnc", res get "ivHex")
+    def toWatchTx(res: DBObject) = WatchdogTx(res get "prefix", res get "txEnc", res get "iv")
     val iterator = mongo("watchTxs") find $and("prefix" $in prefixes, "spent" $eq false) map toWatchTx
     iterator.toList
   }

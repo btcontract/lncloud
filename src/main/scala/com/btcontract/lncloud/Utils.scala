@@ -97,10 +97,10 @@ case class ServerSignedMail(client: SignedMail, signature: String)
 case class SignedMail(email: String, pubKey: String, signature: String) {
   def totalHash = Sha256Hash.of(email + pubKey + signature getBytes "UTF-8")
   def identityPubECKey = ECKey.fromPublicOnly(HEX decode pubKey)
+  def emailHash = Sha256Hash.of(email getBytes "UTF-8")
 
-  def checkSig = {
-    val sig = ECDSASignature.decodeFromDER(HEX decode signature)
-    identityPubECKey.verify(Sha256Hash.of(email getBytes "UTF-8"), sig)
+  def checkSig = HEX decode signature match { case sig =>
+    identityPubECKey.verify(emailHash, ECDSASignature decodeFromDER sig)
   }
 }
 
@@ -109,8 +109,8 @@ case class CacheItem[T](data: T, stamp: Long)
 case class BlindParams(privKey: BigInteger, quantity: Int, price: Long)
 
 // Prefix is first 16 bytes of txId, key is last 16 bytes
-case class WatchdogTx(prefix: String, txEnc: String, ivHex: String) {
-  def decodeTx(key: Bytes) = AES.dec(HEX decode txEnc, key, HEX decode ivHex)
+case class WatchdogTx(prefix: String, txEnc: String, iv: String) {
+  def decodeTx(key: Bytes) = AES.dec(HEX decode txEnc, key, HEX decode iv)
 }
 
 // Sending emails

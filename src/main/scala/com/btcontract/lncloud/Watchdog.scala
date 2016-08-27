@@ -18,7 +18,7 @@ import java.net.ConnectException
 class Watchdog(db: Database) { me =>
   def connectError = "Can't connect to Bitcoin node"
   def breachError = s"Can't process breach tx, last processed block is ${db.getLastBlockHeight}"
-  def blocks = bitcoin.getBlockCount match { case lst => db.getLastBlockHeight.getOrElse(lst - 720) - 5 to lst }
+  def blocks = bitcoin.getBlockCount match { case lst => db.getLastBlockHeight.getOrElse(lst - 720) - 6 to lst }
   def block2PrefixKey(block: Block) = for (txId <- block.tx.asScala) yield txId.take(16) -> HEX.decode(txId drop 16)
 
   def publishTxs(block: Block) = {
