@@ -3,22 +3,26 @@ package com.btcontract.lncloud
 import Utils._
 import org.http4s.dsl._
 import io.backchat.hookup._
-
 import rx.lang.scala.{Observable => Obs}
-import org.http4s.{HttpService, Response}
+import org.http4s.{HttpService, Request, Response, UrlForm}
 import org.bitcoinj.core.{BloomFilter, ECKey}
 import org.json4s.{JArray, JInt, JString => JS}
 
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import com.btcontract.lncloud.database.MongoDatabase
+
 import concurrent.ExecutionContext.Implicits.global
 import java.util.concurrent.ConcurrentHashMap
+
 import scala.concurrent.duration.DurationInt
 import org.http4s.server.blaze.BlazeBuilder
 import org.json4s.jackson.Serialization
 import org.bitcoinj.core.Utils.HEX
+
 import scalaz.concurrent.Task
 import java.math.BigInteger
+
+import org.http4s.server.middleware.UrlFormLifter
 
 
 object LNCloud extends App {
@@ -30,8 +34,8 @@ object LNCloud extends App {
     case Array("generateConfig") =>
       val emailPrivKey = new ECKey(rand).getPrivKey
       val emailParams = EmailParams("smtp.google.com", "from@gmail.com", "password")
-      val blindInfo = BlindParams(new ECKey(rand).getPrivKey, quantity = 500, price = 50000)
-      val config = Vals(emailParams, emailPrivKey, blindInfo, storagePeriod = 7, sockIpLimit = 1000,
+      val blindAsk = BlindAsk(new ECKey(rand).getPrivKey, quantity = 100, price = 50000)
+      val config = Vals(emailParams, emailPrivKey, blindAsk, storagePeriod = 7, sockIpLimit = 1000,
         maxMessageSize = 5000, "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332")
 
       // Print configuration to console
@@ -41,13 +45,20 @@ object LNCloud extends App {
       values = toClass[Vals](raw = config)
       values.emailParams.notifyError("It works")
       // Let it actually send a message
-      Thread sleep 10000
+      Thread sleep 5000
 
-    case Array(config) =>
-      values = toClass[Vals](config)
+    case /*Array(config)*/ _ =>
+      val emailPrivKey = new ECKey(rand).getPrivKey
+      val emailParams = EmailParams("smtp.google.com", "from@gmail.com", "password")
+      val blindAsk = BlindAsk(new ECKey(rand).getPrivKey, quantity = 200, price = 50000)
+      val config = Vals(emailParams, emailPrivKey, blindAsk, storagePeriod = 7, sockIpLimit = 1000,
+        maxMessageSize = 5000, "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332")
+
+      values = config /*toClass[Vals](config)*/
       val socketAndHttpLnCloudServer = new Server
+      val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
       HookupServer(9001)(new socketAndHttpLnCloudServer.Client).start
-      BlazeBuilder.bindHttp(9002).mountService(socketAndHttpLnCloudServer.http).run
+      BlazeBuilder.bindHttp(9002).mountService(postLift).run
   }
 }
 
@@ -60,15 +71,15 @@ class Server {
   private val wraps = new Wraps(db)
   private val emails = new Emails(db)
   private val blindTokens = new BlindTokens(db)
-  new Watchdog(db).run
+  //new Watchdog(db).run
 
   // Track connected websockets by their ip addresses
   private val connects = new ConcurrentHashMap[String, Hooks]
     .asScala withDefaultValue Set.empty
 
   Obs.interval(30.seconds).map(increment => System.currentTimeMillis) foreach { now =>
-    for (Tuple2(hex, item) <- blindTokens.cache) if (item.stamp < now - oneDay / 6) blindTokens.cache remove hex
-    for (Tuple2(secret, item) <- emails.cache) if (item.stamp < now - oneDay) emails.cache remove secret
+    for (Tuple2(hex, item) <- blindTokens.cache) if (item.stamp < now - oneHour) blindTokens.cache remove hex
+    for (Tuple2(secret, item) <- emails.cache) if (item.stamp < now - oneHour) emails.cache remove secret
     for (Tuple2(ip, hooks) <- connects if hooks.isEmpty) connects remove ip
     wraps clean System.currentTimeMillis
     logger info "Cleaned caches"
@@ -130,7 +141,7 @@ class Server {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
     case req @ POST -> Root / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(data = ses.getPrivKey, stamp = System.currentTimeMillis)
-      Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.blindParams.quantity, values.blindParams.price)
+      Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.blindAsk.quantity, values.blindAsk.price)
     }
 
     // Record tokens to be signed and send a Charge

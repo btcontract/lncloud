@@ -29,7 +29,7 @@ object Utils {
   type Bytes = Array[Byte]
   type SeqString = Seq[String]
 
-  var values: Vals = null
+  var values: Vals = _
   implicit val formats = org.json4s.DefaultFormats
   lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
   lazy val params = org.bitcoinj.params.MainNetParams.get
@@ -37,7 +37,7 @@ object Utils {
   val hex2Json = (raw: String) => new String(HEX decode raw, "UTF-8")
   val logger = LoggerFactory getLogger "LNCloud"
   val rand = new RandomGenerator
-  val oneDay = 86400000
+  val oneHour = 3600000
 
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*) = for (fun <- fs) yield fun apply wrap }
@@ -85,8 +85,8 @@ case class BlindData(tokens: Seq[String], rval: String, k: String) {
 
 // A "response-to" ephemeral key, it's private part should be stored in a database
 // because my bloom filter has it, it's optional because Charge may come locally via NFC
-case class Request(ephemeral: Option[Bytes], mSatAmount: Long, message: String, id: String)
-case class Charge(request: Request, lnPaymentData: Bytes)
+case class Ask(ephemeral: Option[Bytes], mSatAmount: Long, message: String, id: String)
+case class Charge(ask: Ask, lnPaymentData: Bytes)
 
 // Clients send a message and server adds a timestamp
 case class Message(pubKey: Bytes, content: Bytes)
@@ -106,7 +106,7 @@ case class SignedMail(email: String, pubKey: String, signature: String) {
 
 // Utility classes
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindParams(privKey: BigInteger, quantity: Int, price: Long)
+case class BlindAsk(privKey: BigInteger, quantity: Int, price: Long)
 
 // Prefix is first 16 bytes of txId, key is last 16 bytes
 case class WatchdogTx(prefix: String, txEnc: String, iv: String) {
@@ -116,10 +116,10 @@ case class WatchdogTx(prefix: String, txEnc: String, iv: String) {
 // Sending emails
 case class EmailParams(server: String, account: String, password: String) {
   def mailer = Mailer(server, 587).auth(true).as(account, password).startTtls(true).apply
-  def to(adr: String) = Envelope from new InternetAddress(account, "Lightning wallet") to new InternetAddress(adr)
+  def to(adr: String) = Envelope from new InternetAddress(account, "LN cloud") to new InternetAddress(adr)
   def notifyError(message: String) = mailer(to(account) content Text(message) subject "Malfunction")
 }
 
 // Server secrets and parameters, MUST NOT be stored in config file
-case class Vals(emailParams: EmailParams, emailPrivKey: BigInteger, blindParams: BlindParams,
+case class Vals(emailParams: EmailParams, emailPrivKey: BigInteger, blindAsk: BlindAsk,
                 storagePeriod: Int, sockIpLimit: Int, maxMessageSize: Int, rpcUrl: String)
