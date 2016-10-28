@@ -8,8 +8,9 @@ import java.math.BigInteger
 
 // As seen on http://arxiv.org/pdf/1304.2094.pdf
 class ECBlind(signerQ: ECPoint, signerR: ECPoint) {
-  def makeList(number: Int) = for (_ <- 1 to number) yield makeParams
-  def generator = Stream continually new BigInteger(1, rand getBytes 64)
+  def params(number: Int) = List.fill(number)(makeParams)
+  def tokens(number: Int) = List.fill(number)(oneToken)
+  def oneToken = new BigInteger(1, rand getBytes 64)
 
   def makeParams: BlindParam = {
     val a = new ECKey(rand).getPrivKey
@@ -19,7 +20,8 @@ class ECBlind(signerQ: ECPoint, signerR: ECPoint) {
     val bInv = b.modInverse(ECKey.CURVE.getN)
     val abInvQ = signerQ.multiply(a.multiply(bInv) mod ECKey.CURVE.getN)
     val blindF = signerR.multiply(bInv).add(abInvQ).add(ECKey.CURVE.getG multiply c).normalize
-    if (blindF.getAffineXCoord.isZero | blindF.getAffineYCoord.isZero) makeParams else BlindParam(blindF, a, b, c, bInv)
+    val isZero = blindF.getAffineXCoord.isZero | blindF.getAffineYCoord.isZero
+    if (isZero) makeParams else BlindParam(blindF, a, b, c, bInv)
   }
 }
 
@@ -31,9 +33,9 @@ class ECBlindSign(masterPriv: BigInteger) {
   def blindSign(msg: BigInteger, k: BigInteger) =
     masterPriv.multiply(msg).add(k) mod ECKey.CURVE.getN
 
-  def verifyClearSignature(clearMessage: BigInteger, clearSignature: BigInteger, key: ECPoint) = {
-    val rm = key.getAffineXCoord.toBigInteger mod ECKey.CURVE.getN multiply clearMessage mod ECKey.CURVE.getN
-    ECKey.CURVE.getG.multiply(clearSignature) == masterPrivECKey.getPubKeyPoint.multiply(rm).add(key)
+  def verifyClearSig(clearMessage: BigInteger, clearSignature: BigInteger, point: ECPoint) = {
+    val rm = point.getAffineXCoord.toBigInteger mod ECKey.CURVE.getN multiply clearMessage mod ECKey.CURVE.getN
+    ECKey.CURVE.getG.multiply(clearSignature) == masterPrivECKey.getPubKeyPoint.multiply(rm).add(point)
   }
 }
 

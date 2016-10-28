@@ -2,30 +2,21 @@ package com.btcontract.lncloud.database
 
 import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
-import com.btcontract.lncloud.Utils.SeqString
-import org.bitcoinj.core.Utils.HEX
+import com.btcontract.lncloud.Utils.ListStr
 import java.util.Date
 
 
 abstract class Database {
-  // Mapping from email to public key
-  def putSignedMail(container: ServerSignedMail)
-  def getSignedMail(something: String): Option[ServerSignedMail]
-
   // sesPubKey is R which we get from k, rval is Lightning r-value
   def getPendingTokens(rVal: String, sesPubKey: String): Option[BlindData]
   def putPendingTokens(data: BlindData, sesPubKey: String)
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
 
-  // Messages
-  def getAllWraps: List[Wrap]
-  def putWrap(wrap: Wrap)
-
   // Watchdog encrypted txs
   def putWatchdogTx(watch: WatchdogTx)
   def setWatchdogTxSpent(parentTxId: String)
-  def getWatchdogTxs(txIds: SeqString): List[WatchdogTx]
+  def getWatchdogTxs(txIds: ListStr): List[WatchdogTx]
 
   // Watchdog height memo
   def putLastBlockHeight(height: Int)
@@ -49,34 +40,9 @@ class MongoDatabase extends Database {
       BlindData(res.get("tokens").asInstanceOf[BasicDBList].map(_.toString), res get "rval", res get "k")
     }
 
-  // Many collections to store clear tokens because we have to keep them all forever
-  def isClearTokenUsed(clear: String) = getClearTokenCol(clear).findOne("clearToken" $eq clear).isDefined
-  def putClearToken(clear: String) = getClearTokenCol(clear).insert("clearToken" $eq clear)
-  def getClearTokenCol(name: String) = clearTokensMongo("col" + name.head)
-
-  // Messages
-  def putWrap(wrap: Wrap) = mongo("wraps").insert(MongoDBObject("stamp" -> wrap.stamp,
-    "pubKey" -> HEX.encode(wrap.data.pubKey), "content" -> HEX.encode(wrap.data.content),
-    "date" -> new Date), WriteConcern.Safe)
-
-  def getAllWraps = mongo("wraps").find.map { res =>
-    val contents = HEX.decode(res get "content")
-    val pubKey = HEX.decode(res get "pubKey")
-    val msg = Message(pubKey, contents)
-    Wrap(msg, res get "stamp")
-  }.toList
-
-  // Mapping from email to public key
-  def putSignedMail(ssm: ServerSignedMail) =
-    mongo("keymail").update("email" $eq ssm.client.email, $set("serverSignature" -> ssm.signature,
-      "email" -> ssm.client.email, "pubKey" -> ssm.client.pubKey, "signature" -> ssm.client.signature),
-      upsert = true, multi = false, WriteConcern.Safe)
-
-  def getSignedMail(something: String) =
-    mongo("keymail") findOne $or("email" $eq something, "pubKey" $eq something) map { res =>
-      val signedMail = SignedMail(res get "email", res get "pubKey", res get "signature")
-      ServerSignedMail(signedMail, res get "serverSignature")
-    }
+  // 35 collections in total to store clear tokens because we have to keep every token forever
+  def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
+  def putClearToken(clear: String) = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
 
   // Watchdog encrypted txs
   def putWatchdogTx(watch: WatchdogTx) =
@@ -88,7 +54,7 @@ class MongoDatabase extends Database {
     mongo("watchTxs").update("prefix" $eq prefix, $set("spent" -> true),
       upsert = true, multi = false, WriteConcern.Unacknowledged)
 
-  def getWatchdogTxs(prefixes: SeqString) = {
+  def getWatchdogTxs(prefixes: ListStr) = {
     def toWatchTx(res: DBObject) = WatchdogTx(res get "prefix", res get "txEnc", res get "iv")
     val iterator = mongo("watchTxs") find $and("prefix" $in prefixes, "spent" $eq false) map toWatchTx
     iterator.toList

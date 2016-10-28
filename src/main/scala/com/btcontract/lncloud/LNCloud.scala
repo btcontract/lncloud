@@ -2,27 +2,17 @@ package com.btcontract.lncloud
 
 import Utils._
 import org.http4s.dsl._
-import io.backchat.hookup._
-import rx.lang.scala.{Observable => Obs}
-import org.http4s.{HttpService, Request, Response, UrlForm}
-import org.bitcoinj.core.{BloomFilter, ECKey}
-import org.json4s.{JArray, JInt, JString => JS}
+import org.http4s.{HttpService, Response}
 
-import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import com.btcontract.lncloud.database.MongoDatabase
-
 import concurrent.ExecutionContext.Implicits.global
-import java.util.concurrent.ConcurrentHashMap
-
-import scala.concurrent.duration.DurationInt
+import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
 import org.json4s.jackson.Serialization
 import org.bitcoinj.core.Utils.HEX
-
+import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import java.math.BigInteger
-
-import org.http4s.server.middleware.UrlFormLifter
 
 
 object LNCloud extends App {
@@ -32,124 +22,47 @@ object LNCloud extends App {
 
   args match {
     case Array("generateConfig") =>
-      val emailPrivKey = new ECKey(rand).getPrivKey
-      val emailParams = EmailParams("smtp.google.com", "from@gmail.com", "password")
-      val blindAsk = BlindAsk(new ECKey(rand).getPrivKey, quantity = 100, price = 50000)
-      val config = Vals(emailParams, emailPrivKey, blindAsk, storagePeriod = 7, sockIpLimit = 1000,
-        maxMessageSize = 5000, "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332")
+      val config = Vals(privKey = new ECKey(rand).getPrivKey, List(new ECKey(rand).getPublicKeyAsHex), MSat(50000),
+        quantity = 100, "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332")
 
-      // Print configuration to console
+      // Print out an example
       println(Serialization write config)
 
-    case Array(config, "email") =>
-      values = toClass[Vals](raw = config)
-      values.emailParams.notifyError("It works")
-      // Let it actually send a message
-      Thread sleep 5000
-
     case /*Array(config)*/ _ =>
-      val emailPrivKey = new ECKey(rand).getPrivKey
-      val emailParams = EmailParams("smtp.google.com", "from@gmail.com", "password")
-      val blindAsk = BlindAsk(new ECKey(rand).getPrivKey, quantity = 200, price = 50000)
-      val config = Vals(emailParams, emailPrivKey, blindAsk, storagePeriod = 7, sockIpLimit = 1000,
-        maxMessageSize = 5000, "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332")
+      val testKey = "022717bbe78bf577c516ac27ab15f85d1ba189725beb4181ddb3049ad5c5837251"
+      val btcRpc = "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332"
+      val config = Vals(privKey = new ECKey(rand).getPrivKey, List(testKey), MSat(50000), quantity = 100, btcRpc)
 
       values = config /*toClass[Vals](config)*/
       val socketAndHttpLnCloudServer = new Server
       val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
-      HookupServer(9001)(new socketAndHttpLnCloudServer.Client).start
-      BlazeBuilder.bindHttp(9002).mountService(postLift).run
+      BlazeBuilder.bindHttp(9002).mountService(postLift).run.awaitShutdown
   }
 }
 
 class Server {
-  type Hooks = Set[Client]
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
 
   val db = new MongoDatabase
-  private val wraps = new Wraps(db)
-  private val emails = new Emails(db)
+  private val txSigChecker = new TxSigChecker
   private val blindTokens = new BlindTokens(db)
-  //new Watchdog(db).run
-
-  // Track connected websockets by their ip addresses
-  private val connects = new ConcurrentHashMap[String, Hooks]
-    .asScala withDefaultValue Set.empty
-
-  Obs.interval(30.seconds).map(increment => System.currentTimeMillis) foreach { now =>
-    for (Tuple2(hex, item) <- blindTokens.cache) if (item.stamp < now - oneHour) blindTokens.cache remove hex
-    for (Tuple2(secret, item) <- emails.cache) if (item.stamp < now - oneHour) emails.cache remove secret
-    for (Tuple2(ip, hooks) <- connects if hooks.isEmpty) connects remove ip
-    wraps clean System.currentTimeMillis
-    logger info "Cleaned caches"
-  }
-
-  // Checking clear token validity before proceeding
-  def check(params: HttpParams)(next: => TaskResponse) = {
-    val Seq(token, sig, key) = extract(params, identity, "cleartoken", "clearsig", "key")
-    val signatureOk = blindTokens.verifyClearSig(new BigInteger(token), new BigInteger(sig), HEX decode key)
-
-    if (db isClearTokenUsed token) Ok apply error("tokenused")
-    else if (!signatureOk) Ok apply error("tokeninvalid")
-    else try next finally db putClearToken token
-  }
-
-  // Send only to those online clients who have a matching bloom filter
-  def onlineBroadcast(wrap: Wrap) = for { hook <- connects.values.flatten
-    filter <- hook.bloomFilter if filter contains wrap.data.pubKey
-  } hook send okSingle(wrap)
-
-  // HTTP answer as JSON array
-  def okSingle(data: Any) = ok(data)
-  def ok(data: Any*) = Serialization write "ok" +: data
-  def error(data: Any*) = Serialization write "error" +: data
+  //private val watchdog = new Watchdog(db)
+  //watchdog.run
 
   val http = HttpService {
-
-    // IDENTIY <-> EMAIL MAPPER
-
-    // Request for a new email <-> key mapping
-    case req @ POST -> Root / "keymail" / "put" => check(req.params) {
-      val Seq(lang, data) = extract(req.params, identity, "lang", "data")
-      val signed = hex2Json andThen toClass[SignedMail] apply data
-
-      if (!signed.checkSig) Ok apply error("mismatch") else uid match { case secret =>
-        emails.cache(secret) = CacheItem(data = signed, stamp = System.currentTimeMillis)
-        emails.sendEmail(secret, lang, address = signed.email)
-        Ok apply okSingle("done")
-      }
-    }
-
-    // Save ServerSignedMail if secret matches
-    case req @ POST -> Root / "keymail" / "confirm" =>
-      req.params andThen emails.confirmEmail apply "secret" match {
-        case Some(servSignedMail) => Ok apply okSingle(servSignedMail.client)
-        case None => Ok apply error("notfound")
-      }
-
-    // Get ServerSignedMail by key or email
-    case req @ POST -> Root / "keymail" / "get" =>
-      req.params andThen db.getSignedMail apply "value" match {
-        case Some(ssm) if emails servSigOk ssm => Ok apply okSingle(ssm)
-        case Some(sigMismatch) => Ok apply error("notfound")
-        case None => Ok apply error("notfound")
-      }
-
-    // BLIND TOKENS
-
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
     case req @ POST -> Root / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
-      blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(data = ses.getPrivKey, stamp = System.currentTimeMillis)
-      Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.blindAsk.quantity, values.blindAsk.price)
+      blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
+      Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
     }
 
     // Record tokens to be signed and send a Charge
     case req @ POST -> Root / "blindtokens" / "buy" =>
       val Seq(lang, sesKey, tokens) = extract(req.params, identity, "lang", "seskey", "tokens")
-      val maybeCharge = blindTokens.getCharge(hex2Json andThen toClass[SeqString] apply tokens, lang, sesKey)
+      val maybeInvoice = blindTokens.getCharge(toClass[ListStr](hex2Json apply tokens), lang, sesKey)
 
-      maybeCharge match {
+      maybeInvoice match {
         case Some(future) => Ok(future map okSingle)
         case None => Ok apply error("notfound")
       }
@@ -166,50 +79,40 @@ class Server {
 
     // BREACH TXS
 
-    // Record a tx to be broadcasted on channel breach
-    case req @ POST -> Root / "tx" / "putbreach" => check(req.params) {
-      db.putWatchdogTx(req.params andThen toClass[WatchdogTx] apply "tx")
+    // If they try to supply too much data
+    case req @ POST -> Root / "tx" / "breach" / _
+      if req.params("watch").length > 1024 =>
+      Ok apply error("toobig")
+
+    // Record a tx to be broadcasted in case of channel breach
+    case req @ POST -> Root / "tx" / "breach" / "token" => check(req.params) {
+      db putWatchdogTx toClass[WatchdogTx](req.params andThen hex2Json apply "watch")
       Ok apply okSingle("done")
     }
 
-    // REQUESTS AND CHARGES
-
-    // Reject a message if it is too large
-    case req @ POST -> Root / "message" / "put" if
-    req.params("data").length > values.maxMessageSize =>
-      Ok apply error("toolarge")
-
-    // Send an encrypted message to some public key's mask
-    case req @ POST -> Root / "message" / "put" => check(req.params) {
-      val message = req.params andThen hex2Json andThen toClass[Message] apply "msg"
-      val msgWrap = Wrap(data = message, stamp = System.currentTimeMillis)
-      msgWrap >> (onlineBroadcast, wraps.putWrap, db.putWrap)
-      Ok apply okSingle(msgWrap)
-    }
+    // Same as above but without blind sigs
+    case req @ POST -> Root / "tx" / "breach" / "sig" =>
+      val Seq(watch, sig, prefix) = extract(req.params, identity, "watch", "sig", "prefix")
+      val isValidSig = txSigChecker.check(HEX decode watch, HEX decode sig, prefix)
+      val watchdogTx = hex2Json andThen toClass[WatchdogTx] apply watch
+      if (isValidSig) db putWatchdogTx watchdogTx
+      if (isValidSig) Ok apply okSingle("done")
+      else Ok apply error("wrongsig")
   }
 
-  class Client extends HookupServerClient {
-    def parseJson(data: JArray) = data.children match {
-      case JS("syncFilter") :: JS(filter) :: JInt(time) :: Nil =>
-        val newBloomFilter = new BloomFilter(params, HEX decode filter)
-        this send ok(wraps.get(newBloomFilter, time.toLong):_*)
-        bloomFilter = Some apply newBloomFilter
+  // Checking clear token validity before proceeding
+  def check(params: HttpParams)(next: => TaskResponse) = {
+    val Seq(point, sig, token) = extract(params, identity, "point", "clearsig", "cleartoken")
+    val sigIsFine = blindTokens.signer.verifyClearSig(clearMessage = new BigInteger(token),
+      clearSignature = new BigInteger(sig), point = blindTokens decodeECPoint point)
 
-      // Got array with wrong contents
-      case _ => this send error("wrongformat")
-    }
-
-    def receive = {
-      case Connected if connects(ip).size > values.sockIpLimit =>
-        this send error("limit") onComplete anyway(disconnect)
-
-      case Connected => connects(ip) += this
-      case JsonMessage(data: JArray) => parseJson(data)
-      case Disconnected(why) => connects(ip) -= this
-    }
-
-    // None of these is available at start
-    var bloomFilter = Option.empty[BloomFilter]
-    lazy val ip = getIp(remoteAddress)
+    if (db isClearTokenUsed token) Ok apply error("tokenused")
+    else if (!sigIsFine) Ok apply error("tokeninvalid")
+    else try next finally db putClearToken token
   }
+
+  // HTTP answer as JSON array
+  def okSingle(data: Any) = ok(data)
+  def ok(data: Any*) = Serialization write "ok" +: data
+  def error(data: Any*) = Serialization write "error" +: data
 }

@@ -1,11 +1,14 @@
 package com.btcontract.lncloud
 
 import com.btcontract.lncloud.Utils._
+import rx.lang.scala.{Observable => Obs}
+
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import concurrent.ExecutionContext.Implicits.global
 import com.btcontract.lncloud.crypto.ECBlindSign
 import com.btcontract.lncloud.database.Database
 import java.util.concurrent.ConcurrentHashMap
+import scala.concurrent.duration.DurationInt
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
 import scala.concurrent.Future
@@ -14,13 +17,23 @@ import okio.ByteString
 
 
 class BlindTokens(db: Database) {
-  val cache = new ConcurrentHashMap[String, SessionKeyCacheItem].asScala
-  val signer = new ECBlindSign(values.blindAsk.privKey)
-  type SessionKeyCacheItem = CacheItem[BigInteger]
+  type SesKeyCacheItem = CacheItem[BigInteger]
+  val signer = new ECBlindSign(masterPriv = values.privKey)
+  val cache = new ConcurrentHashMap[String, SesKeyCacheItem].asScala
 
-  lazy val languages = Map.empty updated
-    ("eng", s"Purchase of ${values.blindAsk.quantity} LN credits") updated
-    ("rus", s"Покупка ${values.blindAsk.quantity} LN-кредитов")
+  // Periodically remove stale info requests
+  Obs.interval(30.seconds).map(_ => System.currentTimeMillis) foreach { now =>
+    for (Tuple2(hex, item) <- cache if item.stamp < now - oneHour) cache remove hex
+  }
+
+  lazy val languages = Map (
+    "esp" -> s"Compra de ${values.quantity} créditos LN. Ver detalles en www.lncloud.com/lncredits",
+    "eng" -> s"Purchase of ${values.quantity} LN credits. See details at www.lncloud.com/lncredits",
+    "rus" -> s"Покупка ${values.quantity} LN-кредитов. Подробности смотрите на www.lncloud.com/lncredits",
+    "ukr" -> s"Купівля ${values.quantity} LN-кредитів. Подробиці дивіться на www.lncloud.com/lncredits",
+    "cny" -> s"${values.quantity} LN购买学分. www.lncloud.com/lncredits で詳細を参照してください。",
+    "jpn" -> s"${values.quantity} LNクレジットの購入. 查看详情在 www.lncloud.com/lncredits"
+  )
 
   def getHTLCData: Future[proto.payment_data] = {
     val rVal = new proto.rval(200L, 200L, 200L, 200L)
@@ -34,17 +47,14 @@ class BlindTokens(db: Database) {
     Future apply new proto.payment_data(htlc, rVal)
   }
 
-  def getCharge(tokens: SeqString, lang: String, sesKey: String) =
-    for (CacheItem(privKey, stamp) <- cache get sesKey) yield getHTLCData map { payData =>
+  def getCharge(tokens: ListStr, lang: String, sesKey: String) =
+    for (CacheItem(privKey, stamp) <- cache get sesKey) yield getHTLCData.map { payData =>
       db.putPendingTokens(BlindData(tokens, HEX encode payData.r.encode, privKey.toString), sesKey)
-      val ask = Ask(None, values.blindAsk.price, languages.getOrElse(lang, languages apply "eng"), uid)
-      Charge(ask, payData.htlc.encode)
+      Invoice(languages.get(lang) orElse languages.get("eng"), values.price, "nodeId", "rHash" getBytes "UTF-8")
     }
 
+  def decodeECPoint(raw: String) = ECKey.CURVE.getCurve.decodePoint(HEX decode raw)
   def redeemTokens(rVal: String, key: String) = db.getPendingTokens(rVal, key) map { bd =>
-    for (blindToken <- bd.tokens) yield signer.blindSign(new BigInteger(blindToken), bd.kBigInt).toString
+    for (token <- bd.tokens) yield signer.blindSign(new BigInteger(token), bd.kBigInt).toString
   }
-
-  def verifyClearSig(token: BigInteger, sig: BigInteger, keyPoint: Bytes) =
-    signer.verifyClearSignature(token, sig, ECKey.CURVE.getCurve decodePoint keyPoint)
 }
