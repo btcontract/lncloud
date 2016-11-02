@@ -22,8 +22,9 @@ object LNCloud extends App {
 
   args match {
     case Array("generateConfig") =>
-      val config = Vals(privKey = new ECKey(rand).getPrivKey, List(new ECKey(rand).getPublicKeyAsHex), MSat(50000),
-        quantity = 100, "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332")
+      val testKeys = new ECKey(rand).getPublicKeyAsHex :: Nil
+      val btcRpc = "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332"
+      val config = Vals(privKey = new ECKey(rand).getPrivKey, testKeys, MSat(50000), quantity = 100, btcRpc)
 
       // Print out an example
       println(Serialization write config)
@@ -47,8 +48,8 @@ class Server {
   val db = new MongoDatabase
   private val txSigChecker = new TxSigChecker
   private val blindTokens = new BlindTokens(db)
-  //private val watchdog = new Watchdog(db)
-  //watchdog.run
+  private val watchdog = new Watchdog(db)
+  watchdog.run
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -79,29 +80,51 @@ class Server {
 
     // BREACH TXS
 
-    // If they try to supply too much data
+    // If they try to supply way too much data
     case req @ POST -> Root / "tx" / "breach" / _
-      if req.params("watch").length > 1024 =>
+      if req.params("watch").length > 2048 =>
       Ok apply error("toobig")
 
-    // Record a tx to be broadcasted in case of channel breach
-    case req @ POST -> Root / "tx" / "breach" / "token" => check(req.params) {
-      db putWatchdogTx toClass[WatchdogTx](req.params andThen hex2Json apply "watch")
+    // Record a transaction to be broadcasted in case of channel breach
+    case req @ POST -> Root / "token" / "tx" / "breach" => ifToken(req.params) {
+      db putWatchdogTx toClass[WatchdogTx](req.params andThen hex2Json apply "data")
       Ok apply okSingle("done")
     }
 
     // Same as above but without blind sigs
-    case req @ POST -> Root / "tx" / "breach" / "sig" =>
-      val Seq(watch, sig, prefix) = extract(req.params, identity, "watch", "sig", "prefix")
-      val isValidSig = txSigChecker.check(HEX decode watch, HEX decode sig, prefix)
-      val watchdogTx = hex2Json andThen toClass[WatchdogTx] apply watch
-      if (isValidSig) db putWatchdogTx watchdogTx
-      if (isValidSig) Ok apply okSingle("done")
-      else Ok apply error("wrongsig")
+    case req @ POST -> Root / "sig" / "tx" / "breach" => ifSig(req.params) {
+      db putWatchdogTx toClass[WatchdogTx](req.params andThen hex2Json apply "data")
+      Ok apply okSingle("done")
+    }
+
+    // Checking if signature based authentication works
+    case req @ POST -> Root / "sig" / "check" => ifSig(req.params) {
+      // Will be used once user adds a server address in wallet, just ok
+      Ok apply okSingle("done")
+    }
+
+    // DATA STORAGE
+
+    // Short keys are reserved
+    case req @ POST -> Root / "data" / "put"
+      if req.params("key").length < 20 =>
+      Ok apply error("tooshort")
+
+    case req @ POST -> Root / "data" / "put" => ifToken(req.params) {
+      // Reqrites user's channel data, can be used for general purposes
+      db.putGeneralData(req params "key", req params "data")
+      Ok apply okSingle("done")
+    }
+
+    case req @ POST -> Root / "data" / "get" =>
+      db.getGeneralData(key = req params "key") match {
+        case Some(realData) => Ok apply okSingle(realData)
+        case None => Ok apply error("notfound")
+      }
   }
 
   // Checking clear token validity before proceeding
-  def check(params: HttpParams)(next: => TaskResponse) = {
+  def ifToken(params: HttpParams)(next: => TaskResponse) =  {
     val Seq(point, sig, token) = extract(params, identity, "point", "clearsig", "cleartoken")
     val sigIsFine = blindTokens.signer.verifyClearSig(clearMessage = new BigInteger(token),
       clearSignature = new BigInteger(sig), point = blindTokens decodeECPoint point)
@@ -109,6 +132,13 @@ class Server {
     if (db isClearTokenUsed token) Ok apply error("tokenused")
     else if (!sigIsFine) Ok apply error("tokeninvalid")
     else try next finally db putClearToken token
+  }
+
+  // Checking signature validity before proceeding
+  def ifSig(params: HttpParams)(next: => TaskResponse) = {
+    val Seq(data, sig, prefix) = extract(params, identity, "data", "sig", "prefix")
+    val isValidSignature = txSigChecker.check(msg = data, sig, prefix)
+    if (isValidSignature) next else Ok apply error("errsig")
   }
 
   // HTTP answer as JSON array

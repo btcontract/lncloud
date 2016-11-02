@@ -18,9 +18,9 @@ abstract class Database {
   def setWatchdogTxSpent(parentTxId: String)
   def getWatchdogTxs(txIds: ListStr): List[WatchdogTx]
 
-  // Watchdog height memo
-  def putLastBlockHeight(height: Int)
-  def getLastBlockHeight: Option[Int]
+  // Channel recovery info and misc
+  def putGeneralData(key: String, value: String)
+  def getGeneralData(key: String): Option[String]
 }
 
 class MongoDatabase extends Database {
@@ -60,7 +60,10 @@ class MongoDatabase extends Database {
     iterator.toList
   }
 
-  // Watchdog height memo
-  def putLastBlockHeight(height: Int) = mongo("blockHeight").insert(MongoDBObject("height" -> height), WriteConcern.Safe)
-  def getLastBlockHeight = mongo("blockHeight").findOne("height" $gt 0, MongoDBObject.empty, "height" $eq 1).map(_ as[Int] "height")
+  // Channel recovery info and misc
+  def putGeneralData(key: String, value: String) = mongo("generalData").update("key" $eq key,
+    $set("key" -> key, "value" -> value), upsert = true, multi = false, WriteConcern.Safe)
+
+  def getGeneralData(key: String) = mongo("generalData")
+    .findOne("key" $eq key).map(_ as[String] "value")
 }

@@ -16,10 +16,12 @@ import java.net.ConnectException
 
 
 class Watchdog(db: Database) { me =>
-  def connectError = "Can't connect to Bitcoin node"
-  def breachError = s"Can't process breach tx, last processed block is ${db.getLastBlockHeight}"
-  def blocks = bitcoin.getBlockCount match { case lst => db.getLastBlockHeight.getOrElse(lst - 720) - 6 to lst }
+  def getLastBlockHeight = db.getGeneralData("lastBlockHeight").map(_.toInt)
+  def putLastBlockHeight(height: Int) = db.putGeneralData("lastBlockHeight", height.toString)
+  def blocks = bitcoin.getBlockCount match { case lst => me.getLastBlockHeight.getOrElse(lst - 720) - 6 to lst }
   def block2PrefixKey(block: Block) = for (txId <- block.tx.asScala) yield txId.take(16) -> HEX.decode(txId drop 16)
+  def breachError = s"Can't process breach tx, last processed block is ${me.getLastBlockHeight}"
+  def connectError = "Can't connect to Bitcoin node"
 
   def publishTxs(block: Block) = {
     val prefixKey = block2PrefixKey(block).toMap
@@ -35,7 +37,7 @@ class Watchdog(db: Database) { me =>
 
   // For n last blocks, take all the txid from each block and try to find matching breaches in a database
   def run = Obs.interval(10.seconds).zip(obsOn(blocks, IOScheduler.apply) flatMap Obs.just).map(bitcoin getBlock _._2)
-    .doOnCompleted(db putLastBlockHeight bitcoin.getBlockCount).doOnCompleted(logger info "Breach watch done")
+    .doOnCompleted(me putLastBlockHeight bitcoin.getBlockCount).doOnCompleted(logger info "Breach watch DONE")
     .doOnError(err => logger info s"Breach watch FAILED: $err").repeatWhen(_ delay 5.minutes)
     .retryWhen(_ delay 5.minutes).subscribe(publishTxs _)
 }
