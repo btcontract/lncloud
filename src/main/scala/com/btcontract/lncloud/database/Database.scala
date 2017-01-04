@@ -2,7 +2,7 @@ package com.btcontract.lncloud.database
 
 import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
-import com.btcontract.lncloud.Utils.ListStr
+import language.implicitConversions
 import java.util.Date
 
 
@@ -13,14 +13,9 @@ abstract class Database {
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
 
-  // Watchdog encrypted txs
-  def putWatchdogTx(watch: WatchdogTx)
-  def setWatchdogTxSpent(parentTxId: String)
-  def getWatchdogTxs(txIds: ListStr): List[WatchdogTx]
-
   // Channel recovery info and misc
-  def putGeneralData(key: String, value: String)
   def getGeneralData(key: String): Option[String]
+  def putGeneralData(key: String, value: String)
 }
 
 class MongoDatabase extends Database {
@@ -44,26 +39,8 @@ class MongoDatabase extends Database {
   def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
   def putClearToken(clear: String) = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
 
-  // Watchdog encrypted txs
-  def putWatchdogTx(watch: WatchdogTx) =
-    mongo("watchTxs").update("prefix" $eq watch.prefix, $set("prefix" -> watch.prefix,
-      "txEnc" -> watch.txEnc, "iv" -> watch.iv, "spent" -> false, "date" -> new Date),
-      upsert = true, multi = false, WriteConcern.Safe)
-
-  def setWatchdogTxSpent(prefix: String) =
-    mongo("watchTxs").update("prefix" $eq prefix, $set("spent" -> true),
-      upsert = true, multi = false, WriteConcern.Unacknowledged)
-
-  def getWatchdogTxs(prefixes: ListStr) = {
-    def toWatchTx(res: DBObject) = WatchdogTx(res get "prefix", res get "txEnc", res get "iv")
-    val iterator = mongo("watchTxs") find $and("prefix" $in prefixes, "spent" $eq false) map toWatchTx
-    iterator.toList
-  }
-
   // Channel recovery info and misc
-  def putGeneralData(key: String, value: String) = mongo("generalData").update("key" $eq key,
+  def getGeneralData(key: String) = mongo("generalData").findOne("key" $eq key).map(_ as[String] "value")
+  def putGeneralData(key: String, value: String): Unit = mongo("generalData").update("key" $eq key,
     $set("key" -> key, "value" -> value), upsert = true, multi = false, WriteConcern.Safe)
-
-  def getGeneralData(key: String) = mongo("generalData")
-    .findOne("key" $eq key).map(_ as[String] "value")
 }

@@ -1,10 +1,12 @@
 package com.btcontract.lncloud
 
 import org.json4s.jackson.JsonMethods._
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import com.btcontract.lncloud.Utils.{Bytes, ListStr}
 import com.btcontract.lncloud.crypto.{AES, RandomGenerator}
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
+import language.implicitConversions
 import org.bitcoinj.core.Utils.HEX
 import org.slf4j.LoggerFactory
 import java.math.BigInteger
@@ -18,6 +20,7 @@ object Utils {
   implicit val formats = org.json4s.DefaultFormats
   lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
   val hex2Json = (raw: String) => new String(HEX decode raw, "UTF-8")
+  val params = org.bitcoinj.params.TestNet3Params.get
   val logger = LoggerFactory getLogger "LNCloud"
   val rand = new RandomGenerator
   val oneHour = 3600000
@@ -39,12 +42,6 @@ case class BlindData(tokens: Seq[String], rval: String, k: String) {
   val kBigInt = new BigInteger(k)
 }
 
-// Prefix is first 16 bytes of txId, suffix is last 16 bytes
-case class WatchdogTx(prefix: String, txEnc: String, iv: String) {
-  def decodeTx(suffix: Bytes) = AES.dec(HEX decode txEnc, suffix, HEX decode iv)
-}
-
-case class MSat(amt: Long)
-case class Invoice(message: Option[String], amount: MSat, node: String, rHash: Bytes)
-case class Vals(privKey: BigInteger, pubKeys: ListStr, price: MSat, quantity: Int, rpcUrl: String)
+case class Invoice(message: Option[String], sum: MilliSatoshi, node: BinaryData, paymentHash: BinaryData)
+case class Vals(privKey: BigInt, pubKeys: ListStr, price: MilliSatoshi, quantity: Int, rpcUrl: String)
 case class CacheItem[T](data: T, stamp: Long)

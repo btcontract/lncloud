@@ -3,12 +3,12 @@ package com.btcontract.lncloud
 import Utils._
 import org.http4s.dsl._
 import org.http4s.{HttpService, Response}
-
 import com.btcontract.lncloud.database.MongoDatabase
 import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
 import org.json4s.jackson.Serialization
+import fr.acinq.bitcoin.MilliSatoshi
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
@@ -24,15 +24,15 @@ object LNCloud extends App {
     case Array("generateConfig") =>
       val testKeys = new ECKey(rand).getPublicKeyAsHex :: Nil
       val btcRpc = "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332"
-      val config = Vals(privKey = new ECKey(rand).getPrivKey, testKeys, MSat(50000), quantity = 100, btcRpc)
+      val config = Vals(new ECKey(rand).getPrivKey, testKeys, MilliSatoshi(500000), quantity = 100, btcRpc)
 
       // Print out an example
       println(Serialization write config)
 
     case /*Array(config)*/ _ =>
-      val testKey = "022717bbe78bf577c516ac27ab15f85d1ba189725beb4181ddb3049ad5c5837251"
+      val testKey = "0213feda60268053e5fd8aff92f9f9934a51264d0caaf3d883b9d633770fa1b2d9"
       val btcRpc = "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332"
-      val config = Vals(privKey = new ECKey(rand).getPrivKey, List(testKey), MSat(50000), quantity = 100, btcRpc)
+      val config = Vals(new ECKey(rand).getPrivKey, List(testKey), MilliSatoshi(500000), quantity = 200, btcRpc)
 
       values = config /*toClass[Vals](config)*/
       val socketAndHttpLnCloudServer = new Server
@@ -48,8 +48,6 @@ class Server {
   val db = new MongoDatabase
   private val txSigChecker = new TxSigChecker
   private val blindTokens = new BlindTokens(db)
-  private val watchdog = new Watchdog(db)
-  watchdog.run
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -81,37 +79,35 @@ class Server {
     // BREACH TXS
 
     // If they try to supply way too much data
-    case req @ POST -> Root / "tx" / "breach" / _
+    case req @ POST -> Root / _ / "tx" / "breach"
       if req.params("watch").length > 2048 =>
       Ok apply error("toobig")
 
     // Record a transaction to be broadcasted in case of channel breach
     case req @ POST -> Root / "token" / "tx" / "breach" => ifToken(req.params) {
-      db putWatchdogTx toClass[WatchdogTx](req.params andThen hex2Json apply "data")
-      Ok apply okSingle("done")
-    }
-
-    // Same as above but without blind sigs
-    case req @ POST -> Root / "sig" / "tx" / "breach" => ifSig(req.params) {
-      db putWatchdogTx toClass[WatchdogTx](req.params andThen hex2Json apply "data")
-      Ok apply okSingle("done")
-    }
-
-    // Checking if signature based authentication works
-    case req @ POST -> Root / "sig" / "check" => ifSig(req.params) {
-      // Will be used once user adds a server address in wallet, just ok
       Ok apply okSingle("done")
     }
 
     // DATA STORAGE
 
-    // Short keys are reserved
-    case req @ POST -> Root / "data" / "put"
-      if req.params("key").length < 20 =>
+    // Short keys are reserved for system uses
+    case req @ POST -> Root / _ / "data" / "put"
+      if req.params("data").length < 20 =>
       Ok apply error("tooshort")
 
-    case req @ POST -> Root / "data" / "put" => ifToken(req.params) {
-      // Reqrites user's channel data, can be used for general purposes
+    // If they try to supply way too much data
+    case req @ POST -> Root / _ / "data" / "put"
+      if req.params("data").length > 2048 =>
+      Ok apply error("toobig")
+
+    case req @ POST -> Root / "token" / "data" / "put" => ifToken(req.params) {
+      // Rewrites user's channel data, but also can be used for general purposes
+      db.putGeneralData(req params "key", req params "data")
+      Ok apply okSingle("done")
+    }
+
+    case req @ POST -> Root / "sig" / "data" / "put" => ifSig(req.params) {
+      // Rewrites user's channel data, but also can be used for general purposes
       db.putGeneralData(req params "key", req params "data")
       Ok apply okSingle("done")
     }
@@ -137,8 +133,13 @@ class Server {
   // Checking signature validity before proceeding
   def ifSig(params: HttpParams)(next: => TaskResponse) = {
     val Seq(data, sig, prefix) = extract(params, identity, "data", "sig", "prefix")
-    val isValidSignature = txSigChecker.check(msg = data, sig, prefix)
-    if (isValidSignature) next else Ok apply error("errsig")
+    val isValidOpt = txSigChecker.check(HEX decode data, HEX decode sig, prefix)
+
+    isValidOpt match {
+      case None => Ok apply error("errkey")
+      case Some(false) => Ok apply error("errsig")
+      case Some(true) => next
+    }
   }
 
   // HTTP answer as JSON array

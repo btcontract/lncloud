@@ -40,8 +40,8 @@ class ECBlindSign(masterPriv: BigInteger) {
 }
 
 // We blind messages but unblind their signatures
-case class BlindParam(blindPubKey: ECPoint, a: BigInteger, b: BigInteger, c: BigInteger, bInv: BigInteger) {
+case class BlindParam(point: ECPoint, a: BigInteger, b: BigInteger, c: BigInteger, bInv: BigInteger) {
   def blind(msg: BigInteger) = b.multiply(keyBigInt mod ECKey.CURVE.getN).multiply(msg).add(a) mod ECKey.CURVE.getN
   def unblind(sigHat: BigInteger) = bInv.multiply(sigHat).add(c) mod ECKey.CURVE.getN
-  def keyBigInt = blindPubKey.getAffineXCoord.toBigInteger
+  def keyBigInt = point.getAffineXCoord.toBigInteger
 }
