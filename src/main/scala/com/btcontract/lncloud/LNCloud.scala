@@ -63,17 +63,17 @@ class Server {
 
       maybeInvoice match {
         case Some(future) => Ok(future map okSingle)
-        case None => Ok apply error("notfound")
+        case _ => Ok apply error("notfound")
       }
 
     // Provide signed blind tokens
     case req @ POST -> Root / "blindtokens" / "redeem" =>
-      val Seq(rVal, sesKey) = extract(req.params, identity, "rval", "seskey")
+      val Seq(rVal, sesKey) = extract(req.params, identity, "preimage", "seskey")
       val maybeBlindTokens = blindTokens.redeemTokens(rVal, sesKey)
 
       maybeBlindTokens match {
         case Some(tokens) => Ok apply ok(tokens:_*)
-        case None => Ok apply error("notfound")
+        case _ => Ok apply error("notfound")
       }
 
     // BREACH TXS
@@ -89,11 +89,6 @@ class Server {
     }
 
     // DATA STORAGE
-
-    // Short keys are reserved for system uses
-    case req @ POST -> Root / _ / "data" / "put"
-      if req.params("data").length < 20 =>
-      Ok apply error("tooshort")
 
     // If they try to supply way too much data
     case req @ POST -> Root / _ / "data" / "put"
@@ -115,8 +110,12 @@ class Server {
     case req @ POST -> Root / "data" / "get" =>
       db.getGeneralData(key = req params "key") match {
         case Some(realData) => Ok apply okSingle(realData)
-        case None => Ok apply error("notfound")
+        case _ => Ok apply error("notfound")
       }
+
+    case req @ POST -> Root / "data" / "delete" =>
+      db.deleteGeneralData(req params "key")
+      Ok apply okSingle("done")
   }
 
   // Checking clear token validity before proceeding
@@ -136,9 +135,9 @@ class Server {
     val isValidOpt = txSigChecker.check(HEX decode data, HEX decode sig, prefix)
 
     isValidOpt match {
-      case None => Ok apply error("errkey")
-      case Some(false) => Ok apply error("errsig")
       case Some(true) => next
+      case Some(false) => Ok apply error("errsig")
+      case _ => Ok apply error("errkey")
     }
   }
 

@@ -36,7 +36,7 @@ object JsonHttpUtils {
     Obs.just(null).subscribeOn(scheduler).map(_ => provider)
 }
 
-case class BlindData(tokens: Seq[String], rval: String, k: String) {
+case class BlindData(tokens: Seq[String], preimage: String, k: String) {
   // tokens is a list of yet unsigned blind BigInts provided from client
   // k is session private key, a source for signerR
   val kBigInt = new BigInteger(k)

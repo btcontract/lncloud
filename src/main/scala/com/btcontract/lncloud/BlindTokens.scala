@@ -41,7 +41,7 @@ class BlindTokens(db: Database) {
 
   def getCharge(tokens: ListStr, lang: String, sesKey: String) =
     for (CacheItem(privKey, stamp) <- cache get sesKey) yield getHTLCData(values.price).map { case (nodeId, preimage) =>
-      db.putPendingTokens(data = BlindData(tokens, rval = HEX encode preimage, k = privKey.toString), sesPubKey = sesKey)
+      db.putPendingTokens(data = BlindData(tokens, preimage = HEX encode preimage, k = privKey.toString), sesPubKey = sesKey)
       Invoice(languages.get(lang) orElse languages.get("eng"), values.price, nodeId, Crypto sha256 preimage)
     }
 
