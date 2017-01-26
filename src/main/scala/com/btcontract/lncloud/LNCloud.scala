@@ -45,21 +45,27 @@ class Server {
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
 
-  val db = new MongoDatabase
+  private val db = new MongoDatabase
   private val txSigChecker = new TxSigChecker
   private val blindTokens = new BlindTokens(db)
 
   val http = HttpService {
+    // Checking if signature based authentication works
+    case req @ POST -> Root / "sig" / "check" => ifSig(req.params) {
+      // Will be used once user adds a server address in wallet, just ok
+      Ok apply okSingle("done")
+    }
+
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
-    case req @ POST -> Root / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
+    case POST -> Root / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
       Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
     }
 
-    // Record tokens to be signed and send a Charge
+    // Record tokens to be signed and send an Invoice
     case req @ POST -> Root / "blindtokens" / "buy" =>
-      val Seq(lang, sesKey, tokens) = extract(req.params, identity, "lang", "seskey", "tokens")
-      val maybeInvoice = blindTokens.getCharge(toClass[ListStr](hex2Json apply tokens), lang, sesKey)
+      val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
+      val maybeInvoice = blindTokens.getInvoice(toClass[ListStr](hex2Json apply tokens), sesKey)
 
       maybeInvoice match {
         case Some(future) => Ok(future map okSingle)
@@ -68,8 +74,8 @@ class Server {
 
     // Provide signed blind tokens
     case req @ POST -> Root / "blindtokens" / "redeem" =>
-      val Seq(rVal, sesKey) = extract(req.params, identity, "preimage", "seskey")
-      val maybeBlindTokens = blindTokens.redeemTokens(rVal, sesKey)
+      val Seq(sesKey, preImage) = extract(req.params, identity, "seskey", "preimage")
+      val maybeBlindTokens = blindTokens.redeemTokens(preImage, sesKey)
 
       maybeBlindTokens match {
         case Some(tokens) => Ok apply ok(tokens:_*)
@@ -119,10 +125,9 @@ class Server {
   }
 
   // Checking clear token validity before proceeding
-  def ifToken(params: HttpParams)(next: => TaskResponse) =  {
+  def ifToken(params: HttpParams)(next: => TaskResponse): TaskResponse =  {
     val Seq(point, sig, token) = extract(params, identity, "point", "clearsig", "cleartoken")
-    val sigIsFine = blindTokens.signer.verifyClearSig(clearMessage = new BigInteger(token),
-      clearSignature = new BigInteger(sig), point = blindTokens decodeECPoint point)
+    val sigIsFine = blindTokens.signer.verifyClearSig(token, sig, blindTokens decodeECPoint point)
 
     if (db isClearTokenUsed token) Ok apply error("tokenused")
     else if (!sigIsFine) Ok apply error("tokeninvalid")
@@ -130,7 +135,7 @@ class Server {
   }
 
   // Checking signature validity before proceeding
-  def ifSig(params: HttpParams)(next: => TaskResponse) = {
+  def ifSig(params: HttpParams)(next: => TaskResponse): TaskResponse = {
     val Seq(data, sig, prefix) = extract(params, identity, "data", "sig", "prefix")
     val isValidOpt = txSigChecker.check(HEX decode data, HEX decode sig, prefix)
 
@@ -142,7 +147,7 @@ class Server {
   }
 
   // HTTP answer as JSON array
-  def okSingle(data: Any) = ok(data)
-  def ok(data: Any*) = Serialization write "ok" +: data
-  def error(data: Any*) = Serialization write "error" +: data
+  def okSingle(data: Any): String = ok(data)
+  def ok(data: Any*): String = Serialization write "ok" +: data
+  def error(data: Any*): String = Serialization write "error" +: data
 }
