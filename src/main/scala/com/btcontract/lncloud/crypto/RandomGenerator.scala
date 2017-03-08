@@ -9,14 +9,14 @@ class RandomGenerator extends SecureRandom {
   setSeed(System.currentTimeMillis)
   setSeed(nextInt)
 
-  def getBytes(size: Int) = {
-    val array = new Bytes(size)
-    super.nextBytes(array)
-    array
+  def getBytes(size: Int): Bytes = {
+    val temporaryBuffer = new Bytes(size)
+    super.nextBytes(temporaryBuffer)
+    temporaryBuffer
   }
 
-  override def nextInt = {
-    val tmpBuffer = getBytes(4)
+  override def nextInt: Int = {
+    val tmpBuffer = getBytes(size = 4)
     val x1 = (tmpBuffer(0) & 0xff) << 24
     val x2 = (tmpBuffer(1) & 0xff) << 16
     val x3 = (tmpBuffer(2) & 0xff) << 8

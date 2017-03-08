@@ -1,8 +1,8 @@
 package com.btcontract.lncloud.crypto
 
-import com.btcontract.lncloud.Utils.rand
+import org.bitcoinj.core.ECKey.CURVE.{getN, getG}
+import com.btcontract.lncloud.Utils.{Bytes, rand}
 import org.spongycastle.math.ec.ECPoint
-import language.implicitConversions
 import org.bitcoinj.core.ECKey
 import java.math.BigInteger
 
@@ -18,12 +18,19 @@ class ECBlind(signerQ: ECPoint, signerR: ECPoint) {
     val b = new ECKey(rand).getPrivKey
     val c = new ECKey(rand).getPrivKey
 
-    val bInv = b.modInverse(ECKey.CURVE.getN)
-    val abInvQ = signerQ.multiply(a.multiply(bInv) mod ECKey.CURVE.getN)
-    val blindF = signerR.multiply(bInv).add(abInvQ).add(ECKey.CURVE.getG multiply c).normalize
-    val isZero = blindF.getAffineXCoord.isZero | blindF.getAffineYCoord.isZero
-    if (isZero) makeParams else BlindParam(blindF, a, b, c, bInv)
+    val bInv = b modInverse getN
+    val abInvQ = signerQ.multiply(a.multiply(bInv) mod getN)
+    val blindF = signerR.multiply(bInv).add(abInvQ).add(getG multiply c).normalize
+    if (blindF.getAffineXCoord.isZero | blindF.getAffineYCoord.isZero) makeParams
+    else BlindParam(blindF getEncoded true, a, b, c, bInv)
   }
+}
+
+// We blind messages but unblind their signatures
+case class BlindParam(point: Bytes, a: BigInteger, b: BigInteger, c: BigInteger, bInv: BigInteger) {
+  def blind(msg: BigInteger): BigInteger = b.multiply(keyBigInt mod getN).multiply(msg).add(a) mod getN
+  def keyBigInt: BigInteger = ECKey.CURVE.getCurve.decodePoint(point).getAffineXCoord.toBigInteger
+  def unblind(sigHat: BigInteger): BigInteger = bInv.multiply(sigHat).add(c) mod getN
 }
 
 // masterPub is signerQ
@@ -38,11 +45,4 @@ class ECBlindSign(masterPriv: BigInteger) {
     val rm = point.getAffineXCoord.toBigInteger mod ECKey.CURVE.getN multiply clearMsg mod ECKey.CURVE.getN
     ECKey.CURVE.getG.multiply(clearSignature) == masterPrivECKey.getPubKeyPoint.multiply(rm).add(point)
   }
-}
-
-// We blind messages but unblind their signatures
-case class BlindParam(point: ECPoint, a: BigInteger, b: BigInteger, c: BigInteger, bInv: BigInteger) {
-  def blind(msg: BigInteger): BigInteger = b.multiply(keyBigInt mod ECKey.CURVE.getN).multiply(msg).add(a) mod ECKey.CURVE.getN
-  def unblind(sigHat: BigInteger): BigInteger = bInv.multiply(sigHat).add(c) mod ECKey.CURVE.getN
-  def keyBigInt: BigInteger = point.getAffineXCoord.toBigInteger
 }

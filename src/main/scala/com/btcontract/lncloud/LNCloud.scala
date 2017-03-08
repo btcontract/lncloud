@@ -1,69 +1,53 @@
 package com.btcontract.lncloud
 
 import Utils._
+import com.btcontract.lncloud.ln.wire.Codecs.{PaymentRoute, announcements, hops}
+import com.btcontract.lncloud.router.Router
 import org.http4s.dsl._
 import org.http4s.{HttpService, Response}
-import com.btcontract.lncloud.database.MongoDatabase
+import org.http4s.server.{Server, ServerApp}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, string2binaryData}
+import collection.JavaConverters._
 import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
 import org.json4s.jackson.Serialization
-import fr.acinq.bitcoin.MilliSatoshi
-import org.bitcoinj.core.Utils.HEX
+import scodec.Attempt.Successful
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
-import java.math.BigInteger
+import database.MongoDatabase
 
 
-object LNCloud extends App {
-  // Config should be provided via console call,
-  // don't forget to add space before command
-  // to disable history
+object LNCloud extends ServerApp {
+  type ProgramArguments = List[String]
+  def server(args: ProgramArguments): Task[Server] = {
+    val config = Vals(new ECKey(rand).getPrivKey, MilliSatoshi(500000), 100,
+      "http://user:password@127.0.0.1:8332", "tcp://127.0.0.1:28332", 144)
 
-  args match {
-    case Array("generateConfig") =>
-      val testKeys = new ECKey(rand).getPublicKeyAsHex :: Nil
-      val btcRpc = "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332"
-      val config = Vals(new ECKey(rand).getPrivKey, testKeys, MilliSatoshi(500000), quantity = 100, btcRpc)
-
-      // Print out an example
-      println(Serialization write config)
-
-    case /*Array(config)*/ _ =>
-      val testKey = "0213feda60268053e5fd8aff92f9f9934a51264d0caaf3d883b9d633770fa1b2d9"
-      val btcRpc = "http://bitcoinrpc:4T2C2oDSMiuQvYHhyRNjU5japkyYrYTASBbJpyY38FSZ@127.0.0.1:8332"
-      val config = Vals(new ECKey(rand).getPrivKey, List(testKey), MilliSatoshi(500000), quantity = 200, btcRpc)
-
-      values = config /*toClass[Vals](config)*/
-      val socketAndHttpLnCloudServer = new Server
-      val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
-      BlazeBuilder.bindHttp(9002).mountService(postLift).run.awaitShutdown
+    values = config /*toClass[Vals](config)*/
+    val socketAndHttpLnCloudServer = new Responder
+    val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
+    BlazeBuilder.bindHttp(9002).mountService(postLift).start
   }
 }
 
-class Server {
+class Responder {
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
 
-  private val db = new MongoDatabase
-  private val txSigChecker = new TxSigChecker
+  private val db: MongoDatabase = null// = new MongoDatabase
   private val blindTokens = new BlindTokens(db)
+  private val V1 = Root / "v1"
 
   val http = HttpService {
-    // Checking if signature based authentication works
-    case req @ POST -> Root / "sig" / "check" => ifSig(req.params) {
-      // Will be used once user adds a server address in wallet, just ok
-      Ok apply okSingle("done")
-    }
-
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
-    case POST -> Root / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
+    case POST -> V1 / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
       Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
     }
 
-    // Record tokens to be signed and send an Invoice
-    case req @ POST -> Root / "blindtokens" / "buy" =>
+    // Record tokens and send an Invoice
+    case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
       val maybeInvoice = blindTokens.getInvoice(toClass[ListStr](hex2Json apply tokens), sesKey)
 
@@ -73,11 +57,11 @@ class Server {
       }
 
     // Provide signed blind tokens
-    case req @ POST -> Root / "blindtokens" / "redeem" =>
+    case req @ POST -> V1 / "blindtokens" / "redeem" =>
       val Seq(sesKey, preImage) = extract(req.params, identity, "seskey", "preimage")
-      val maybeBlindTokens = blindTokens.redeemTokens(preImage, sesKey)
+      val maybeBlindSignatures = blindTokens.redeemTokens(preImage, sesKey)
 
-      maybeBlindTokens match {
+      maybeBlindSignatures match {
         case Some(tokens) => Ok apply ok(tokens:_*)
         case _ => Ok apply error("notfound")
       }
@@ -85,43 +69,68 @@ class Server {
     // BREACH TXS
 
     // If they try to supply way too much data
-    case req @ POST -> Root / _ / "tx" / "breach"
+    case req @ POST -> V1 / "token" / "tx" / "breach"
       if req.params("watch").length > 2048 =>
       Ok apply error("toobig")
 
     // Record a transaction to be broadcasted in case of channel breach
-    case req @ POST -> Root / "token" / "tx" / "breach" => ifToken(req.params) {
+    case req @ POST -> V1 / "token" / "tx" / "breach" => ifToken(req.params) {
       Ok apply okSingle("done")
     }
 
     // DATA STORAGE
 
     // If they try to supply way too much data
-    case req @ POST -> Root / _ / "data" / "put"
+    case req @ POST -> V1 / "token" / "data" / "put"
       if req.params("data").length > 2048 =>
       Ok apply error("toobig")
 
-    case req @ POST -> Root / "token" / "data" / "put" => ifToken(req.params) {
+    case req @ POST -> V1 / "token" / "data" / "put" => ifToken(req.params) {
       // Rewrites user's channel data, but also can be used for general purposes
       db.putGeneralData(req params "key", req params "data")
       Ok apply okSingle("done")
     }
 
-    case req @ POST -> Root / "sig" / "data" / "put" => ifSig(req.params) {
-      // Rewrites user's channel data, but also can be used for general purposes
-      db.putGeneralData(req params "key", req params "data")
-      Ok apply okSingle("done")
-    }
-
-    case req @ POST -> Root / "data" / "get" =>
+    case req @ POST -> V1 / "data" / "get" =>
       db.getGeneralData(key = req params "key") match {
         case Some(realData) => Ok apply okSingle(realData)
         case _ => Ok apply error("notfound")
       }
 
-    case req @ POST -> Root / "data" / "delete" =>
+    case req @ POST -> V1 / "data" / "delete" =>
       db.deleteGeneralData(req params "key")
       Ok apply okSingle("done")
+
+    // ROUTER DATA
+
+    case req @ POST -> V1 / "router" / "routes" =>
+      val routes: Seq[PaymentRoute] = Router.finder.findRoutes(req params "from", req params "to")
+      val data = routes map hops.encode collect { case Successful(bv) => bv.toHex }
+      Ok apply ok(data:_*)
+
+    case POST -> V1 / "router" / "nodes" / "list" =>
+      val nodes = Router.nodes.id2Node.values take 20
+      val result = announcements encode nodes.toList
+
+      result match {
+        case Successful(bv) => Ok apply ok(bv.toHex)
+        case _ => Ok apply error("notfound")
+      }
+
+    case req @ POST -> V1 / "router" / "nodes" / "find" =>
+      val query = req.params("query").trim.take(50).toLowerCase
+      val nodes = Router.nodes.searchTree getValuesForKeysStartingWith query
+      val result = announcements encode nodes.asScala.toList.take(20)
+
+      result match {
+        case Successful(bv) => Ok apply ok(bv.toHex)
+        case _ => Ok apply error("notfound")
+      }
+
+    // NEW VERSION WARNING
+
+    case POST -> Root / "v2" / _ =>
+      Ok apply error("mustupdate")
   }
 
   // Checking clear token validity before proceeding
@@ -132,18 +141,6 @@ class Server {
     if (db isClearTokenUsed token) Ok apply error("tokenused")
     else if (!sigIsFine) Ok apply error("tokeninvalid")
     else try next finally db putClearToken token
-  }
-
-  // Checking signature validity before proceeding
-  def ifSig(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-    val Seq(data, sig, prefix) = extract(params, identity, "data", "sig", "prefix")
-    val isValidOpt = txSigChecker.check(HEX decode data, HEX decode sig, prefix)
-
-    isValidOpt match {
-      case Some(true) => next
-      case Some(false) => Ok apply error("errsig")
-      case _ => Ok apply error("errkey")
-    }
   }
 
   // HTTP answer as JSON array
