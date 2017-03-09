@@ -103,6 +103,14 @@ class Responder {
 
     // ROUTER DATA
 
+    case req @ POST -> V1 / "router" / "routes"
+      if Router.black.contains(req params "from") =>
+      Ok apply error("from-blacklisted")
+
+    case req @ POST -> V1 / "router" / "routes"
+      if Router.channels.nodeId2Chans(req params "to").isEmpty =>
+      Ok apply error("to-unreachable")
+
     case req @ POST -> V1 / "router" / "routes" =>
       val routes: Seq[PaymentRoute] = Router.finder.findRoutes(req params "from", req params "to")
       val data = routes map hops.encode collect { case Successful(bv) => bv.toHex }

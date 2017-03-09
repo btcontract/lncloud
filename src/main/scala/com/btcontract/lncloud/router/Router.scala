@@ -22,14 +22,14 @@ import scala.collection.mutable
 
 
 object Router { me =>
-  private val black = new ConcurrentSkipListSet[BinaryData].asScala
+  val black = new ConcurrentSkipListSet[BinaryData].asScala
   private val stash = new ConcurrentSkipListSet[RoutingMessage].asScala
   private val awaits = new ConcurrentSkipListSet[ChannelAnnouncement].asScala
   private val updates = new ConcurrentHashMap[ChanDirection, ChannelUpdate].asScala
   implicit def binData2PublicKey(data: BinaryData): PublicKey = PublicKey(data)
 
   private val expiration = 86400 * 1000 * 7 * 4
-  private val channels = new ChannelsWrapper
+  val channels = new ChannelsWrapper
   var finder = new GraphWrapper
   val nodes = new NodesWrapper
 
@@ -91,9 +91,8 @@ object Router { me =>
   }
 
   class NodesWrapper {
-    private val fac = new DefaultCharArrayNodeFactory
     val searchTree: ConcurrentRadixTree[NodeAnnouncement] =
-      new ConcurrentRadixTree[NodeAnnouncement](fac)
+      new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
 
     val id2Node: mutable.Map[BinaryData, NodeAnnouncement] =
       new ConcurrentHashMap[BinaryData, NodeAnnouncement].asScala
