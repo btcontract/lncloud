@@ -22,10 +22,10 @@ import scala.collection.mutable
 
 
 object Router { me =>
-  val black = new ConcurrentSkipListSet[BinaryData].asScala
   private val stash = new ConcurrentSkipListSet[RoutingMessage].asScala
   private val awaits = new ConcurrentSkipListSet[ChannelAnnouncement].asScala
   private val updates = new ConcurrentHashMap[ChanDirection, ChannelUpdate].asScala
+  val black: mutable.Set[BinaryData] = new ConcurrentSkipListSet[BinaryData].asScala
   implicit def binData2PublicKey(data: BinaryData): PublicKey = PublicKey(data)
 
   private val expiration = 86400 * 1000 * 7 * 4
@@ -50,8 +50,9 @@ object Router { me =>
         ChanDirection](defaultDirectedGraph)
     }
 
+    // Allow maximum of 5 hops for now
     def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] =
-      for (foundPath <- graph.getAllPaths(from, to, true, 8).asScala) yield
+      for (foundPath <- graph.getAllPaths(from, to, true, 5).asScala) yield
         for (dir <- foundPath.getEdgeList.asScala.toList) yield
           Hop(updates(dir), dir.from, dir.to)
   }
@@ -68,14 +69,6 @@ object Router { me =>
     val txId2Info: mutable.Map[BinaryData, ChanInfo] =
       new ConcurrentHashMap[BinaryData, ChanInfo].asScala
 
-    def add(info: ChanInfo): Unit = {
-      // Record multiple mappings for various queries
-      nodeId2Chans(info.ca.nodeId1) += info.ca.shortChannelId
-      nodeId2Chans(info.ca.nodeId2) += info.ca.shortChannelId
-      chanId2Info(info.ca.shortChannelId) = info
-      txId2Info(info.txid) = info
-    }
-
     def rm(info: ChanInfo): Unit = {
       val node1Chans = nodeId2Chans(info.ca.nodeId1) - info.ca.shortChannelId
       val node2Chans = nodeId2Chans(info.ca.nodeId2) - info.ca.shortChannelId
@@ -83,6 +76,14 @@ object Router { me =>
       if (node2Chans.isEmpty) nodeId2Chans remove info.ca.nodeId2 else nodeId2Chans(info.ca.nodeId2) = node2Chans
       chanId2Info remove info.ca.shortChannelId
       txId2Info remove info.txid
+    }
+
+    def add(info: ChanInfo): Unit = {
+      // Record multiple mappings for various queries
+      nodeId2Chans(info.ca.nodeId1) += info.ca.shortChannelId
+      nodeId2Chans(info.ca.nodeId2) += info.ca.shortChannelId
+      chanId2Info(info.ca.shortChannelId) = info
+      txId2Info(info.txid) = info
     }
 
     // Same channel with valid sigs but different node ids
@@ -97,16 +98,15 @@ object Router { me =>
     val id2Node: mutable.Map[BinaryData, NodeAnnouncement] =
       new ConcurrentHashMap[BinaryData, NodeAnnouncement].asScala
 
-    def rm(node: NodeAnnouncement): Unit = {
-      // Removes node from search and internal map
-      searchTree.remove(node.identifier)
-      id2Node.remove(node.nodeId)
-    }
+    def rm(node: NodeAnnouncement): Unit =
+      id2Node get node.nodeId foreach { found =>
+        searchTree remove found.identifier
+        id2Node remove found.nodeId
+      }
 
-    def replace(node: NodeAnnouncement): Unit = {
-      for (oldNode <- id2Node get node.nodeId) rm(oldNode)
-      searchTree.put(node.identifier, node)
-      id2Node(node.nodeId) = node
+    def add(newAnnouncement: NodeAnnouncement): Unit = {
+      searchTree.put(newAnnouncement.identifier, newAnnouncement)
+      id2Node(newAnnouncement.nodeId) = newAnnouncement
     }
   }
 
@@ -133,7 +133,14 @@ object Router { me =>
     case node: NodeAnnouncement if channels.nodeId2Chans(node.nodeId).isEmpty => logger info s"Ignoring node without channels $node"
     case node: NodeAnnouncement if nodes.id2Node.get(node.nodeId).exists(_.timestamp >= node.timestamp) => logger info s"Ignoring outdated $node"
     case node: NodeAnnouncement if !Announcements.checkSig(node) => logger info s"Ignoring invalid signatures $node"
-    case node: NodeAnnouncement => nodes replace node
+    case node: NodeAnnouncement if Features.channelPublic(node.features) == Features.Unset => nodes rm node
+
+    case node: NodeAnnouncement =>
+      // Might be a new one or an update
+      // with a new alias so should replace
+
+      nodes rm node
+      nodes add node
 
     case cu: ChannelUpdate if awaits.nonEmpty => stash add cu
     case cu: ChannelUpdate if cu.flags.data.size != 2 => logger info s"Ignoring invalid flags length ${cu.flags.data.size}"

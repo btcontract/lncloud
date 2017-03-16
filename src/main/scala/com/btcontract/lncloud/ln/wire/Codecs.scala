@@ -157,7 +157,6 @@ object Codecs { me =>
     (binarydata(32) withContext "channelId") ::
       (varsizebinarydata withContext "data")
 
-
   private val openChannel =
     (binarydata(32) withContext "temporaryChannelId") ::
       (uint64 withContext "fundingSatoshis") ::
@@ -229,7 +228,7 @@ object Codecs { me =>
   private val updateFailHtlc =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "id") ::
-      (binarydata(154) withContext "reason")
+      (varsizebinarydata withContext "reason")
 
   private val commitSig =
     (binarydata(32) withContext "channelId") ::
@@ -297,9 +296,8 @@ object Codecs { me =>
       (binarydata(33) withContext "nodeId") ::
       (binarydata(33) withContext "nextNodeId")
 
-  private val nodeAnnouncementCodec =
-    nodeAnnouncement.as[NodeAnnouncement]
-
+  val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
+  private val nodeAnnouncementCodec = nodeAnnouncement.as[NodeAnnouncement]
   private val hopCodec = hop.as[Hop]
 
   val lightningMessageCodec =
@@ -321,7 +319,7 @@ object Codecs { me =>
       .typecase(cr = updateFee.as[UpdateFee], tag = 134)
       .typecase(cr = channelAnnouncement.as[ChannelAnnouncement], tag = 256)
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
-      .typecase(cr = channelUpdate.as[ChannelUpdate], tag = 258)
+      .typecase(cr = channelUpdateCodec, tag = 258)
       .typecase(cr = announcementSignatures.as[AnnouncementSignatures], tag = 259)
 
   val perHopPayload =

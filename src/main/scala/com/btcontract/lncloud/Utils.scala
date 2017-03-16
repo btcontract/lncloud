@@ -60,6 +60,32 @@ object JsonHttpUtils {
     obs.retryWhen(_.zipWith(Obs from times)(pick) flatMap Obs.timer)
 }
 
+object Features {
+  sealed trait FeatureFlag
+  case object Unset extends FeatureFlag
+  case object Mandatory extends FeatureFlag
+  case object Optional extends FeatureFlag
+
+  def readFeature(features: BinaryData, mandatory: Int): FeatureFlag = {
+    require(mandatory % 2 == 0, "Mandatory feature index bit must be even")
+    val bitset = java.util.BitSet.valueOf(features)
+    val optional = bitset.get(mandatory + 1)
+    val obligatory = bitset.get(mandatory)
+
+    val notBothAtOnce = !(optional & obligatory)
+    require(notBothAtOnce, s"Both feature bits set at index=$mandatory")
+    if (obligatory) Mandatory else if (optional) Optional else Unset
+  }
+
+  def channelPublic(features: BinaryData): FeatureFlag = readFeature(features, 0)
+  def initialRoutingSync(features: BinaryData): FeatureFlag = readFeature(features, 2)
+  def areFeaturesCompatible(localLocalFeatures: BinaryData, remoteLocalFeatures: BinaryData): Boolean = {
+    val (localPublic, remotePublic) = (Features channelPublic localLocalFeatures, Features channelPublic remoteLocalFeatures)
+    val incompatible = (localPublic == Mandatory && remotePublic == Unset) || (localPublic == Unset && remotePublic == Mandatory)
+    !incompatible
+  }
+}
+
 // k is session private key, a source for signerR
 // tokens is a list of yet unsigned blind BigInts from client
 
