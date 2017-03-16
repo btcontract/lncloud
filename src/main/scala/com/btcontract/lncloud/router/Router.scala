@@ -166,12 +166,14 @@ object Router { me =>
 
     channels isBad info match {
       case None => channels add info
+
       case Some(old: ChanInfo) =>
         val compromisedNodeIds = List(old.ca.nodeId1, old.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
         complexRemove(compromisedNodeIds.flatMap(channels.nodeId2Chans).map(channels.chanId2Info):_*)
         logger info s"Compromised $info since $old exists"
         compromisedNodeIds foreach black.add
     }
+
   } catch errLog
 
   private def checkOutdated = System.currentTimeMillis match { case now =>
