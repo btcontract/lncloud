@@ -1,8 +1,8 @@
 package com.btcontract.lncloud.ln.wire
 
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import com.btcontract.lncloud.Utils.{BinaryDataList, fromShortId}
 import com.btcontract.lncloud.ln.wire.Codecs.{InetSocketAddressList, RGB}
-import com.btcontract.lncloud.Utils.BinaryDataList
 import fr.acinq.bitcoin.BinaryData
 
 
@@ -57,14 +57,23 @@ case class AnnouncementSignatures(channelId: BinaryData,
 
 case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: BinaryData, bitcoinSignature1: BinaryData,
                                bitcoinSignature2: BinaryData, shortChannelId: Long, nodeId1: BinaryData, nodeId2: BinaryData,
-                               bitcoinKey1: BinaryData, bitcoinKey2: BinaryData) extends RoutingMessage
+                               bitcoinKey1: BinaryData, bitcoinKey2: BinaryData) extends RoutingMessage {
+
+  val (blockHeight, txIndex, outputIndex) = fromShortId(shortChannelId)
+}
 
 case class NodeAnnouncement(signature: BinaryData, timestamp: Long, nodeId: BinaryData, rgbColor: RGB, alias: String,
-                            features: BinaryData, addresses: InetSocketAddressList) extends RoutingMessage
+                            features: BinaryData, addresses: InetSocketAddressList) extends RoutingMessage {
+
+  val identifier: String = s"$alias${nodeId.toString}".toLowerCase
+}
 
 case class ChannelUpdate(signature: BinaryData, shortChannelId: Long, timestamp: Long, flags: BinaryData,
                          cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long,
-                         feeProportionalMillionths: Long) extends RoutingMessage
+                         feeProportionalMillionths: Long) extends RoutingMessage {
+
+  val lastSeen: Long = System.currentTimeMillis
+}
 
 // Internal: receiving lists of lists of Hop's from a server
 case class Hop(lastUpdate: ChannelUpdate, nodeId: BinaryData, nextNodeId: BinaryData)
