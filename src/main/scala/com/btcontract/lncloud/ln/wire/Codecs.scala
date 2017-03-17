@@ -230,6 +230,12 @@ object Codecs { me =>
       (uint64 withContext "id") ::
       (varsizebinarydata withContext "reason")
 
+  private val updateFailMalformedHtlc =
+    (binarydata(32) withContext "channelId") ::
+      (uint64 withContext "id") ::
+      (binarydata(32) withContext "onionHash") ::
+      (uint16 withContext "failureCode")
+
   private val commitSig =
     (binarydata(32) withContext "channelId") ::
       (signature withContext "signature") ::
@@ -317,6 +323,7 @@ object Codecs { me =>
       .typecase(cr = commitSig.as[CommitSig], tag = 132)
       .typecase(cr = revokeAndAck.as[RevokeAndAck], tag = 133)
       .typecase(cr = updateFee.as[UpdateFee], tag = 134)
+      .typecase(cr = updateFailMalformedHtlc.as[UpdateFailMalformedHtlc], tag = 135)
       .typecase(cr = channelAnnouncement.as[ChannelAnnouncement], tag = 256)
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
       .typecase(cr = channelUpdateCodec, tag = 258)
