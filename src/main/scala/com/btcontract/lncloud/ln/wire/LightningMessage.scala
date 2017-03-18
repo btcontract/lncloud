@@ -3,6 +3,7 @@ package com.btcontract.lncloud.ln.wire
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import com.btcontract.lncloud.Utils.{BinaryDataList, fromShortId}
 import com.btcontract.lncloud.ln.wire.Codecs.{InetSocketAddressList, RGB}
+import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.TxOut
 import fr.acinq.bitcoin.BinaryData
 
 
@@ -75,6 +76,8 @@ case class ChannelUpdate(signature: BinaryData, shortChannelId: Long, timestamp:
   val lastSeen: Long = System.currentTimeMillis
 }
 
-// Internal: receiving lists of lists of Hop's from a server
+// Internal
+case class ChanInfo(txid: String, txo: TxOut, ca: ChannelAnnouncement)
+case class ChanDirection(channelId: Long, from: BinaryData, to: BinaryData)
 case class Hop(lastUpdate: ChannelUpdate, nodeId: BinaryData, nextNodeId: BinaryData)
 case class PerHopPayload(amt_to_forward: Long, outgoing_cltv_value: Int)

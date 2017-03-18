@@ -2,7 +2,7 @@ package com.btcontract.lncloud
 
 import com.btcontract.lncloud.Utils._
 import rx.lang.scala.{Observable => Obs}
-import fr.acinq.bitcoin.{Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import concurrent.ExecutionContext.Implicits.global
@@ -18,8 +18,7 @@ import java.math.BigInteger
 
 
 class BlindTokens(db: Database) {
-  type PaymentData = (Bytes, Bytes)
-  type FutureInvoice = Future[Invoice]
+  type FutureCompactInvoice = Future[String]
   type SesKeyCacheItem = CacheItem[BigInteger]
   val signer = new ECBlindSign(values.privKey.bigInteger)
   val cache: collection.concurrent.Map[String, SesKeyCacheItem] =
@@ -30,23 +29,25 @@ class BlindTokens(db: Database) {
     for (Tuple2(hex, item) <- cache if item.stamp < now - twoHours) cache remove hex
   }
 
-  def getHTLCData(price: MilliSatoshi): Future[PaymentData] = Future {
-    ("nodeId" getBytes "UTF-8", "preimage" getBytes "UTF-8")
+  def isFulfilled(paymentHash: BinaryData): Future[Boolean] = Future {
+    true
+  }
+  private def generateInvoice(price: MilliSatoshi) = Future {
+    Invoice(None, "nodeId" getBytes "UTF-8", price, "hash" getBytes "UTF-8")
   }
 
-  // If item is found, ask ln server for a payment data
-  def getInvoice(tokens: ListStr, sesKey: String): Option[FutureInvoice] =
-    for (item <- cache get sesKey) yield getHTLCData(values.price).map { case (nodeId, preimage) =>
-      db.putPendingTokens(data = BlindData(tokens, HEX encode preimage, item.data.toString), sesKey)
-      Invoice(None, values.price, nodeId, Crypto sha256 preimage)
+  // If item is found, ask an ln node for a payment data
+  def getInvoice(tokens: ListStr, sesKey: String): Option[FutureCompactInvoice] =
+    for (item <- cache get sesKey) yield generateInvoice(values.price).map { invoice =>
+      db.putPendingTokens(BlindData(tokens, item.data.toString), invoice.paymentHash.toString)
+      Invoice serialize invoice
+    }
+
+  def signTokens(hash: BinaryData): Option[ListStr] =
+    db getPendingTokens hash.toString map { case BlindData(tokens, k) =>
+      for (token <- tokens) yield signer.blindSign(token, k).toString
     }
 
   def decodeECPoint(raw: String): ECPoint =
     ECKey.CURVE.getCurve.decodePoint(HEX decode raw)
-
-  // If secret matches, sign client's blind tokens
-  def redeemTokens(secret: String, key: String): Option[ListStr] =
-    db.getPendingTokens(preimage = secret, sesPubKey = key) map { bd =>
-      for (token <- bd.tokens) yield signer.blindSign(token, bd.k).toString
-    }
 }

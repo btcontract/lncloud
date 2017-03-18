@@ -49,7 +49,8 @@ class Responder {
     // Record tokens and send an Invoice
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val maybeInvoice = blindTokens.getInvoice(toClass[ListStr](hex2Json apply tokens), sesKey)
+      val prunedTokens = toClass[ListStr](hex2Json apply tokens) take values.quantity
+      val maybeInvoice = blindTokens.getInvoice(prunedTokens, sesKey)
 
       maybeInvoice match {
         case Some(future) => Ok(future map okSingle)
@@ -58,13 +59,21 @@ class Responder {
 
     // Provide signed blind tokens
     case req @ POST -> V1 / "blindtokens" / "redeem" =>
-      val Seq(sesKey, preImage) = extract(req.params, identity, "seskey", "preimage")
-      val maybeBlindSignatures = blindTokens.redeemTokens(preImage, sesKey)
+      val payHash = BinaryData(req params "hash")
 
-      maybeBlindSignatures match {
-        case Some(tokens) => Ok apply ok(tokens:_*)
-        case _ => Ok apply error("notfound")
+      val res = blindTokens isFulfilled payHash map {
+        case true => blindTokens signTokens payHash match {
+          case Some(blindSignatures) => ok(blindSignatures:_*)
+          case None => error("notfound")
+        }
+
+        case false => error("notpaid")
+      } recover { case err: Throwable =>
+        logger info err.getMessage
+        error("nodefail")
       }
+
+      Ok apply res
 
     // BREACH TXS
 
@@ -105,11 +114,11 @@ class Responder {
 
     case req @ POST -> V1 / "router" / "routes"
       if Router.black.contains(req params "from") =>
-      Ok apply error("from-blacklisted")
+      Ok apply error("fromblacklisted")
 
     case req @ POST -> V1 / "router" / "routes"
       if Router.channels.nodeId2Chans(req params "to").isEmpty =>
-      Ok apply error("to-lost")
+      Ok apply error("tolost")
 
     case req @ POST -> V1 / "router" / "routes" =>
       val routes = Router.finder.findRoutes(req params "from", req params "to")

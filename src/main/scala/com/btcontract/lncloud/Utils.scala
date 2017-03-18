@@ -88,8 +88,22 @@ object Features {
 
 // k is session private key, a source for signerR
 // tokens is a list of yet unsigned blind BigInts from client
-
+case class BlindData(tokens: ListStr, k: String)
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindData(tokens: ListStr, preimage: String, k: String)
-case class Invoice(message: OptString, sum: MilliSatoshi, node: BinaryData, paymentHash: BinaryData)
+
+case class Invoice(message: Option[String], nodeId: BinaryData, sum: MilliSatoshi, paymentHash: BinaryData)
 case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int, rpcUrl: String, zmqPoint: String, rewindRange: Int)
+
+object Invoice {
+  def serialize(inv: Invoice): String = {
+    val hash = inv.paymentHash.toString
+    val node = inv.nodeId.toString
+    val sum = inv.sum.amount
+    s"$node:$sum:$hash"
+  }
+
+  def parse(raw: String): Invoice = {
+    val Array(node, sum, hash) = raw.split(':')
+    Invoice(None, node, MilliSatoshi(sum.toLong), hash)
+  }
+}

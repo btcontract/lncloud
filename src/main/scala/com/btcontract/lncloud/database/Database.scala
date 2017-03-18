@@ -2,16 +2,18 @@ package com.btcontract.lncloud.database
 
 import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
-
 import com.btcontract.lncloud.Utils.OptString
+
 import language.implicitConversions
 import java.util.Date
+
+import fr.acinq.bitcoin.BinaryData
 
 
 abstract class Database {
   // sesPubKey is R which we get from k, preimage is Lightning payment preimage
-  def getPendingTokens(preimage: String, sesPubKey: String): Option[BlindData]
-  def putPendingTokens(data: BlindData, sesPubKey: String)
+  def getPendingTokens(paymentHash: String): Option[BlindData]
+  def putPendingTokens(data: BlindData, paymentHash: String)
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
 
@@ -28,14 +30,15 @@ class MongoDatabase extends Database {
   implicit def obj2String(source: Object): String = source.toString
 
   // Blind tokens management, k is sesPrivKey
-  def putPendingTokens(data: BlindData, sesPubKey: String): Unit =
-    mongo("blindTokens").update("sesPubKey" $eq sesPubKey, $set("sesPubKey" -> sesPubKey,
-      "tokens" -> data.tokens, "preimage" -> data.preimage, "k" -> data.k, "date" -> new Date),
-      upsert = true, multi = false, WriteConcern.Safe)
+  def putPendingTokens(data: BlindData, paymentHash: String): Unit = {
+    val set = $set("paymentHash" -> paymentHash, "tokens" -> data.tokens, "k" -> data.k, "date" -> new Date)
+    mongo("blindTokens").update("paymentHash" $eq paymentHash, set, upsert = true, multi = false, WriteConcern.Safe)
+  }
 
-  def getPendingTokens(preimage: String, sesPubKey: String): Option[BlindData] =
-    mongo("blindTokens") findOne $and("sesPubKey" $eq sesPubKey, "preimage" $eq preimage) map { res =>
-      BlindData(res.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toList, res get "preimage", res get "k")
+  def getPendingTokens(paymentHash: String): Option[BlindData] =
+    mongo("blindTokens").findOne("paymentHash" $eq paymentHash) map { res =>
+      val tokens = res.get("tokens").asInstanceOf[BasicDBList].map(_.toString)
+      BlindData(tokens.toList, res get "k")
     }
 
   // Many collections in total to store clear tokens because we have to keep every token
