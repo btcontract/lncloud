@@ -28,7 +28,7 @@ object Utils {
   lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
   val hex2Json: String => String = raw => new String(HEX decode raw, "UTF-8")
   val logger: Logger = LoggerFactory getLogger "LNCloud"
-  val rand = new RandomGenerator
+  val random = new RandomGenerator
   val twoHours = 7200000
 
   implicit def str2BigInteger(bigInt: String): BigInteger = new BigInteger(bigInt)

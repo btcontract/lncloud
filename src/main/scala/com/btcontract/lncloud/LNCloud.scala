@@ -21,7 +21,7 @@ import database.MongoDatabase
 object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
-    val config = Vals(new ECKey(rand).getPrivKey, MilliSatoshi(500000), 100,
+    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 100,
       "http://user:password@127.0.0.1:8332", "tcp://127.0.0.1:28332", 144)
 
     values = config /*toClass[Vals](config)*/
@@ -41,7 +41,7 @@ class Responder {
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
-    case POST -> V1 / "blindtokens" / "info" => new ECKey(rand) match { case ses =>
+    case POST -> V1 / "blindtokens" / "info" => new ECKey(random) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
       Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
     }

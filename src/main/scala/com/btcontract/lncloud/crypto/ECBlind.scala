@@ -1,7 +1,7 @@
 package com.btcontract.lncloud.crypto
 
 import org.bitcoinj.core.ECKey.CURVE.{getN, getG}
-import com.btcontract.lncloud.Utils.{Bytes, rand}
+import com.btcontract.lncloud.Utils.{Bytes, random}
 import org.spongycastle.math.ec.ECPoint
 import org.bitcoinj.core.ECKey
 import java.math.BigInteger
@@ -11,12 +11,12 @@ import java.math.BigInteger
 class ECBlind(signerQ: ECPoint, signerR: ECPoint) {
   def params(number: Int): List[BlindParam] = List.fill(number)(makeParams)
   def tokens(number: Int): List[BigInteger] = List.fill(number)(oneToken)
-  def oneToken = new BigInteger(1, rand getBytes 64)
+  def oneToken = new BigInteger(1, random getBytes 64)
 
   def makeParams: BlindParam = {
-    val a = new ECKey(rand).getPrivKey
-    val b = new ECKey(rand).getPrivKey
-    val c = new ECKey(rand).getPrivKey
+    val a = new ECKey(random).getPrivKey
+    val b = new ECKey(random).getPrivKey
+    val c = new ECKey(random).getPrivKey
 
     val bInv = b modInverse getN
     val abInvQ = signerQ.multiply(a.multiply(bInv) mod getN)

@@ -12,6 +12,8 @@ trait SetupMessage extends LightningMessage
 trait RoutingMessage extends LightningMessage
 trait ChannelMessage extends LightningMessage
 
+trait HasHtlcId extends ChannelMessage { val id: Long }
+
 case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends SetupMessage
 case class Error(channelId: BinaryData, data: BinaryData) extends SetupMessage
 
@@ -41,15 +43,13 @@ case class UpdateAddHtlc(channelId: BinaryData,
                          id: Long, amountMsat: Long, expiry: Long, paymentHash: BinaryData,
                          onionRoutingPacket: BinaryData) extends ChannelMessage
 
-case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends ChannelMessage
-case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends ChannelMessage
+case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends HasHtlcId
+case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends HasHtlcId
+case class UpdateFulfillHtlc(channelId: BinaryData, id: Long, paymentPreimage: BinaryData) extends HasHtlcId
+
+
 case class CommitSig(channelId: BinaryData, signature: BinaryData, htlcSignatures: BinaryDataList) extends ChannelMessage
-case class UpdateFulfillHtlc(channelId: BinaryData, id: Long, paymentPreimage: BinaryData) extends ChannelMessage
-
-case class RevokeAndAck(channelId: BinaryData,
-                        perCommitmentSecret: Scalar, nextPerCommitmentPoint: Point,
-                        htlcTimeoutSignatures: BinaryDataList) extends ChannelMessage
-
+case class RevokeAndAck(channelId: BinaryData, perCommitmentSecret: Scalar, nextPerCommitmentPoint: Point) extends ChannelMessage
 case class UpdateFee(channelId: BinaryData, feeratePerKw: Long) extends ChannelMessage
 
 case class AnnouncementSignatures(channelId: BinaryData,
@@ -58,7 +58,7 @@ case class AnnouncementSignatures(channelId: BinaryData,
 
 case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: BinaryData, bitcoinSignature1: BinaryData,
                                bitcoinSignature2: BinaryData, shortChannelId: Long, nodeId1: BinaryData, nodeId2: BinaryData,
-                               bitcoinKey1: BinaryData, bitcoinKey2: BinaryData) extends RoutingMessage {
+                               bitcoinKey1: BinaryData, bitcoinKey2: BinaryData, features: BinaryData) extends RoutingMessage {
 
   val (blockHeight, txIndex, outputIndex) = fromShortId(shortChannelId)
 }

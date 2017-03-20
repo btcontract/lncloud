@@ -15,13 +15,16 @@ import java.math.BigInteger
 object Codecs { me =>
   type PaymentRoute = List[Hop]
   type SeqPaymentRoute = Seq[PaymentRoute]
-
-  type RGB = (Byte, Byte, Byte)
-  type AddressPort = (InetAddress, Int)
-
   type BitVectorAttempt = Attempt[BitVector]
   type NodeAnnouncements = List[NodeAnnouncement]
   type InetSocketAddressList = List[InetSocketAddress]
+  type AddressPort = (InetAddress, Int)
+  type RGB = (Byte, Byte, Byte)
+
+  def serializationResult(attempt: BitVectorAttempt): BinaryData = attempt match {
+    case Attempt.Failure(cause) => throw new RuntimeException(s"Serialization error: $cause")
+    case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
+  }
 
   // RGB <-> ByteVector
   private val bv2Rgb: PartialFunction[ByteVector, RGB] = {
@@ -48,10 +51,11 @@ object Codecs { me =>
   }
 
   def der2wire(signature: BinaryData): BinaryData =
-    Crypto decodeSignature signature match { case (r, s) =>
-      val fixedR = me fixSize r.toByteArray.dropWhile(0.==)
-      val fixedS = me fixSize s.toByteArray.dropWhile(0.==)
-      fixedR ++ fixedS
+    Crypto decodeSignature signature match {
+      case (r, s) =>
+        val fixedR = me fixSize r.toByteArray.dropWhile(0.==)
+        val fixedS = me fixSize s.toByteArray.dropWhile(0.==)
+        fixedR ++ fixedS
     }
 
   def wire2der(sig: BinaryData): BinaryData = {
@@ -192,7 +196,7 @@ object Codecs { me =>
   private val fundingCreated =
     (binarydata(32) withContext "temporaryChannelId") ::
       (binarydata(32) withContext "txid") ::
-      (uint8 withContext "fundingOutputIndex") ::
+      (uint16 withContext "fundingOutputIndex") ::
       (signature withContext "signature")
 
   private val fundingSigned =
@@ -200,7 +204,7 @@ object Codecs { me =>
       (signature withContext "signature")
 
   private val fundingLocked =
-    (binarydata(32) withContext "channelId" ) ::
+    (binarydata(32) withContext "channelId") ::
       (point withContext "nextPerCommitmentPoint")
 
   private val shutdown =
@@ -244,9 +248,7 @@ object Codecs { me =>
   private val revokeAndAck =
     (binarydata(32) withContext "channelId") ::
       (scalar withContext "perCommitmentSecret") ::
-      (point withContext "nextPerCommitmentPoint") ::
-      (ignore(8 * 3) withContext "padding") ::
-      (listofsignatures withContext "htlcTimeoutSignatures")
+      (point withContext "nextPerCommitmentPoint")
 
   private val updateFee =
     (binarydata(32) withContext "channelId") ::
@@ -263,7 +265,8 @@ object Codecs { me =>
       (binarydata(33) withContext "nodeId1") ::
       (binarydata(33) withContext "nodeId2") ::
       (binarydata(33) withContext "bitcoinKey1") ::
-      (binarydata(33) withContext "bitcoinKey2")
+      (binarydata(33) withContext "bitcoinKey2") ::
+      (varsizebinarydata withContext "features")
 
   private val channelAnnouncement =
     (signature withContext "nodeSignature1") ::
@@ -302,6 +305,13 @@ object Codecs { me =>
       (binarydata(33) withContext "nodeId") ::
       (binarydata(33) withContext "nextNodeId")
 
+  val perHopPayload =
+    (ignore(8 * 1) withContext "realm") ::
+      (uint64 withContext "amt_to_forward") ::
+      (int32 withContext "outgoing_cltv_value") ::
+      (ignore(8 * 7) withContext "unused_with_v0_version_on_header")
+
+  val perHopPayloadCodec: Codec[PerHopPayload] = perHopPayload.as[PerHopPayload]
   val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
   private val nodeAnnouncementCodec = nodeAnnouncement.as[NodeAnnouncement]
   private val hopCodec = hop.as[Hop]
@@ -328,10 +338,4 @@ object Codecs { me =>
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
       .typecase(cr = channelUpdateCodec, tag = 258)
       .typecase(cr = announcementSignatures.as[AnnouncementSignatures], tag = 259)
-
-  val perHopPayload =
-    (ignore(8 * 1) withContext "realm") ::
-      (uint64 withContext "amt_to_forward") ::
-      (int32 withContext "outgoing_cltv_value") ::
-      (ignore(8 * 7) withContext "unused_with_v0_version_on_header")
 }
