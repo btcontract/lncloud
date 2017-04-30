@@ -2,18 +2,19 @@ package com.btcontract.lncloud.router
 
 import com.btcontract.lncloud._
 import collection.JavaConverters._
-import com.btcontract.lncloud.Utils._
-import com.btcontract.lncloud.ln.wire._
-import com.btcontract.lncloud.ln.Scripts._
+import com.lightning.wallet.ln.wire._
 
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
+import com.lightning.wallet.ln.{Announcements, Features, Tools}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
+import com.lightning.wallet.ln.Tools.{errLog, none}
 import rx.lang.scala.{Observable => Obs}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
+import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
-import com.btcontract.lncloud.ln.wire.Codecs.PaymentRoute
+import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -40,21 +41,19 @@ object Router { me =>
         [BinaryData, ChanDirection](chanDirectionClass)
 
       for (direction <- updates.keys) {
-        defaultDirectedGraph.addVertex(direction.to)
-        defaultDirectedGraph.addVertex(direction.from)
-        defaultDirectedGraph.addEdge(direction.from,
-          direction.to, direction)
+        Seq(direction.from, direction.to) foreach defaultDirectedGraph.addVertex
+        defaultDirectedGraph.addEdge(direction.from, direction.to, direction)
       }
 
       new CachedAllDirectedPaths[BinaryData,
         ChanDirection](defaultDirectedGraph)
     }
 
-    // Allow maximum of 5 hops for now
+    // Allow maximum of 7 hops for now
     def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] =
-      for (foundPath <- graph.getAllPaths(from, to, true, 5).asScala) yield
-        for (dir <- foundPath.getEdgeList.asScala.toList) yield
-          Hop(updates(dir), dir.from, dir.to)
+      for (foundPath <- graph.getAllPaths(from, to, true, 7).asScala) yield
+        for (dir <- foundPath.getEdgeList.asScala.toVector) yield
+          Hop(dir.from, dir.to, me updates dir)
   }
 
   class ChannelsWrapper {
@@ -118,22 +117,22 @@ object Router { me =>
       }
 
   def receive(elem: RoutingMessage): Unit = elem match {
-    case ca: ChannelAnnouncement if black.contains(ca.nodeId1) || black.contains(ca.nodeId2) => logger info s"Ignoring $ca"
-    case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => logger info s"Ignoring invalid signatures $ca"
+    case ca: ChannelAnnouncement if black.contains(ca.nodeId1) || black.contains(ca.nodeId2) => Tools log s"Ignoring $ca"
+    case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"
     case ca: ChannelAnnouncement =>
 
       awaits add ca
-      val observable = Blockchain getInfo ca
-      observable.subscribe(addChannel, e => logger info s"No utxo for $ca, $e")
+      val observable = Blockchain.getInfo(ca) map addChannel
+      observable.subscribe(none, e => Tools log s"No utxo for $ca, $e")
       observable.subscribe(_ => awaits remove ca, _ => awaits remove ca)
       observable.subscribe(_ => resend, _ => resend)
 
     case node: NodeAnnouncement if awaits.nonEmpty => stash add node
-    case node: NodeAnnouncement if black.contains(node.nodeId) => logger info s"Ignoring $node"
-    case node: NodeAnnouncement if channels.nodeId2Chans(node.nodeId).isEmpty => logger info s"Ignoring node without channels $node"
-    case node: NodeAnnouncement if nodes.id2Node.get(node.nodeId).exists(_.timestamp >= node.timestamp) => logger info s"Ignoring outdated $node"
-    case node: NodeAnnouncement if !Announcements.checkSig(node) => logger info s"Ignoring invalid signatures $node"
-    case node: NodeAnnouncement if Features.channelPublic(node.features) == Features.Unset => nodes rm node
+    case node: NodeAnnouncement if black.contains(node.nodeId) => Tools log s"Ignoring $node"
+    case node: NodeAnnouncement if channels.nodeId2Chans(node.nodeId).isEmpty => Tools log s"Ignoring node without channels $node"
+    case node: NodeAnnouncement if nodes.id2Node.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Ignoring outdated $node"
+    case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
+    case node: NodeAnnouncement if Features.isSet(node.features, Features.CHANNELS_PUBLIC_BIT) => nodes rm node
 
     case node: NodeAnnouncement =>
       // Might be a new one or an update
@@ -143,8 +142,8 @@ object Router { me =>
       nodes add node
 
     case cu: ChannelUpdate if awaits.nonEmpty => stash add cu
-    case cu: ChannelUpdate if cu.flags.data.size != 2 => logger info s"Ignoring invalid flags length ${cu.flags.data.size}"
-    case cu: ChannelUpdate if !channels.chanId2Info.contains(cu.shortChannelId) => logger info s"Ignoring update without channels $cu"
+    case cu: ChannelUpdate if cu.flags.data.size != 2 => Tools log s"Ignoring invalid flags length ${cu.flags.data.size}"
+    case cu: ChannelUpdate if !channels.chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
 
     case cu: ChannelUpdate => try {
       val info = channels chanId2Info cu.shortChannelId
@@ -160,7 +159,7 @@ object Router { me =>
     } catch errLog
   }
 
-  private def addChannel(info: ChanInfo): Unit = try {
+  private def addChannel(info: ChanInfo): Unit = {
     val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
     require(Script.write(fundingOutScript) == BinaryData(info.txo.hex), s"Incorrect script in $info")
 
@@ -170,11 +169,10 @@ object Router { me =>
       case Some(old: ChanInfo) =>
         val compromisedNodeIds = List(old.ca.nodeId1, old.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
         complexRemove(compromisedNodeIds.flatMap(channels.nodeId2Chans).map(channels.chanId2Info):_*)
-        logger info s"Compromised $info since $old exists"
+        Tools log s"Compromised $info since $old exists"
         compromisedNodeIds foreach black.add
     }
-
-  } catch errLog
+  }
 
   private def checkOutdated = System.currentTimeMillis match { case now =>
     val dirsToRemove = updates collect { case (dir, cu) if cu.lastSeen < now - expiration => dir }
@@ -187,7 +185,7 @@ object Router { me =>
     // Removing channels may also result in new lost nodes so all nodes with zero channels are removed
     updates.keys.filterNot(channels.chanId2Info contains _.channelId).foreach(updates.remove)
     nodes.id2Node.filterKeys(channels.nodeId2Chans(_).isEmpty).values.foreach(nodes.rm)
-    logger info s"Removed channels: $infos"
+    Tools log s"Removed channels: $infos"
     finder = new GraphWrapper
   }
 
@@ -199,7 +197,7 @@ object Router { me =>
 
     override def onNewBlock(block: Block): Unit = {
       val spent = channels.txId2Info.values.filter(Blockchain.isSpent)
-      if (spent.isEmpty) logger info s"No spent channels at ${block.height}"
+      if (spent.isEmpty) Tools log s"No spent channels at ${block.height}"
       else complexRemove(spent.toSeq:_*)
     }
   }

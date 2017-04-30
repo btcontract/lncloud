@@ -1,30 +1,37 @@
-package com.btcontract.lncloud.ln.wire
+package com.lightning.wallet.ln.wire
 
 import java.net._
 import scodec.codecs._
+import com.lightning.wallet.ln.Exceptions._
 
-import scodec.{Attempt, Codec, Err}
-import scodec.bits.{BitVector, ByteVector}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.bitcoin.{BinaryData, Crypto}
+import scodec.bits.{BitVector, ByteVector}
+import scodec.{Attempt, Codec, Err}
 
-import com.btcontract.lncloud.Utils.BinaryDataList
+import com.lightning.wallet.ln.crypto.Sphinx
 import java.math.BigInteger
 
 
-object Codecs { me =>
-  type PaymentRoute = List[Hop]
-  type SeqPaymentRoute = Seq[PaymentRoute]
+object LightningMessageCodecs { me =>
   type BitVectorAttempt = Attempt[BitVector]
-  type NodeAnnouncements = List[NodeAnnouncement]
   type InetSocketAddressList = List[InetSocketAddress]
+  type NodeAnnouncements = Vector[NodeAnnouncement]
+  type PaymentRoute = Vector[Hop]
+
   type AddressPort = (InetAddress, Int)
   type RGB = (Byte, Byte, Byte)
 
   def serializationResult(attempt: BitVectorAttempt): BinaryData = attempt match {
-    case Attempt.Failure(cause) => throw new RuntimeException(s"Serialization error: $cause")
+    case Attempt.Failure(some) => throw DetailedException(SERIALIZATION_ERROR, some)
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
   }
+
+  def deserializationResult(transferred: BinaryData) =
+    lightningMessageCodec decode BitVector(transferred.data) match {
+      case Attempt.Failure(_) => throw ChannelException(DESERIALIZATION_ERROR)
+      case Attempt.Successful(result) => result.value
+    }
 
   // RGB <-> ByteVector
   private val bv2Rgb: PartialFunction[ByteVector, RGB] = {
@@ -51,11 +58,10 @@ object Codecs { me =>
   }
 
   def der2wire(signature: BinaryData): BinaryData =
-    Crypto decodeSignature signature match {
-      case (r, s) =>
-        val fixedR = me fixSize r.toByteArray.dropWhile(0.==)
-        val fixedS = me fixSize s.toByteArray.dropWhile(0.==)
-        fixedR ++ fixedS
+    Crypto decodeSignature signature match { case (r, s) =>
+      val fixedR = me fixSize r.toByteArray.dropWhile(0.==)
+      val fixedS = me fixSize s.toByteArray.dropWhile(0.==)
+      fixedR ++ fixedS
     }
 
   def wire2der(sig: BinaryData): BinaryData = {
@@ -65,6 +71,50 @@ object Codecs { me =>
   }
 
   // Codecs
+
+  val signature = Codec[BinaryData](
+    encoder = (derEncoded: BinaryData) => {
+      val vec = bin2Vec(me der2wire derEncoded)
+      bytes(64) encode vec
+    },
+
+    decoder = (wireEncoded: BitVector) => for {
+      decodeResult <- bytes(64) decode wireEncoded
+    } yield decodeResult map vec2Bin map wire2der
+  )
+
+  val scalar = Codec[Scalar](
+    encoder = (scalar: Scalar) => {
+      val vec = bin2Vec(scalar.toBin)
+      bytes(32) encode vec
+    },
+
+    decoder = (wireEncoded: BitVector) => for {
+      decodeResult <- bytes(32) decode wireEncoded
+    } yield decodeResult map vec2Bin map Scalar.apply
+  )
+
+  val point = Codec[Point](
+    encoder = (point: Point) => {
+      val vec = bin2Vec(point toBin true)
+      bytes(33) encode vec
+    },
+
+    decoder = (wireEncoded: BitVector) => for {
+      decodeResult <- bytes(33) decode wireEncoded
+    } yield decodeResult map vec2Bin map Point.apply
+  )
+
+  val publicKey = Codec[PublicKey](
+    encoder = (publicKey: PublicKey) => {
+      val vec = bin2Vec(publicKey.value toBin true)
+      bytes(33) encode vec
+    },
+
+    decoder = (wireEncoded: BitVector) => for {
+      decodeResult <- bytes(33) decode wireEncoded
+    } yield decodeResult map vec2Bin map PublicKey.apply
+  )
 
   private val uint64: Codec[Long] = int64.narrow(long =>
     if (long < 0) Attempt failure Err(s"Overflow for $long")
@@ -81,75 +131,10 @@ object Codecs { me =>
     inetSockAddress => (inetSockAddress.getAddress, inetSockAddress.getPort)
   )
 
-  def rgb: Codec[RGB] = bytes(3).xmap(bv2Rgb, rgb2Bv)
+  val rgb: Codec[RGB] = bytes(3).xmap(bv2Rgb, rgb2Bv)
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(vec2Bin, bin2Vec)
-  def listofsocketaddresses: Codec[InetSocketAddressList] = listOfN(uint16, socketaddress)
-  def varsizebinarydata: Codec[BinaryData] = variableSizeBytesLong(value = bytes.xmap(vec2Bin, bin2Vec), size = uint32)
-  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(_.takeWhile(_ != '\u0000'), identity)
-  def listofsignatures: Codec[BinaryDataList] = listOfN(uint16, signature)
-
-  def signature = Codec[BinaryData](
-    encoder = (derEncoded: BinaryData) => {
-      val vec = bin2Vec(me der2wire derEncoded)
-      bytes(64) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(64) decode wireEncoded
-    } yield decodeResult map vec2Bin map wire2der
-  )
-
-  def scalar = Codec[Scalar](
-    encoder = (scalar: Scalar) => {
-      val vec = bin2Vec(scalar.toBin)
-      bytes(32) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(32) decode wireEncoded
-    } yield decodeResult map vec2Bin map Scalar.apply
-  )
-
-  def point = Codec[Point](
-    encoder = (point: Point) => {
-      val vec = bin2Vec(point toBin true)
-      bytes(33) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(33) decode wireEncoded
-    } yield decodeResult map vec2Bin map Point.apply
-  )
-
-  def publicKey = Codec[PublicKey](
-    encoder = (publicKey: PublicKey) => {
-      val vec = bin2Vec(publicKey.value toBin true)
-      bytes(33) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(33) decode wireEncoded
-    } yield decodeResult map vec2Bin map PublicKey.apply
-  )
-
-  type BinaryDataOption = Option[BinaryData]
-  def optionalSignature = Codec[BinaryDataOption](
-
-    encoder = (_: BinaryDataOption) match {
-      case Some(sig) => bytes(64) encode bin2Vec(me der2wire sig)
-      case None => bytes(64) encode ByteVector.fill[Byte](64)(0)
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(64) decode wireEncoded
-    } yield decodeResult map vec2Bin map { signature: BinaryData =>
-      if (signature forall 0.==) None else Some(me wire2der signature)
-    }
-  )
-
-  // Internal codecs (not part of LN protocol)
-  def hops: Codec[PaymentRoute] = listOfN(uint16, hopCodec)
-  def announcements: Codec[NodeAnnouncements] = listOfN(uint16, nodeAnnouncementCodec)
+  val varsizebinarydata: Codec[BinaryData] = variableSizeBytesLong(value = bytes.xmap(vec2Bin, bin2Vec), size = uint32)
+  val zeropaddedstring: Codec[String] = fixedSizeBytes(32, utf8).xmap(_.takeWhile(_ != '\u0000'), identity)
 
   // Data formats
 
@@ -161,8 +146,16 @@ object Codecs { me =>
     (binarydata(32) withContext "channelId") ::
       (varsizebinarydata withContext "data")
 
+  private val ping =
+    (uint16 withContext "pongLength") ::
+      (varsizebinarydata withContext "data")
+
+  private val pong =
+    varsizebinarydata withContext "data"
+
   private val openChannel =
-    (binarydata(32) withContext "temporaryChannelId") ::
+    (binarydata(32) withContext "chainHash") ::
+      (binarydata(32) withContext "temporaryChannelId") ::
       (uint64 withContext "fundingSatoshis") ::
       (uint64 withContext "pushMsat") ::
       (uint64 withContext "dustLimitSatoshis") ::
@@ -204,7 +197,7 @@ object Codecs { me =>
       (signature withContext "signature")
 
   private val fundingLocked =
-    (binarydata(32) withContext "channelId") ::
+    (binarydata(32) withContext "channelId" ) ::
       (point withContext "nextPerCommitmentPoint")
 
   private val shutdown =
@@ -222,7 +215,7 @@ object Codecs { me =>
       (uint32 withContext "amountMsat") ::
       (uint32 withContext "expiry") ::
       (binarydata(32) withContext "paymentHash") ::
-      (binarydata(1254) withContext "onionRoutingPacket")
+      (binarydata(Sphinx.PacketLength) withContext "onionRoutingPacket")
 
   private val updateFulfillHtlc =
     (binarydata(32) withContext "channelId") ::
@@ -243,7 +236,7 @@ object Codecs { me =>
   private val commitSig =
     (binarydata(32) withContext "channelId") ::
       (signature withContext "signature") ::
-      (listofsignatures withContext "htlcSignatures")
+      (listOfN(uint16, signature) withContext "htlcSignatures")
 
   private val revokeAndAck =
     (binarydata(32) withContext "channelId") ::
@@ -279,9 +272,9 @@ object Codecs { me =>
     (uint32 withContext "timestamp") ::
       (binarydata(33) withContext "nodeId") ::
       (rgb withContext "rgbColor") ::
-      (zeropaddedstring(32) withContext "alias") ::
+      (zeropaddedstring withContext "alias") ::
       (varsizebinarydata withContext "features") ::
-      (listofsocketaddresses withContext "addresses")
+      (listOfN(uint16, socketaddress) withContext "addresses")
 
   private val nodeAnnouncement =
     (signature withContext "signature") ::
@@ -300,26 +293,30 @@ object Codecs { me =>
     (signature withContext "signature") ::
       channelUpdateWitness
 
+  val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
+  val nodeAnnouncementCodec: Codec[NodeAnnouncement] = nodeAnnouncement.as[NodeAnnouncement]
+
   private val hop =
-    (channelUpdate.as[ChannelUpdate] withContext "lastUpdate") ::
-      (binarydata(33) withContext "nodeId") ::
-      (binarydata(33) withContext "nextNodeId")
+    (publicKey withContext "nodeId") ::
+      (publicKey withContext "nextNodeId") ::
+      (channelUpdateCodec withContext "lastUpdate")
 
   val perHopPayload =
-    (ignore(8 * 1) withContext "realm") ::
-      (uint64 withContext "amt_to_forward") ::
+    (constant(ByteVector fromByte 0) withContext "realm") ::
+      (uint64 withContext "channel_id") ::
+      (uint32 withContext "amt_to_forward") ::
       (int32 withContext "outgoing_cltv_value") ::
-      (ignore(8 * 7) withContext "unused_with_v0_version_on_header")
+      (ignore(8 * 16) withContext "unused_with_v0_version_on_header")
 
+  val hopsCodec: Codec[PaymentRoute] = vectorOfN(valueCodec = hop.as[Hop], countCodec = uint16)
   val perHopPayloadCodec: Codec[PerHopPayload] = perHopPayload.as[PerHopPayload]
-  val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
-  private val nodeAnnouncementCodec = nodeAnnouncement.as[NodeAnnouncement]
-  private val hopCodec = hop.as[Hop]
 
   val lightningMessageCodec =
     discriminated[LightningMessage].by(uint16)
       .typecase(cr = init.as[Init], tag = 16)
       .typecase(cr = error.as[Error], tag = 17)
+      .typecase(cr = ping.as[Ping], tag = 18)
+      .typecase(cr = pong.as[Pong], tag = 19)
       .typecase(cr = openChannel.as[OpenChannel], tag = 32)
       .typecase(cr = acceptChannel.as[AcceptChannel], tag = 33)
       .typecase(cr = fundingCreated.as[FundingCreated], tag = 34)

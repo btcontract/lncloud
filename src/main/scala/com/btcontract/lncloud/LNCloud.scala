@@ -1,21 +1,25 @@
 package com.btcontract.lncloud
 
 import Utils._
-import com.btcontract.lncloud.ln.wire.Codecs.{PaymentRoute, announcements, hops}
-import com.btcontract.lncloud.router.Router
 import org.http4s.dsl._
+import collection.JavaConverters._
+import com.lightning.wallet.ln.wire.LightningMessageCodecs._
+
 import org.http4s.{HttpService, Response}
 import org.http4s.server.{Server, ServerApp}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, string2binaryData}
-import collection.JavaConverters._
+import fr.acinq.bitcoin.{MilliSatoshi, string2binaryData}
+import com.lightning.wallet.ln.wire.NodeAnnouncement
 import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
+import com.btcontract.lncloud.router.Router
 import org.json4s.jackson.Serialization
+import com.lightning.wallet.ln.Invoice
 import scodec.Attempt.Successful
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import database.MongoDatabase
+import java.math.BigInteger
 
 
 object LNCloud extends ServerApp {
@@ -35,8 +39,8 @@ class Responder {
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
 
-  private val db: MongoDatabase = null// = new MongoDatabase
-  private val blindTokens = new BlindTokens(db)
+  private val db: MongoDatabase = new MongoDatabase
+  private val blindTokens = new BlindTokens
   private val V1 = Root / "v1"
 
   val http = HttpService {
@@ -49,37 +53,36 @@ class Responder {
     // Record tokens and send an Invoice
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val prunedTokens = toClass[ListStr](hex2Json apply tokens) take values.quantity
-      val maybeInvoice = blindTokens.getInvoice(prunedTokens, sesKey)
+      val prunedTokens = toClass[TokenSeq](hex2Json apply tokens) take values.quantity
 
-      maybeInvoice match {
-        case Some(future) => Ok(future map okSingle)
-        case _ => Ok apply error("notfound")
+      // Only if we have a seskey in a cache
+      blindTokens.cache get sesKey map { privateKey =>
+        val blindFuture = blindTokens.getBlind(prunedTokens, k = privateKey.data)
+        for (blindData <- blindFuture) db.putPendingTokens(data = blindData, sesKey)
+        for (bd <- blindFuture) yield okSingle(Invoice serialize bd.invoice)
+      } match {
+        case Some(future) => Ok apply future
+        case None => Ok apply error("notfound")
       }
 
     // Provide signed blind tokens
     case req @ POST -> V1 / "blindtokens" / "redeem" =>
-      val payHash = BinaryData(req params "hash")
-
-      val res = blindTokens isFulfilled payHash map {
-        case true => blindTokens signTokens payHash match {
-          case Some(blindSignatures) => ok(blindSignatures:_*)
-          case None => error("notfound")
+      // Only if we have a saved BlindData which is paid for
+      db.getPendingTokens(req params "seskey") map { blindData =>
+        blindTokens isFulfilled blindData.invoice.paymentHash map {
+          case true => ok(data = blindTokens signTokens blindData:_*)
+          case false => error("notpaid")
         }
-
-        case false => error("notpaid")
-      } recover { case err: Throwable =>
-        logger info err.getMessage
-        error("nodefail")
+      } match {
+        case Some(future) => Ok apply future
+        case None => Ok apply error("notfound")
       }
-
-      Ok apply res
 
     // BREACH TXS
 
     // If they try to supply way too much data
     case req @ POST -> V1 / "token" / "tx" / "breach"
-      if req.params("watch").length > 2048 =>
+      if req.params("watch").length > 4096 =>
       Ok apply error("toobig")
 
     // Record a transaction to be broadcasted in case of channel breach
@@ -91,7 +94,7 @@ class Responder {
 
     // If they try to supply way too much data
     case req @ POST -> V1 / "token" / "data" / "put"
-      if req.params("data").length > 2048 =>
+      if req.params("data").length > 4096 =>
       Ok apply error("toobig")
 
     case req @ POST -> V1 / "token" / "data" / "put" => ifToken(req.params) {
@@ -113,36 +116,25 @@ class Responder {
     // ROUTER DATA
 
     case req @ POST -> V1 / "router" / "routes"
+      // GUARD: counterparty has been blacklisted
       if Router.black.contains(req params "from") =>
       Ok apply error("fromblacklisted")
 
     case req @ POST -> V1 / "router" / "routes"
+      // GUARD: destination has been blacklisted or removed
       if Router.channels.nodeId2Chans(req params "to").isEmpty =>
       Ok apply error("tolost")
 
     case req @ POST -> V1 / "router" / "routes" =>
-      val routes = Router.finder.findRoutes(req params "from", req params "to")
-      val data = routes take 8 map hops.encode collect { case Successful(bv) => bv.toHex }
+      val routes: Seq[PaymentRoute] = Router.finder.findRoutes(req params "from", req params "to")
+      val data = routes take 5 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
-
-    case POST -> V1 / "router" / "nodes" / "list" =>
-      val nodes = Router.nodes.id2Node.values take 20
-      val result = announcements encode nodes.toList
-
-      result match {
-        case Successful(bv) => Ok apply ok(bv.toHex)
-        case _ => Ok apply error("notfound")
-      }
 
     case req @ POST -> V1 / "router" / "nodes" / "find" =>
       val query = req.params("query").trim.take(50).toLowerCase
-      val nodes = Router.nodes.searchTree getValuesForKeysStartingWith query
-      val result = announcements encode nodes.asScala.toList.take(20)
-
-      result match {
-        case Successful(bv) => Ok apply ok(bv.toHex)
-        case _ => Ok apply error("notfound")
-      }
+      val nodes: Seq[NodeAnnouncement] = Router.nodes.searchTree.getValuesForKeysStartingWith(query).asScala.toList
+      val data = nodes take 20 map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
+      Ok apply ok(data:_*)
 
     // NEW VERSION WARNING
 
@@ -152,12 +144,13 @@ class Responder {
 
   // Checking clear token validity before proceeding
   def ifToken(params: HttpParams)(next: => TaskResponse): TaskResponse =  {
-    val Seq(point, sig, token) = extract(params, identity, "point", "clearsig", "cleartoken")
-    val sigIsFine = blindTokens.signer.verifyClearSig(token, sig, blindTokens decodeECPoint point)
+    val Seq(point, clearsig, cleartoken) = extract(params, identity, "point", "clearsig", "cleartoken")
+    val signatureIsFine = blindTokens.signer.verifyClearSig(new BigInteger(cleartoken), new BigInteger(clearsig),
+      blindTokens decodeECPoint point)
 
-    if (db isClearTokenUsed token) Ok apply error("tokenused")
-    else if (!sigIsFine) Ok apply error("tokeninvalid")
-    else try next finally db putClearToken token
+    if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
+    else if (!signatureIsFine) Ok apply error("tokeninvalid")
+    else try next finally db putClearToken cleartoken
   }
 
   // HTTP answer as JSON array
