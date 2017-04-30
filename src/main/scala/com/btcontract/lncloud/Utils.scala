@@ -43,5 +43,5 @@ object JsonHttpUtils {
 
 case class CacheItem[T](data: T, stamp: Long)
 case class BlindData(invoice: Invoice, k: BigInteger, tokens: TokenSeq)
-case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int,
-                rpcUrl: String, zmqPoint: String, rewindRange: Int)
+case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int, rpcUrl: String,
+                eclairUrl: String, zmqPoint: String, rewindRange: Int)

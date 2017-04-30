@@ -8,6 +8,7 @@ import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import org.http4s.{HttpService, Response}
 import org.http4s.server.{Server, ServerApp}
 import fr.acinq.bitcoin.{MilliSatoshi, string2binaryData}
+
 import com.lightning.wallet.ln.wire.NodeAnnouncement
 import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
@@ -26,7 +27,8 @@ object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 100,
-      "http://user:password@127.0.0.1:8332", "tcp://127.0.0.1:28332", 144)
+      rpcUrl = "http://user:password@127.0.0.1:8332", eclairUrl = "http://127.0.0.1:8080",
+      zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144)
 
     values = config /*toClass[Vals](config)*/
     val socketAndHttpLnCloudServer = new Responder
@@ -57,9 +59,9 @@ class Responder {
 
       // Only if we have a seskey in a cache
       blindTokens.cache get sesKey map { privateKey =>
-        val blindFuture = blindTokens.getBlind(prunedTokens, k = privateKey.data)
+        val blindFuture = blindTokens.makeBlind(prunedTokens, privateKey.data)
         for (blindData <- blindFuture) db.putPendingTokens(data = blindData, sesKey)
-        for (bd <- blindFuture) yield okSingle(Invoice serialize bd.invoice)
+        for (blindData <- blindFuture) yield okSingle(Invoice serialize blindData.invoice)
       } match {
         case Some(future) => Ok apply future
         case None => Ok apply error("notfound")
