@@ -25,7 +25,7 @@ import java.math.BigInteger
 object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
-    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 100,
+    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 5,
       rpcUrl = "http://user:password@127.0.0.1:8332", eclairUrl = "http://127.0.0.1:8080",
       zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144)
 
@@ -81,25 +81,25 @@ class Responder {
 
     // BREACH TXS
 
-    // If they try to supply way too much data
-    case req @ POST -> V1 / "token" / "tx" / "breach"
+    // If they supply way too much data
+    case req @ POST -> V1 / "tx" / "watch"
       if req.params("watch").length > 4096 =>
       Ok apply error("toobig")
 
     // Record a transaction to be broadcasted in case of channel breach
-    case req @ POST -> V1 / "token" / "tx" / "breach" => ifToken(req.params) {
+    case req @ POST -> V1 / "tx" / "watch" => ifToken(req.params) {
       Ok apply okSingle("done")
     }
 
     // DATA STORAGE
 
-    // If they try to supply way too much data
-    case req @ POST -> V1 / "token" / "data" / "put"
+    // If they supply way too much data
+    case req @ POST -> V1 / "data" / "put"
       if req.params("data").length > 4096 =>
       Ok apply error("toobig")
 
-    case req @ POST -> V1 / "token" / "data" / "put" => ifToken(req.params) {
-      // Rewrites user's channel data, but also can be used for general purposes
+    case req @ POST -> V1 / "data" / "put" => ifToken(req.params) {
+      // Rewrites user's channel data, can be used for general purposes
       db.putGeneralData(req params "key", req params "data")
       Ok apply okSingle("done")
     }
@@ -150,8 +150,8 @@ class Responder {
   // Checking clear token validity before proceeding
   def ifToken(params: HttpParams)(next: => TaskResponse): TaskResponse =  {
     val Seq(point, clearsig, cleartoken) = extract(params, identity, "point", "clearsig", "cleartoken")
-    val signatureIsFine = blindTokens.signer.verifyClearSig(new BigInteger(cleartoken), new BigInteger(clearsig),
-      blindTokens decodeECPoint point)
+    val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
+      clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
     if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
     else if (!signatureIsFine) Ok apply error("tokeninvalid")

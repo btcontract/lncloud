@@ -35,19 +35,19 @@ class BlindTokens { me =>
   }
 
   def isFulfilled(paymentHash: BinaryData): Future[Boolean] = Future {
-    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
-    val response = httpRequest.send("status=" + paymentHash.toString).body
-    toClass[StampOpt](response).isDefined
+//    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
+//    val response = httpRequest.send("status=" + paymentHash.toString).body
+//    toClass[StampOpt](response).isDefined
+    true
   }
 
-//  val preimage = BinaryData("9273f6a0a42b82d14c759e3756bd2741d51a0b3ecc5f284dbe222b59ea903942")
-//  val pk = BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
-//  Invoice(None, PublicKey(pk), price, Crypto sha256 preimage)
-
   def generateInvoice(price: MilliSatoshi): Future[Invoice] = Future {
-    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
-    val response = httpRequest.send("receive=" + price.amount).body
-    Invoice parse response
+//    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
+//    val response = httpRequest.send("receive=" + price.amount).body
+//    Invoice parse response
+      val preimage = BinaryData("9273f6a0a42b82d14c759e3756bd2741d51a0b3ecc5f284dbe222b59ea903942")
+      val pk = BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
+      Invoice(None, PublicKey(pk), price, Crypto sha256 preimage)
   }
 
   def makeBlind(tokens: TokenSeq, k: BigInteger): Future[BlindData] =
