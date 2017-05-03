@@ -30,7 +30,7 @@ class MongoDatabase extends Database {
 
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String): Unit =
-    mongo("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k,
+    mongo("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
       "invoice" -> Invoice.serialize(data.invoice), "tokens" -> data.tokens, "date" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 

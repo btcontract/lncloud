@@ -43,9 +43,9 @@ object Blockchain { me =>
   }.isFailure
 
   def getInfo(ca: ChannelAnnouncement): Obs[ChanInfo] =
-    obsOn(me getOutput ca, IOScheduler.apply)
+    obsOn(me doGetInfo ca, IOScheduler.apply)
 
-  private def getOutput(ca: ChannelAnnouncement) = {
+  private def doGetInfo(ca: ChannelAnnouncement) = {
     val txid = bitcoin.getBlock(ca.blockHeight).tx.get(ca.txIndex)
     val output = bitcoin.getTxOut(txid, ca.outputIndex, true)
     ChanInfo(txid, output, ca)

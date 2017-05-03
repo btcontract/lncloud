@@ -4,10 +4,10 @@ import Utils._
 import org.http4s.dsl._
 import collection.JavaConverters._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-
-import org.http4s.{HttpService, Response}
-import org.http4s.server.{Server, ServerApp}
 import fr.acinq.bitcoin.{MilliSatoshi, string2binaryData}
+import com.lightning.wallet.ln.{Invoice, Tools}
+import org.http4s.server.{Server, ServerApp}
+import org.http4s.{HttpService, Response}
 
 import com.lightning.wallet.ln.wire.NodeAnnouncement
 import concurrent.ExecutionContext.Implicits.global
@@ -15,7 +15,6 @@ import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
 import com.btcontract.lncloud.router.Router
 import org.json4s.jackson.Serialization
-import com.lightning.wallet.ln.Invoice
 import scodec.Attempt.Successful
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
@@ -26,7 +25,7 @@ import java.math.BigInteger
 object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
-    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 100,
+    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 100,
       rpcUrl = "http://user:password@127.0.0.1:8332", eclairUrl = "http://127.0.0.1:8080",
       zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144)
 
@@ -138,7 +137,11 @@ class Responder {
       val data = nodes take 20 map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 
-    // NEW VERSION WARNING
+    // NEW VERSION WARNING AND TEST
+
+    case req @ POST -> V1 / "ping" =>
+      Tools.log(req params "data")
+      Ok apply ok("pong")
 
     case POST -> Root / "v2" / _ =>
       Ok apply error("mustupdate")
