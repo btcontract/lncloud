@@ -3,23 +3,17 @@ package com.btcontract.lncloud
 import com.btcontract.lncloud.Utils._
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
-
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import concurrent.ExecutionContext.Implicits.global
 import com.btcontract.lncloud.crypto.ECBlindSign
-import com.github.kevinsawicki.http.HttpRequest
 import java.util.concurrent.ConcurrentHashMap
-
 import scala.concurrent.duration.DurationInt
 import org.spongycastle.math.ec.ECPoint
 import com.lightning.wallet.ln.Invoice
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
-
 import scala.concurrent.Future
 import java.math.BigInteger
-
-import fr.acinq.bitcoin.Crypto.PublicKey
 
 
 class BlindTokens { me =>
@@ -45,16 +39,16 @@ class BlindTokens { me =>
 //    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
 //    val response = httpRequest.send("receive=" + price.amount).body
 //    Invoice parse response
-      val preimage = BinaryData("9273f6a0a42b82d14c759e3756bd2741d51a0b3ecc5f284dbe222b59ea903942")
-      val pk = BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
-      Invoice(None, PublicKey(pk), price, Crypto sha256 preimage)
+    val preimage = BinaryData("9273f6a0a42b82d14c759e3756bd2741d51a0b3ecc5f284dbe222b59ea903942")
+    val pk = BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
+    Invoice(None, fr.acinq.bitcoin.Crypto.PublicKey(pk), price, Crypto sha256 preimage)
   }
 
-  def makeBlind(tokens: TokenSeq, k: BigInteger): Future[BlindData] =
+  def makeBlind(tokens: StringSeq, k: BigInteger): Future[BlindData] =
     for (invoice <- me generateInvoice values.price)
       yield BlindData(invoice, k, tokens)
 
-  def signTokens(bd: BlindData): TokenSeq = for (token <- bd.tokens)
+  def signTokens(bd: BlindData): StringSeq = for (token <- bd.tokens)
     yield signer.blindSign(new BigInteger(token), bd.k).toString
 
   def decodeECPoint(raw: String): ECPoint =

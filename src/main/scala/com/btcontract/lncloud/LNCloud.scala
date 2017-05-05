@@ -4,8 +4,7 @@ import Utils._
 import org.http4s.dsl._
 import collection.JavaConverters._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{MilliSatoshi, string2binaryData}
-import com.lightning.wallet.ln.{Invoice, Tools}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, string2binaryData}
 import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
 
@@ -14,7 +13,9 @@ import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
 import com.btcontract.lncloud.router.Router
+import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
+import com.lightning.wallet.ln.Invoice
 import scodec.Attempt.Successful
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
@@ -27,7 +28,7 @@ object LNCloud extends ServerApp {
   def server(args: ProgramArguments): Task[Server] = {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 50,
       rpcUrl = "http://user:password@127.0.0.1:8332", eclairUrl = "http://127.0.0.1:8080",
-      zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144)
+      zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144, checkByToken = true)
 
     values = config /*toClass[Vals](config)*/
     val socketAndHttpLnCloudServer = new Responder
@@ -40,10 +41,15 @@ class Responder {
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
 
-  private val db: MongoDatabase = new MongoDatabase
-  private val blindTokens = new BlindTokens
-  private val V1 = Root / "v1"
   private val body = "body"
+  private val V1 = Root / "v1"
+  private val db = new MongoDatabase
+  private val blindTokens = new BlindTokens
+
+  private val check =
+    // How an incoming data should be checked
+    if (values.checkByToken) new BlindTokenChecker
+    else new SignatureChecker
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -55,7 +61,7 @@ class Responder {
     // Record tokens and send an Invoice
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val prunedTokens = toClass[TokenSeq](hex2Json apply tokens) take values.quantity
+      val prunedTokens = toClass[StringSeq](hex2Json apply tokens) take values.quantity
 
       // Only if we have a seskey in a cache
       blindTokens.cache get sesKey map { privateKey =>
@@ -82,15 +88,15 @@ class Responder {
 
     // BREACH TXS
 
-    // Record a transaction to be broadcasted in case of channel breach
-    case req @ POST -> V1 / "tx" / "watch" => ifToken(req.params) {
+    case req @ POST -> V1 / "tx" / "watch" => check.verify(req.params) {
+      // Record a transaction to be broadcasted in case of channel breach
       Ok apply okSingle("done")
     }
 
     // DATA STORAGE
 
-    case req @ POST -> V1 / "data" / "put" => ifToken(req.params) {
-      // Rewrites user's channel data, can be used for general purposes
+    case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
+      // Rewrites user's channel data but can be used for general purposes
       db.putGeneralData(req params "key", req params body)
       Ok apply okSingle("done")
     }
@@ -130,20 +136,39 @@ class Responder {
     case POST -> Root / "v2" / _ => Ok apply error("mustupdate")
   }
 
-  // Checking clear token validity before proceeding
-  def ifToken(params: HttpParams)(next: => TaskResponse): TaskResponse =  {
-    val Seq(point, clearsig, cleartoken) = extract(params, identity, "point", "clearsig", "cleartoken")
-    val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
-      clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
-
-    if (params(body).length > 8192) Ok apply error("bodytoolarge")
-    else if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
-    else if (!signatureIsFine) Ok apply error("tokeninvalid")
-    else try next finally db putClearToken cleartoken
-  }
-
   // HTTP answer as JSON array
   def okSingle(data: Any): String = ok(data)
   def ok(data: Any*): String = Serialization write "ok" +: data
   def error(data: Any*): String = Serialization write "error" +: data
+
+  // Ckecking if incoming data can be accepted either by signature or blind token
+  trait DataChecker { def verify(params: HttpParams)(next: => TaskResponse): TaskResponse }
+
+  class BlindTokenChecker extends DataChecker {
+    def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
+      val Seq(point, clearsig, cleartoken) = extract(params, identity, "point", "clearsig", "cleartoken")
+      val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
+        clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
+
+      if (params(body).length > 8192) Ok apply error("bodytoolarge")
+      else if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
+      else if (!signatureIsFine) Ok apply error("tokeninvalid")
+      else try next finally db putClearToken cleartoken
+    }
+  }
+
+  class SignatureChecker extends DataChecker {
+    private val pubKeys = db.getPublicKeys map BinaryData.apply map PublicKey.apply
+    private val keysMap = pubKeys.map(key => key.toString.take(8) -> key).toMap
+
+    def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
+      val Seq(data, sig, prefix) = extract(params, identity, body, "sig", "prefix")
+      val signatureIsFine = Crypto.verifySignature(BinaryData(data), BinaryData(sig),
+        publicKey = keysMap apply prefix)
+
+      if (params(body).length > 8192) Ok apply error("bodytoolarge")
+      else if (!signatureIsFine) Ok apply error("signatureinvalid")
+      else next
+    }
+  }
 }

@@ -4,7 +4,7 @@ import org.json4s.jackson.JsonMethods._
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
-import com.btcontract.lncloud.Utils.TokenSeq
+import com.btcontract.lncloud.Utils.StringSeq
 import com.lightning.wallet.ln.Invoice
 import fr.acinq.bitcoin.MilliSatoshi
 import language.implicitConversions
@@ -14,7 +14,7 @@ import java.math.BigInteger
 
 object Utils {
   var values: Vals = _
-  type TokenSeq = Seq[String]
+  type StringSeq = Seq[String]
 
   implicit val formats = org.json4s.DefaultFormats
   lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
@@ -42,6 +42,6 @@ object JsonHttpUtils {
 // tokens is a list of yet unsigned blind BigInts from client
 
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindData(invoice: Invoice, k: BigInteger, tokens: TokenSeq)
+case class BlindData(invoice: Invoice, k: BigInteger, tokens: StringSeq)
 case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int, rpcUrl: String,
-                eclairUrl: String, zmqPoint: String, rewindRange: Int)
+                eclairUrl: String, zmqPoint: String, rewindRange: Int, checkByToken: Boolean)
