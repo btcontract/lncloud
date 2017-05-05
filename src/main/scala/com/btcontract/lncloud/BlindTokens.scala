@@ -51,7 +51,7 @@ class BlindTokens { me =>
   }
 
   def makeBlind(tokens: TokenSeq, k: BigInteger): Future[BlindData] =
-    for (invoice: Invoice <- me generateInvoice values.price)
+    for (invoice <- me generateInvoice values.price)
       yield BlindData(invoice, k, tokens)
 
   def signTokens(bd: BlindData): TokenSeq = for (token <- bd.tokens)

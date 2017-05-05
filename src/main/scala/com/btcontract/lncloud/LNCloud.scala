@@ -25,7 +25,7 @@ import java.math.BigInteger
 object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
-    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 5,
+    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 50,
       rpcUrl = "http://user:password@127.0.0.1:8332", eclairUrl = "http://127.0.0.1:8080",
       zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144)
 
@@ -43,6 +43,7 @@ class Responder {
   private val db: MongoDatabase = new MongoDatabase
   private val blindTokens = new BlindTokens
   private val V1 = Root / "v1"
+  private val body = "body"
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -81,11 +82,6 @@ class Responder {
 
     // BREACH TXS
 
-    // If they supply way too much data
-    case req @ POST -> V1 / "tx" / "watch"
-      if req.params("watch").length > 4096 =>
-      Ok apply error("toobig")
-
     // Record a transaction to be broadcasted in case of channel breach
     case req @ POST -> V1 / "tx" / "watch" => ifToken(req.params) {
       Ok apply okSingle("done")
@@ -93,28 +89,19 @@ class Responder {
 
     // DATA STORAGE
 
-    // If they supply way too much data
-    case req @ POST -> V1 / "data" / "put"
-      if req.params("data").length > 4096 =>
-      Ok apply error("toobig")
-
     case req @ POST -> V1 / "data" / "put" => ifToken(req.params) {
       // Rewrites user's channel data, can be used for general purposes
-      db.putGeneralData(req params "key", req params "data")
+      db.putGeneralData(req params "key", req params body)
       Ok apply okSingle("done")
     }
 
     case req @ POST -> V1 / "data" / "get" =>
-      db.getGeneralData(key = req params "key") match {
-        case Some(realData) => Ok apply okSingle(realData)
+      db.getGeneralData(req params "key") match {
+        case Some(result) => Ok apply okSingle(result)
         case _ => Ok apply error("notfound")
       }
 
-    case req @ POST -> V1 / "data" / "delete" =>
-      db.deleteGeneralData(req params "key")
-      Ok apply okSingle("done")
-
-    // ROUTER DATA
+    // ROUTER
 
     case req @ POST -> V1 / "router" / "routes"
       // GUARD: counterparty has been blacklisted
@@ -139,12 +126,8 @@ class Responder {
 
     // NEW VERSION WARNING AND TEST
 
-    case req @ POST -> V1 / "ping" =>
-      Tools.log(req params "data")
-      Ok apply ok("pong")
-
-    case POST -> Root / "v2" / _ =>
-      Ok apply error("mustupdate")
+    case req @ POST -> Root / _ / "ping" => Ok apply ok(req params body)
+    case POST -> Root / "v2" / _ => Ok apply error("mustupdate")
   }
 
   // Checking clear token validity before proceeding
@@ -153,7 +136,8 @@ class Responder {
     val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
       clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
-    if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
+    if (params(body).length > 8192) Ok apply error("bodytoolarge")
+    else if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
     else if (!signatureIsFine) Ok apply error("tokeninvalid")
     else try next finally db putClearToken cleartoken
   }
