@@ -7,7 +7,6 @@ import com.lightning.wallet.ln.wire._
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
 import com.lightning.wallet.ln.{Announcements, Features, Tools}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
-import com.lightning.wallet.ln.Tools.{errLog, none}
 import rx.lang.scala.{Observable => Obs}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
@@ -17,6 +16,8 @@ import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
+import com.btcontract.lncloud.Utils.errLog
+import com.lightning.wallet.ln.Tools.none
 import fr.acinq.bitcoin.Crypto.PublicKey
 import language.implicitConversions
 import scala.collection.mutable
@@ -147,10 +148,11 @@ object Router { me =>
 
     case cu: ChannelUpdate => try {
       val info = channels chanId2Info cu.shortChannelId
-      val channelDirection = cu.flags.data(1) % 2 match {
-        case 0 => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
-        case _ => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
-      }
+      val isNode1 = Announcements isNode1 cu.flags
+
+      val channelDirection =
+        if (isNode1) ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
+        else ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
 
       require(!black.contains(info.ca.nodeId1) & !black.contains(info.ca.nodeId2), s"Ignoring $cu")
       require(!updates.get(channelDirection).exists(_.timestamp >= cu.timestamp), s"Ignoring outdated $cu")

@@ -4,6 +4,7 @@ import com.lightning.wallet.ln.wire._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, hash256, verifySignature}
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
+import scodec.bits.BitVector
 import shapeless.HNil
 
 
@@ -18,11 +19,10 @@ object Announcements { me =>
   private def channelUpdateWitnessEncode(shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) =
     me hashTwice LightningMessageCodecs.channelUpdateWitness.encode(shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil)
 
-  def signChannelAnnouncement(shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey,
-                              localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey,
-                              features: BinaryData): (BinaryData, BinaryData) = {
+  def signChannelAnnouncement(shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey,
+                              remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
 
-    val witness = LexicographicalOrdering.isLessThan(localNodeSecret.publicKey.toBin, remoteNodeId.toBin) match {
+    val witness = isNode1(localNodeSecret.publicKey.toBin, remoteNodeId.toBin) match {
       case true => channelAnnouncementWitnessEncode(shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features)
       case false => channelAnnouncementWitnessEncode(shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey, features)
     }
@@ -36,7 +36,7 @@ object Announcements { me =>
                               remoteFundingKey: PublicKey, localNodeSignature: BinaryData, remoteNodeSignature: BinaryData,
                               localBitcoinSignature: BinaryData, remoteBitcoinSignature: BinaryData): ChannelAnnouncement =
 
-    LexicographicalOrdering.isLessThan(localNodeId.toBin, remoteNodeId.toBin) match {
+    isNode1(localNodeId.toBin, remoteNodeId.toBin) match {
       case true => ChannelAnnouncement(nodeSignature1 = localNodeSignature, nodeSignature2 = remoteNodeSignature,
         bitcoinSignature1 = localBitcoinSignature, bitcoinSignature2 = remoteBitcoinSignature, shortChannelId = shortChannelId,
         nodeId1 = localNodeId, nodeId2 = remoteNodeId, bitcoinKey1 = localFundingKey, bitcoinKey2 = remoteFundingKey, features = "")
@@ -52,12 +52,32 @@ object Announcements { me =>
       features = "", addresses = addresses)
   }
 
-  def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long,
-                        feeBaseMsat: Long, feeProportionalMillionths: Long, timestamp: Long): ChannelUpdate = {
+  // The creating node MUST set node-id-1 and node-id-2 to the public keys of the
+  // two nodes who are operating the channel, such that node-id-1 is the numerically-lesser
+  // of the two DER encoded keys sorted in ascending numerical order
 
-    val flags = LexicographicalOrdering.isLessThan(nodeSecret.publicKey.toBin, remoteNodeId.toBin) match { case true => "0000" case false => "0001" }
-    val sig = Crypto encodeSignature Crypto.sign(channelUpdateWitnessEncode(shortChannelId, timestamp, flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths), nodeSecret)
-    ChannelUpdate(signature = sig :+ 1.toByte, shortChannelId = shortChannelId, timestamp = timestamp, flags = flags, cltvExpiryDelta = cltvExpiryDelta, htlcMinimumMsat = htlcMinimumMsat,
+  def isNode1(localNodeId: BinaryData, remoteNodeId: BinaryData) = LexicographicalOrdering.isLessThan(localNodeId, remoteNodeId)
+
+  // BOLT 7: The creating node [...] MUST set the direction bit of flags to 0 if
+  // the creating node is node-id-1 in that message, otherwise 1
+
+  def isNode1(flags: BinaryData) = !BitVector(flags.data).reverse.get(0)
+
+  // A node MAY create and send a channel_update with the disable
+  // bit set to signal the temporary unavailability of a channel
+
+  def isEnabled(flags: BinaryData) = !BitVector(flags.data).reverse.get(1)
+
+  def makeFlags(isNode1: Boolean, enable: Boolean): BinaryData = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(16).toByteArray
+  def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long,
+                        feeBaseMsat: Long, feeProportionalMillionths: Long, isEnabled: Boolean, timestamp: Long): ChannelUpdate = {
+
+    val flags = makeFlags(isNode1 = isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), isEnabled)
+    val sig = Crypto encodeSignature Crypto.sign(channelUpdateWitnessEncode(shortChannelId, timestamp, flags,
+      cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths), nodeSecret)
+
+    ChannelUpdate(signature = sig :+ 1.toByte, shortChannelId = shortChannelId, timestamp,
+      flags = flags, cltvExpiryDelta = cltvExpiryDelta, htlcMinimumMsat = htlcMinimumMsat,
       feeBaseMsat = feeBaseMsat, feeProportionalMillionths = feeProportionalMillionths)
   }
 

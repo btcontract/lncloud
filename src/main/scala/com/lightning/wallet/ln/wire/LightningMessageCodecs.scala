@@ -3,14 +3,13 @@ package com.lightning.wallet.ln.wire
 import java.net._
 import scodec.codecs._
 import com.lightning.wallet.ln.Exceptions._
+import com.lightning.wallet.ln.crypto.Sphinx
+import java.math.BigInteger
 
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec, Err}
-
-import com.lightning.wallet.ln.crypto.Sphinx
-import java.math.BigInteger
 
 
 object LightningMessageCodecs { me =>

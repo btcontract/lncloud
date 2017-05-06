@@ -22,7 +22,6 @@ abstract class Database {
   // Channel recovery info and misc
   def getGeneralData(key: String): Option[String]
   def putGeneralData(key: String, value: String)
-  def deleteGeneralData(key: String)
 }
 
 class MongoDatabase extends Database {
@@ -49,7 +48,6 @@ class MongoDatabase extends Database {
   def putClearToken(clear: String): Unit = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
 
   // Channel closing info and misc
-  def deleteGeneralData(key: String) = mongo("generalData").remove("key" $eq key)
   def getGeneralData(key: String): Option[String] = mongo("generalData").findOne("key" $eq key).map(_ as[String] "value")
   def putGeneralData(key: String, value: String) = mongo("generalData").update("key" $eq key, $set("key" -> key, "value" -> value),
     upsert = true, multi = false, WriteConcern.Safe)

@@ -1,11 +1,11 @@
 package com.btcontract.lncloud
 
 import org.json4s.jackson.JsonMethods._
+import com.lightning.wallet.ln.{Invoice, Tools}
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.btcontract.lncloud.Utils.StringSeq
-import com.lightning.wallet.ln.Invoice
 import fr.acinq.bitcoin.MilliSatoshi
 import language.implicitConversions
 import org.bitcoinj.core.Utils.HEX
@@ -26,6 +26,7 @@ object Utils {
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
   def extract[T](src: Map[String, String], fn: String => T, args: String*): Seq[T] = args.map(src andThen fn)
   def toClass[T : Manifest](raw: String): T = parse(raw, useBigDecimalForDouble = true).extract[T]
+  def errLog: PartialFunction[Throwable, Unit] = { case err => Tools log err.getMessage }
 }
 
 object JsonHttpUtils {

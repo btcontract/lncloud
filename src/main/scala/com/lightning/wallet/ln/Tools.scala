@@ -12,6 +12,11 @@ import wire.LightningMessage
 import java.util.Locale
 
 
+object >< {
+  // Matching Tuple2 via arrows with much less noise
+  def unapply[A, B](t: (A, B) /* got a tuple */) = Some(t)
+}
+
 object Tools { me =>
   type Bytes = Array[Byte]
   type BinaryDataList = List[BinaryData]
@@ -19,9 +24,8 @@ object Tools { me =>
   val random = new RandomGenerator
 
   def runAnd[T](result: T)(action: Any): T = result
-  def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def log(message: String) = LoggerFactory getLogger "LNCloud" info message
-  def errLog: PartialFunction[Throwable, Unit] = { case err => me log err.getMessage }
+  def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }
 
   def fromShortId(id: Long): (Int, Int, Int) = {
@@ -34,15 +38,11 @@ object Tools { me =>
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long =
     blockHeight.&(0xFFFFFFL).<<(40) | txIndex.&(0xFFFFFFL).<<(16) | outputIndex.&(0xFFFFL)
 
-  def toLongId(txHash: BinaryData, fundingOutputIndex: Int): BinaryData = {
+  def toLongId(hash: BinaryData, fundingOutputIndex: Int): BinaryData = {
     if (fundingOutputIndex >= 65536) throw ChannelException(LONG_ID_INDEX_TOO_BIG)
-    if (txHash.size != 32) throw ChannelException(LONG_ID_HASH_WRONG_SIZE)
-
-    val longChannelId = txHash.take(30) :+
-      txHash.data(30).^(fundingOutputIndex >> 8).toByte :+
-      txHash.data(31).^(fundingOutputIndex).toByte
-
-    longChannelId
+    if (hash.size != 32) throw ChannelException(why = LONG_ID_HASH_WRONG_SIZE)
+    hash.take(30) :+ hash.data(30).^(fundingOutputIndex >> 8).toByte :+
+      hash.data(31).^(fundingOutputIndex).toByte
   }
 }
 
@@ -98,7 +98,7 @@ class StateMachineListenerProxy extends StateMachineListener {
   override def onPostProcess = { case x => for (lst <- listeners) lst onPostProcess x }
 }
 
-abstract class StateMachine[T] { me =>
+abstract class StateMachine[T] { self =>
   val events = new StateMachineListenerProxy
   def stayWith(data1: T) = become(data1, state)
   def doProcess(change: Any)
@@ -106,14 +106,15 @@ abstract class StateMachine[T] { me =>
   var data: T = _
 
   def become(data1: T, state1: String) = {
-    Tools.log(s"StateMachine: $state1 : $data1")
+    // Should be defined before the vars are updated
     val transition = (data, data1, state, state1)
     wrap { data = data1 } { state = state1 }
     events onBecome transition
   }
 
-  def process(change: Any) = try {
-    me synchronized doProcess(change)
-    events onPostProcess change
-  } catch events.onError
+  def process(some: Any) =
+    try self synchronized {
+      doProcess(change = some)
+      events onPostProcess some
+    } catch events.onError
 }

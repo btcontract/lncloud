@@ -16,6 +16,27 @@ import java.math.BigInteger
 import java.nio.ByteOrder
 
 
+case class Packet(v: Bytes, publicKey: Bytes, routingInfo: Bytes, hmac: Bytes) { self =>
+  require(hmac.length == MacLength, s"Onion header hmac length should be exactly $MacLength bytes")
+  require(publicKey.length == 33, "Onion header public key length should be exactly 33 bytes")
+  require(routingInfo.length == DataLength, "Invalid routing info length")
+  def isLast: Boolean = hmac sameElements zeroes(MacLength)
+  def serialize: Bytes = Packet write self
+}
+
+object Packet { self =>
+  def read(in: Bytes): Packet = self read new ByteArrayInputStream(in)
+  def write(packet: Packet): Bytes = write(new ByteArrayOutputStream(PacketLength), packet)
+  def write(out: ByteArrayOutputStream, header: Packet): Bytes = awrite(out, header.v,
+    header.publicKey, header.routingInfo, header.hmac).toByteArray
+
+  private def read(stream: ByteArrayInputStream) = {
+    val res = aread(stream, 1, 33, DataLength, MacLength)
+    val Seq(version, publicKey, routingInfo, hmac) = res
+    Packet(version, publicKey, routingInfo, hmac)
+  }
+}
+
 case class ParsedPacket(payload: Bytes, nextPacket: Packet, sharedSecret: Bytes)
 case class SecretsAndPacket(sharedSecrets: Vector[BytesAndKey], packet: Packet)
 case class ErrorPacket(originNode: PublicKey, failureMessage: FailureMessage)
@@ -94,28 +115,6 @@ object Sphinx { me =>
       val pad: Bytes = aconcat(paddingAccumulator, me zeroes hopSize)
       xor(pad, stream takeRight pad.length)
     }
-
-  case class Packet(v: Bytes, publicKey: Bytes, routingInfo: Bytes, hmac: Bytes) { self =>
-    require(hmac.length == MacLength, s"Onion header hmac length should be exactly $MacLength bytes")
-    require(publicKey.length == 33, "Onion header public key length should be exactly 33 bytes")
-    require(routingInfo.length == DataLength, "Invalid routing info length")
-    def isLast: Boolean = hmac sameElements zeroes(MacLength)
-    def serialize: Bytes = Packet write self
-  }
-
-  object Packet { self =>
-    def read(in: Bytes): Packet = self read new ByteArrayInputStream(in)
-    def write(packet: Packet): Bytes = write(new ByteArrayOutputStream(PacketLength), packet)
-
-    private def read(stream: ByteArrayInputStream) = {
-      val res = aread(stream, 1, 33, DataLength, MacLength)
-      val Seq(version, publicKey, routingInfo, hmac) = res
-      Packet(version, publicKey, routingInfo, hmac)
-    }
-
-    private def write(out: ByteArrayOutputStream, header: Packet) =
-      awrite(out, header.v, header.publicKey, header.routingInfo, header.hmac).toByteArray
-  }
 
   def parsePacket(privateKey: PrivateKey, associatedData: Bytes, rawPacket: Bytes): ParsedPacket = {
     require(rawPacket.length == PacketLength, s"Onion packet length is ${rawPacket.length}, it should be $PacketLength")

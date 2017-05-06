@@ -7,7 +7,7 @@ import com.lightning.wallet.ln.Scripts._
 import com.lightning.wallet.ln.Exceptions._
 
 import com.lightning.wallet.ln.crypto.{Generators, ShaChain, ShaHashesWithIndex}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
 import com.lightning.wallet.ln.Tools.LightningMessages
 import com.lightning.wallet.ln.MSat.satFactor
 
@@ -17,8 +17,9 @@ case object CMDShutdown extends Command
 case object CMDCommitSig extends Command
 case object CMDClosingFinished extends Command
 
-case class CMDOpenChannel(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long,
-                          initialFeeratePerKw: Long, localParams: LocalParams, remoteInit: Init) extends Command
+case class CMDOpenChannel(temporaryChannelId: BinaryData, pushMsat: Long, initialFeeratePerKw: Long,
+                          localParams: LocalParams, remoteInit: Init, funding: Transaction,
+                          outIndex: Int) extends Command
 
 trait CMDAddHtlc extends Command { val spec: OutgoingPaymentSpec }
 case class PlainAddHtlc(spec: OutgoingPaymentSpec) extends CMDAddHtlc
@@ -39,9 +40,6 @@ sealed trait HasCommitments { val commitments: Commitments }
 case class InitData(announce: NodeAnnouncement) extends ChannelData
 case class WaitAcceptData(announce: NodeAnnouncement, cmd: CMDOpenChannel,
                           openChannelMessage: OpenChannel) extends ChannelData
-
-case class WaitFundingTxData(announce: NodeAnnouncement, cmd: CMDOpenChannel, firstRemotePoint: Point,
-                             remoteParams: RemoteParams) extends ChannelData
 
 case class WaitFundingSignedData(announce: NodeAnnouncement, channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams,
                                  fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit,
@@ -244,7 +242,7 @@ object Commitments {
 
   private def doReceiveAdd(c: Commitments, add: UpdateAddHtlc, blockCount: Int) =
     if (add.amountMsat < c.localParams.htlcMinimumMsat) throw ChannelException(HTLC_VALUE_TOO_SMALL)
-    else if (add.expiry < blockCount + LNParams.minExpiryBlocks) throw ChannelException(HTLC_EXPIRY_TOO_SOON)
+    else if (add.expiry < blockCount + LNParams.untilExpiryBlocks) throw ChannelException(HTLC_EXPIRY_TOO_SOON)
     else if (add.id != c.remoteNextHtlcId) throw ChannelException(HTLC_UNEXPECTED_ID)
     else {
 

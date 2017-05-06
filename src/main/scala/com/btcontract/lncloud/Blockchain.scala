@@ -5,12 +5,12 @@ import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
 
 import zeromq.{SocketRef, SocketType, ZeroMQ}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
-import com.lightning.wallet.ln.Tools.{errLog, none}
-import com.btcontract.lncloud.Utils.{bitcoin, values}
 import rx.lang.scala.{Subscription, Observable => Obs}
+import com.btcontract.lncloud.Utils.{bitcoin, values, errLog}
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
+import com.lightning.wallet.ln.Tools.none
 import scala.util.Try
 
 
