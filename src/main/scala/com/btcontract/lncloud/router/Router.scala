@@ -24,8 +24,11 @@ import scala.collection.mutable
 
 
 object Router { me =>
+  // Messages we need to process when there is nothing in `awaits`
   private val stash = new ConcurrentSkipListSet[RoutingMessage].asScala
+  // We need to check if each chan announcement has a bitcoin transaction
   private val awaits = new ConcurrentSkipListSet[ChannelAnnouncement].asScala
+  // This is the current state of the network, a raw material for building a graph
   private val updates = new ConcurrentHashMap[ChanDirection, ChannelUpdate].asScala
   val black: mutable.Set[BinaryData] = new ConcurrentSkipListSet[BinaryData].asScala
   implicit def binData2PublicKey(data: BinaryData): PublicKey = PublicKey(data)
@@ -110,12 +113,12 @@ object Router { me =>
     }
   }
 
-  private def resend =
-    if (awaits.isEmpty)
-      for (message <- stash) {
-        stash.remove(elem = message)
-        receive(elem = message)
-      }
+  private def resend = if (awaits.isEmpty) {
+    // Create a temp collection, then remove those messages
+    val temporary = for (message <- stash) yield message
+    for (message <- temporary) stash remove message
+    for (message <- temporary) me receive message
+  }
 
   def receive(elem: RoutingMessage): Unit = elem match {
     case ca: ChannelAnnouncement if black.contains(ca.nodeId1) || black.contains(ca.nodeId2) => Tools log s"Ignoring $ca"
@@ -123,17 +126,18 @@ object Router { me =>
     case ca: ChannelAnnouncement =>
 
       awaits add ca
-      val observable = Blockchain.getInfo(ca) map addChannel
-      observable.subscribe(none, e => Tools log s"No utxo for $ca, $e")
-      observable.subscribe(_ => awaits remove ca, _ => awaits remove ca)
-      observable.subscribe(_ => resend, _ => resend)
+      Blockchain.getInfo(ca)
+        .map(updateOrBlacklistChannel)
+        .doOnTerminate(awaits remove ca)
+        .doAfterTerminate(resend)
+        .subscribe(none, none)
 
     case node: NodeAnnouncement if awaits.nonEmpty => stash add node
     case node: NodeAnnouncement if black.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if channels.nodeId2Chans(node.nodeId).isEmpty => Tools log s"Ignoring node without channels $node"
     case node: NodeAnnouncement if nodes.id2Node.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Ignoring outdated $node"
     case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
-    case node: NodeAnnouncement if Features.isSet(node.features, Features.CHANNELS_PUBLIC_BIT) => nodes rm node
+    case node: NodeAnnouncement if !Features.isSet(node.features, Features.CHANNELS_PUBLIC_BIT) => nodes rm node
 
     case node: NodeAnnouncement =>
       // Might be a new one or an update
@@ -161,19 +165,17 @@ object Router { me =>
     } catch errLog
   }
 
-  private def addChannel(info: ChanInfo): Unit = {
+  private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
+    // May fail because scripts don't match, may be blacklisted or added/updated
     val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
     require(Script.write(fundingOutScript) == BinaryData(info.txo.hex), s"Incorrect script in $info")
 
-    channels isBad info match {
-      case None => channels add info
-
-      case Some(old: ChanInfo) =>
-        val compromisedNodeIds = List(old.ca.nodeId1, old.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
-        complexRemove(compromisedNodeIds.flatMap(channels.nodeId2Chans).map(channels.chanId2Info):_*)
-        Tools log s"Compromised $info since $old exists"
-        compromisedNodeIds foreach black.add
-    }
+    channels isBad info map { old: ChanInfo =>
+      val compromisedNodes = List(old.ca.nodeId1, old.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
+      complexRemove(compromisedNodes.flatMap(channels.nodeId2Chans).map(channels.chanId2Info):_*)
+      Tools log s"Compromised $info since $old exists"
+      compromisedNodes map black.add
+    } getOrElse channels.add(info)
   }
 
   private def checkOutdated = System.currentTimeMillis match { case now =>

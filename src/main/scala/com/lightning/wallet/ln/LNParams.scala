@@ -9,9 +9,10 @@ object LNParams {
   var extendedPrivateKey: ExtendedPrivateKey = _
   var extendedCloudPrivateKey: ExtendedPrivateKey = _
 
-  def setup(seed: BinaryData): Unit = generate(seed) match { case master =>
-    extendedPrivateKey = derivePrivateKey(master, hardened(46) :: hardened(0) :: Nil)
-    extendedCloudPrivateKey = derivePrivateKey(master, hardened(92) :: hardened(0) :: Nil)
+  def setup(seed: BinaryData): Unit = generate(seed) match {
+    case master =>
+      extendedPrivateKey = derivePrivateKey(master, hardened(46) :: hardened(0) :: Nil)
+      extendedCloudPrivateKey = derivePrivateKey(master, hardened(92) :: hardened(0) :: Nil)
   }
 
   val updateFeeMinDiffRatio = 0.25 // Must update
@@ -39,28 +40,4 @@ object LNParams {
       fundingPrivKey = deriveParamsPrivateKey(keyIndex, 0L), revocationSecret = deriveParamsPrivateKey(keyIndex, 1L), paymentKey = deriveParamsPrivateKey(keyIndex, 2L),
       delayedPaymentKey = deriveParamsPrivateKey(keyIndex, 3L), defaultFinalScriptPubKey = finalScriptPubKey, shaSeed = sha256(deriveParamsPrivateKey(keyIndex, 4L).toBin),
       isFunder = true, globalFeatures = "", localFeatures = "01")
-}
-
-trait Broadcaster {
-  def broadcast(tx: Transaction)
-  def currentFeeRate: Long
-  def currentHeight: Int
-
-  def broadcastStatus(txs: Seq[Transaction], parents: Map[String, Int], chainHeight: Int): Seq[BroadcastStatus] = {
-    val augmented = for (tx <- txs) yield (tx, parents get tx.txIn.head.outPoint.txid.toString, Scripts csvTimeout tx)
-
-    augmented map {
-      // If CSV is zero then whether parent tx is present or not is irrelevant, we look as CLTV
-      case (tx, _, 0L) if tx.lockTime - chainHeight < 1 => BroadcastStatus(None, publishable = true, tx)
-      case (tx, _, 0L) => BroadcastStatus(Some(tx.lockTime - chainHeight), publishable = false, tx)
-      // If CSV is not zero but parent tx is not published then we wait for parent
-      case (tx, None, _) => BroadcastStatus(None, publishable = false, tx)
-
-      case (tx, Some(parentConfs), csv) =>
-        // Tx may have both CLTV and CSV so we need to get the max of them
-        val blocksLeft = math.max(csv - parentConfs, tx.lockTime - chainHeight)
-        if (blocksLeft < 1) BroadcastStatus(None, publishable = true, tx)
-        else BroadcastStatus(Some(blocksLeft), publishable = false, tx)
-    }
-  }
 }
