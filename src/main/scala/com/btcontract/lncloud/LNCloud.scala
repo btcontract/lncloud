@@ -116,7 +116,7 @@ class Responder {
 
     case req @ POST -> V1 / "router" / "routes" =>
       val routes: Seq[PaymentRoute] = Router.finder.findRoutes(req params "from", req params "to")
-      val data = routes take 5 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
+      val data = routes take 10 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 
     case req @ POST -> V1 / "router" / "nodes" =>

@@ -2,11 +2,12 @@ package com.btcontract.lncloud
 
 import org.json4s.jackson.JsonMethods._
 import com.lightning.wallet.ln.{Invoice, Tools}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.btcontract.lncloud.Utils.StringSeq
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.bitcoin.Crypto.PublicKey
 import language.implicitConversions
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
@@ -22,6 +23,7 @@ object Utils {
   val random = new com.lightning.wallet.ln.crypto.RandomGenerator
   val twoHours = 7200000
 
+  implicit def binData2PublicKey(data: BinaryData): PublicKey = PublicKey(data)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
   def extract[T](src: Map[String, String], fn: String => T, args: String*): Seq[T] = args.map(src andThen fn)
