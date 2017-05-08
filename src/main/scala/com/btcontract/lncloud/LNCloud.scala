@@ -39,11 +39,10 @@ object LNCloud extends ServerApp {
 class Responder {
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
-
-  private val body = "body"
-  private val V1 = Root / "v1"
-  private val db = new MongoDatabase
   private val blindTokens = new BlindTokens
+  private val db = new MongoDatabase
+  private val V1 = Root / "v1"
+  private val body = "body"
 
   private val check =
     // How an incoming data should be checked
@@ -61,27 +60,35 @@ class Responder {
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
       val prunedTokens = toClass[StringSeq](hex2Json apply tokens) take values.quantity
+      // We put request details in a db and provide an invoice for them to fulfill
 
-      // Only if we have a seskey in a cache
-      blindTokens.cache get sesKey map { privateKey =>
-        val blindFuture = blindTokens.makeBlind(prunedTokens, privateKey.data)
-        for (blindData <- blindFuture) db.putPendingTokens(data = blindData, sesKey)
-        for (blindData <- blindFuture) yield okSingle(Invoice serialize blindData.invoice)
-      } match {
-        case Some(future) => Ok apply future
+      val requestInvoice = for {
+        privateKey <- blindTokens.cache get sesKey
+        invoice = blindTokens generateInvoice values.price
+        blind = BlindData(invoice, privateKey.data, prunedTokens)
+      } yield {
+        db.putPendingTokens(blind, sesKey)
+        okSingle(Invoice serialize invoice)
+      }
+
+      requestInvoice match {
+        case Some(invoice) => Ok apply invoice
         case None => Ok apply error("notfound")
       }
 
     // Provide signed blind tokens
     case req @ POST -> V1 / "blindtokens" / "redeem" =>
-      // Only if we have a saved BlindData which is paid for
-      db.getPendingTokens(req params "seskey") map { blindData =>
-        blindTokens isFulfilled blindData.invoice.paymentHash map {
-          case true => ok(data = blindTokens signTokens blindData:_*)
-          case false => error("notpaid")
-        }
-      } match {
-        case Some(future) => Ok apply future
+      // We only sign tokens if the request has been payed
+
+      val blindSignatures = for {
+        blindData <- db getPendingTokens req.params("seskey")
+        if blindTokens isFulfilled blindData.invoice.paymentHash
+        bigInts = for (blindToken <- blindData.tokens) yield new BigInteger(blindToken)
+        signatures = for (bi <- bigInts) yield blindTokens.signer.blindSign(bi, blindData.k).toString
+      } yield signatures
+
+      blindSignatures match {
+        case Some(sigs) => Ok apply ok(sigs:_*)
         case None => Ok apply error("notfound")
       }
 

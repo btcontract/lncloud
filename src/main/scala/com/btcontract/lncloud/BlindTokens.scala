@@ -2,12 +2,9 @@ package com.btcontract.lncloud
 
 import com.btcontract.lncloud.Utils._
 import org.json4s.jackson.JsonMethods._
-
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
-import concurrent.ExecutionContext.Implicits.global
 import com.btcontract.lncloud.crypto.ECBlindSign
 import com.github.kevinsawicki.http.HttpRequest
 import java.util.concurrent.ConcurrentHashMap
@@ -17,7 +14,6 @@ import org.spongycastle.math.ec.ECPoint
 import com.lightning.wallet.ln.Invoice
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
-import scala.concurrent.Future
 import java.math.BigInteger
 
 
@@ -33,26 +29,16 @@ class BlindTokens { me =>
     for (Tuple2(hex, item) <- cache if item.stamp < now - twoHours) cache remove hex
   }
 
-  def generateInvoice(price: MilliSatoshi): Future[Invoice] = Future {
+  def generateInvoice(price: MilliSatoshi): Invoice = {
     val params = Map("params" -> List(price.amount), "method" -> "receive")
     val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
     Invoice parse raw.values.toString
   }
 
-  def isFulfilled(paymentHash: BinaryData): Future[Boolean] = Future {
+  def isFulfilled(paymentHash: BinaryData): Boolean = {
     val params = Map("paymentHash" -> List(paymentHash.toString), "method" -> "status")
     val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
     raw.extract[StampOpt].isDefined
-  }
-
-  // Save signing params for future usage
-  def makeBlind(tokens: StringSeq, k: BigInteger): Future[BlindData] =
-    for (invoice <- me generateInvoice values.price) yield BlindData(invoice, k, tokens)
-
-  // Sign tokens when paid for
-  def signTokens(bd: BlindData): StringSeq = {
-    val tokensBigInt = for (token <- bd.tokens) yield new BigInteger(token)
-    for (bigInt <- tokensBigInt) yield signer.blindSign(bigInt, bd.k).toString
   }
 
   def decodeECPoint(raw: String): ECPoint =
