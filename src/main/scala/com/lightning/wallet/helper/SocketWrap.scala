@@ -36,7 +36,8 @@ class SocketWrap(ip: InetAddress, port: Int) extends DataTransport {
         if (read > 0) try events.onData(buffer take read) catch none
         else if (read < 0) throw new RuntimeException("Sock closed")
       }
-    } onComplete { result =>
+    } onComplete { _ =>
+      Tools.log("Sock off")
       events.onDisconnect
     }
   }

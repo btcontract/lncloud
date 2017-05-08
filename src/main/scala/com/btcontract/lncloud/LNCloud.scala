@@ -26,7 +26,7 @@ object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 50,
-      rpcUrl = "http://user:password@127.0.0.1:8332", eclairUrl = "http://127.0.0.1:8080",
+      rpcUrl = "http://foo:bar@127.0.0.1:18332", eclairUrl = "http://127.0.0.1:8080",
       zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144, checkByToken = true)
 
     values = config /*toClass[Vals](config)*/

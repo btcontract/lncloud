@@ -28,7 +28,7 @@ object Blockchain { me =>
     .subscribe(tx => listeners.foreach(_ onNewTx tx), errLog)
 
   private val realtime = mkObserver("hashblock")
-  Obs.interval(10.minute).map(_ => bitcoin.getBestBlockHash).merge(realtime)
+  Obs.interval(20.minute).map(_ => bitcoin.getBestBlockHash).merge(realtime)
     .map(bitcoin getBlock _.toString).throttleLast(5.seconds).subscribeOn(IOScheduler.apply)
     .retryWhen(_ delay 10.second).subscribe(block => listeners.foreach(_ onNewBlock block), errLog)
 

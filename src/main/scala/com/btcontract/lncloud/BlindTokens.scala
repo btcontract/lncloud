@@ -1,13 +1,18 @@
 package com.btcontract.lncloud
 
 import com.btcontract.lncloud.Utils._
+import org.json4s.jackson.JsonMethods._
+
 import rx.lang.scala.{Observable => Obs}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+
 import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import concurrent.ExecutionContext.Implicits.global
 import com.btcontract.lncloud.crypto.ECBlindSign
+import com.github.kevinsawicki.http.HttpRequest
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
+import org.json4s.jackson.Serialization
 import org.spongycastle.math.ec.ECPoint
 import com.lightning.wallet.ln.Invoice
 import org.bitcoinj.core.Utils.HEX
@@ -19,37 +24,36 @@ import java.math.BigInteger
 class BlindTokens { me =>
   type StampOpt = Option[Long]
   type SesKeyCacheItem = CacheItem[BigInteger]
-  val signer = new ECBlindSign(values.privKey.bigInteger)
-  val cache: collection.concurrent.Map[String, SesKeyCacheItem] =
-    new ConcurrentHashMap[String, SesKeyCacheItem].asScala
+  val signer: ECBlindSign = new ECBlindSign(values.privKey.bigInteger)
+  val cache: collection.concurrent.Map[String, SesKeyCacheItem] = new ConcurrentHashMap[String, SesKeyCacheItem].asScala
+  private def rpcRequest = HttpRequest.post(values.eclairUrl).connectTimeout(5000).contentType("application/json")
 
   // Periodically remove used and outdated requests
-  Obs.interval(1.minute).map(_ => System.currentTimeMillis) foreach { now =>
+  Obs.interval(2.hours).map(_ => System.currentTimeMillis) foreach { now =>
     for (Tuple2(hex, item) <- cache if item.stamp < now - twoHours) cache remove hex
   }
 
-  def isFulfilled(paymentHash: BinaryData): Future[Boolean] = Future {
-//    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
-//    val response = httpRequest.send("status=" + paymentHash.toString).body
-//    toClass[StampOpt](response).isDefined
-    true
-  }
-
   def generateInvoice(price: MilliSatoshi): Future[Invoice] = Future {
-//    val httpRequest = HttpRequest post values.eclairUrl connectTimeout 5000
-//    val response = httpRequest.send("receive=" + price.amount).body
-//    Invoice parse response
-    val preimage = BinaryData("9273f6a0a42b82d14c759e3756bd2741d51a0b3ecc5f284dbe222b59ea903942")
-    val pk = BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
-    Invoice(None, fr.acinq.bitcoin.Crypto.PublicKey(pk), price, Crypto sha256 preimage)
+    val params = Map("params" -> List(price.amount), "method" -> "receive")
+    val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
+    Invoice parse raw.values.toString
   }
 
-  def makeBlind(tokens: StringSeq, k: BigInteger): Future[BlindData] =
-    for (invoice <- me generateInvoice values.price)
-      yield BlindData(invoice, k, tokens)
+  def isFulfilled(paymentHash: BinaryData): Future[Boolean] = Future {
+    val params = Map("paymentHash" -> List(paymentHash.toString), "method" -> "status")
+    val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
+    raw.extract[StampOpt].isDefined
+  }
 
-  def signTokens(bd: BlindData): StringSeq = for (token <- bd.tokens)
-    yield signer.blindSign(new BigInteger(token), bd.k).toString
+  // Save signing params for future usage
+  def makeBlind(tokens: StringSeq, k: BigInteger): Future[BlindData] =
+    for (invoice <- me generateInvoice values.price) yield BlindData(invoice, k, tokens)
+
+  // Sign tokens when paid for
+  def signTokens(bd: BlindData): StringSeq = {
+    val tokensBigInt = for (token <- bd.tokens) yield new BigInteger(token)
+    for (bigInt <- tokensBigInt) yield signer.blindSign(bigInt, bd.k).toString
+  }
 
   def decodeECPoint(raw: String): ECPoint =
     ECKey.CURVE.getCurve.decodePoint(HEX decode raw)
