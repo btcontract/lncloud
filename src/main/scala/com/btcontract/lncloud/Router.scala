@@ -1,14 +1,13 @@
-package com.btcontract.lncloud.router
+package com.btcontract.lncloud
 
-import com.btcontract.lncloud._
-import collection.JavaConverters._
 import com.lightning.wallet.ln.wire._
+import scala.collection.JavaConverters._
 
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
-import com.lightning.wallet.ln.{Announcements, Features, Tools}
-import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
-import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
 import rx.lang.scala.{Observable => Obs}
+import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
+import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
+import com.lightning.wallet.ln.{Announcements, Features, Tools}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
 import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
@@ -17,8 +16,8 @@ import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
+import scala.language.implicitConversions
 import com.lightning.wallet.ln.Tools.none
-import language.implicitConversions
 import scala.collection.mutable
 
 

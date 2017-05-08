@@ -12,7 +12,6 @@ import com.lightning.wallet.ln.wire.NodeAnnouncement
 import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
-import com.btcontract.lncloud.router.Router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
 import com.lightning.wallet.ln.Invoice
