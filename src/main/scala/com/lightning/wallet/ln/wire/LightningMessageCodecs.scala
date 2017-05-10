@@ -21,12 +21,15 @@ object LightningMessageCodecs { me =>
   type AddressPort = (InetAddress, Int)
   type RGB = (Byte, Byte, Byte)
 
-  def serializationResult(attempt: BitVectorAttempt): BinaryData = attempt match {
+  def serialize(msg: LightningMessage): BinaryData =
+    serialize(lightningMessageCodec encode msg)
+
+  def serialize(attempt: BitVectorAttempt): BinaryData = attempt match {
     case Attempt.Failure(some) => throw DetailedException(SERIALIZATION_ERROR, some)
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
   }
 
-  def deserializationResult(transferred: BinaryData) =
+  def deserialize(transferred: BinaryData): LightningMessage =
     lightningMessageCodec decode BitVector(transferred.data) match {
       case Attempt.Failure(_) => throw ChannelException(DESERIALIZATION_ERROR)
       case Attempt.Successful(result) => result.value
@@ -132,7 +135,7 @@ object LightningMessageCodecs { me =>
 
   val rgb: Codec[RGB] = bytes(3).xmap(bv2Rgb, rgb2Bv)
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(vec2Bin, bin2Vec)
-  val varsizebinarydata: Codec[BinaryData] = variableSizeBytesLong(value = bytes.xmap(vec2Bin, bin2Vec), size = uint32)
+  val varsizebinarydata: Codec[BinaryData] = variableSizeBytes(value = bytes.xmap(vec2Bin, bin2Vec), size = uint16)
   val zeropaddedstring: Codec[String] = fixedSizeBytes(32, utf8).xmap(_.takeWhile(_ != '\u0000'), identity)
 
   // Data formats

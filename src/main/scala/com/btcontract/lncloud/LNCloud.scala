@@ -9,7 +9,6 @@ import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
 
 import com.lightning.wallet.ln.wire.NodeAnnouncement
-import concurrent.ExecutionContext.Implicits.global
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -25,11 +24,14 @@ import java.math.BigInteger
 object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
-    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), quantity = 50,
-      rpcUrl = "http://foo:bar@127.0.0.1:18332", eclairUrl = "http://127.0.0.1:8080",
-      zmqPoint = "tcp://127.0.0.1:28332", rewindRange = 144, checkByToken = true)
+    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
+      rpcUrl = "http://foo:bar@127.0.0.1:18332", zmqPoint = "tcp://127.0.0.1:29000",
+      eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 48001,
+      eclairNodeId = "023a1c4ec1d0167a7fe7cc3eb8c1b64bc0b50dd8ff80114c72319e89e5998e48cf",
+      rewindRange = 144, checkByToken = true)
 
-    values = config /*toClass[Vals](config)*/
+    values = config
+    RouterConnector.socket.start
     val socketAndHttpLnCloudServer = new Responder
     val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
     BlazeBuilder.bindHttp(9002).mountService(postLift).start
@@ -78,7 +80,7 @@ class Responder {
 
     // Provide signed blind tokens
     case req @ POST -> V1 / "blindtokens" / "redeem" =>
-      // We only sign tokens if the request has been payed
+      // We only sign tokens if the request has been paid
 
       val blindSignatures = for {
         blindData <- db getPendingTokens req.params("seskey")

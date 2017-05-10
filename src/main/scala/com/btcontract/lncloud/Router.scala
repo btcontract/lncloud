@@ -1,23 +1,31 @@
 package com.btcontract.lncloud
 
-import com.lightning.wallet.ln.wire._
-import scala.collection.JavaConverters._
+import java.net.InetAddress
 
+import com.lightning.wallet.ln.wire._
+
+import scala.collection.JavaConverters._
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
 import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
-import com.lightning.wallet.ln.{Announcements, Features, Tools}
+import com.lightning.wallet.ln._
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
 import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
+import com.lightning.wallet.helper.{SocketListener, SocketWrap}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
+
 import scala.concurrent.duration.DurationInt
 import scala.language.implicitConversions
-import com.lightning.wallet.ln.Tools.none
+import com.lightning.wallet.ln.Tools.{Bytes, none}
+import com.btcontract.lncloud.Utils.values
+import com.lightning.wallet.ln.crypto.Noise
+import rx.lang.scala.{Observable => Obs}
+
 import scala.collection.mutable
 
 
@@ -101,7 +109,7 @@ object Router { me =>
     for (message <- temporary) me receive message
   }
 
-  def receive(elem: RoutingMessage): Unit = elem match {
+  def receive(elem: LightningMessage): Unit = elem match {
     case ca: ChannelAnnouncement if black.contains(ca.nodeId1) || black.contains(ca.nodeId2) => Tools log s"Blacklisted $ca"
     case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"
     case ca: ChannelAnnouncement =>
@@ -144,6 +152,9 @@ object Router { me =>
       if (finder.updates contains channelDirection) finder.updates(channelDirection) = cu
       else finder = finder.augmented(channelDirection, upd = cu)
     } catch errLog
+
+    case otherwise =>
+      Tools.log(s"Unhandled $otherwise")
   }
 
   private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
@@ -183,4 +194,35 @@ object Router { me =>
   private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(channels chanId2Info _.shortChannelId)
   Obs.interval(6.hours).map(_ => outdatedInfos).filter(_.nonEmpty).foreach(infos => complexRemove(infos.toSeq:_*), errLog)
   Blockchain addListener spentChannelsWatcher
+}
+
+object RouterConnector {
+  val address = InetAddress getByName values.eclairIp
+  val socket = new SocketWrap(address, values.eclairPort)
+  val keyPair = Noise.Secp256k1DHFunctions.generateKeyPair(Utils.random getBytes 32)
+  val transportHandler = new TransportHandler(keyPair, values.eclairNodeId,
+    Router receive LightningMessageCodecs.deserialize(_), socket)
+
+  val socketListener = new SocketListener {
+    override def onConnect: Unit = transportHandler.init
+    override def onData(chunk: BinaryData) = transportHandler process chunk
+    override def onDisconnect: Unit = Obs.just(null).delay(10.seconds)
+      .doOnTerminate(socket.start).subscribe(none)
+  }
+
+  val transportListener = new StateMachineListener {
+    override def onBecome: PartialFunction[Transition, Unit] = {
+      case (_, _, TransportHandler.HANDSHAKE, TransportHandler.WAITING_CYPHERTEXT) =>
+        val init = LightningMessageCodecs serialize Init(globalFeatures = "", localFeatures = "05")
+        transportHandler process Tuple2(TransportHandler.Send, init)
+    }
+
+    override def onError = { case err =>
+      Tools.log(s"Transport failure: $err")
+      socket.shutdown
+    }
+  }
+
+  transportHandler.listeners += transportListener
+  socket.listeners += socketListener
 }

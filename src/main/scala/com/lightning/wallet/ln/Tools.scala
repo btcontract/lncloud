@@ -23,8 +23,8 @@ object Tools { me =>
   type LightningMessages = Vector[LightningMessage]
   val random = new RandomGenerator
 
+  def log(message: String) = println(message)
   def runAnd[T](result: T)(action: Any): T = result
-  def log(message: String) = LoggerFactory getLogger "LNCloud" info message
   def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }
 
@@ -89,21 +89,18 @@ trait StateMachineListener {
   def onBecome: PartialFunction[Transition, Unit] = none
 }
 
-class StateMachineListenerProxy extends StateMachineListener {
-  private[this] var listeners = Set.empty[StateMachineListener]
-  def removeListeners = listeners = Set.empty[StateMachineListener]
-  def addListener(listener: StateMachineListener) = listeners += listener
-  override def onError = { case error => for (lst <- listeners) lst onError error }
-  override def onBecome = { case trans => for (lst <- listeners) lst onBecome trans }
-  override def onPostProcess = { case x => for (lst <- listeners) lst onPostProcess x }
-}
-
 abstract class StateMachine[T] { self =>
-  val events = new StateMachineListenerProxy
+  var listeners = Set.empty[StateMachineListener]
   def stayWith(data1: T) = become(data1, state)
   def doProcess(change: Any)
   var state: String = _
   var data: T = _
+
+  private val events = new StateMachineListener {
+    override def onError = { case error => for (lst <- listeners if lst.onError isDefinedAt error) lst onError error }
+    override def onBecome = { case trans => for (lst <- listeners if lst.onBecome isDefinedAt trans) lst onBecome trans }
+    override def onPostProcess = { case x => for (lst <- listeners if lst.onPostProcess isDefinedAt x) lst onPostProcess x }
+  }
 
   def become(data1: T, state1: String) = {
     // Should be defined before the vars are updated

@@ -22,7 +22,7 @@ class BlindTokens { me =>
   type SesKeyCacheItem = CacheItem[BigInteger]
   val signer: ECBlindSign = new ECBlindSign(values.privKey.bigInteger)
   val cache: collection.concurrent.Map[String, SesKeyCacheItem] = new ConcurrentHashMap[String, SesKeyCacheItem].asScala
-  private def rpcRequest = HttpRequest.post(values.eclairUrl).connectTimeout(5000).contentType("application/json")
+  private def rpcRequest = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
 
   // Periodically remove used and outdated requests
   Obs.interval(2.hours).map(_ => System.currentTimeMillis) foreach { now =>

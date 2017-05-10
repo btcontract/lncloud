@@ -8,23 +8,20 @@ import java.nio.ByteOrder
 
 
 trait DataTransport { def send(data: BinaryData): Unit }
-class TransportHandler(keyPair: KeyPair, rs: Option[BinaryData], consume: BinaryData => Unit,
+class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData, consume: BinaryData => Unit,
                        transport: DataTransport) extends StateMachine[Data] { me =>
 
-  val reader = rs match {
-    case None => makeReader(keyPair)
-    case Some(remoteNodeStaticPubKey) =>
-      val writer = makeWriter(keyPair, remoteNodeStaticPubKey)
-      val (writer1, _, msg) = writer write BinaryData.empty
-      transport.send(prefix +: msg)
-      writer1
+  def init = {
+    val writer = makeWriter(keyPair, remotePubKey)
+    val (reader, _, msg) = writer write BinaryData.empty
+    become(HandshakeData(reader, BinaryData.empty), HANDSHAKE)
+    transport.send(prefix +: msg)
   }
 
-  become(HandshakeData(reader, BinaryData.empty), HANDSHAKE)
   def doProcess(change: Any): Unit = (data, change, state) match {
     case (HandshakeData(reader1, buffer), bd: BinaryData, HANDSHAKE) =>
       me stayWith HandshakeData(reader1, buffer ++ bd)
-      process(Ping)
+      doProcess(Ping)
 
     case (HandshakeData(reader1, buffer), Ping, HANDSHAKE)
       if buffer.length >= expectedLength(reader1) =>
@@ -38,7 +35,7 @@ class TransportHandler(keyPair: KeyPair, rs: Option[BinaryData], consume: Binary
           val decoder1 = ExtendedCipherState(decoder, ck)
           val d1 = CyphertextData(encoder1, decoder1, None, remainder)
           become(d1, WAITING_CYPHERTEXT)
-          process(Ping)
+          doProcess(Ping)
 
         case (writer, _, _) =>
           writer write BinaryData.empty match {
@@ -48,14 +45,14 @@ class TransportHandler(keyPair: KeyPair, rs: Option[BinaryData], consume: Binary
               val d1 = CyphertextData(encoder1, decoder1, None, remainder)
               transport.send(prefix +: message)
               become(d1, WAITING_CYPHERTEXT)
-              process(Ping)
+              doProcess(Ping)
 
             case (reader2, _, message) =>
               require(remainder.isEmpty, s"Unexpected data")
               val d1 = HandshakeData(reader2, remainder)
               transport.send(prefix +: message)
               become(d1, HANDSHAKE)
-              process(Ping)
+              doProcess(Ping)
           }
       }
 
@@ -69,7 +66,7 @@ class TransportHandler(keyPair: KeyPair, rs: Option[BinaryData], consume: Binary
 
     case (cd: CyphertextData, bd: BinaryData, WAITING_CYPHERTEXT) =>
       me stayWith cd.copy(buffer = cd.buffer ++ bd)
-      process(Ping)
+      doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, None, buffer),
       Ping, WAITING_CYPHERTEXT) if buffer.length >= 18 =>
@@ -78,16 +75,16 @@ class TransportHandler(keyPair: KeyPair, rs: Option[BinaryData], consume: Binary
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
       val length = Some apply Protocol.uint16(plaintext, ByteOrder.BIG_ENDIAN)
       me stayWith CyphertextData(encoder, decoder1, length, remainder)
-      process(Ping)
+      doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, Some(length), buffer),
-      Ping, WAITING_CYPHERTEXT) if buffer.length >= length =>
+      Ping, WAITING_CYPHERTEXT) if buffer.length >= length + 16 =>
 
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
       me stayWith CyphertextData(encoder, decoder1, length = None, remainder)
       me consume plaintext
-      process(Ping)
+      doProcess(Ping)
 
     case _ =>
       // Let know if received an unhandled message
@@ -96,9 +93,9 @@ class TransportHandler(keyPair: KeyPair, rs: Option[BinaryData], consume: Binary
 }
 
 object TransportHandler {
-  val prologue = "lightning" getBytes "UTF-8"
-  val WAITING_CYPHERTEXT = "WaitingCyphertext"
   val HANDSHAKE = "Handshake"
+  val WAITING_CYPHERTEXT = "WaitingCyphertext"
+  val prologue = "lightning" getBytes "UTF-8"
   val prefix = 0.toByte
   val Ping = "Ping"
   val Send = "Send"

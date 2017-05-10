@@ -75,7 +75,7 @@ object PaymentSpec {
 
   def buildOnion(nodes: PublicKeyVec, payloads: Vector[PerHopPayload], assocData: BinaryData): SecretsAndPacket = {
     require(nodes.size == payloads.size + 1, "Payload count mismatch: there should be one less payload than " + nodes.size)
-    val payloadsBin = payloads.map(perHopPayloadCodec.encode).map(serializationResult) :+ BinaryData("00" * PayloadLength)
+    val payloadsBin = payloads.map(perHopPayloadCodec.encode).map(serialize) :+ BinaryData("00" * PayloadLength)
     makePacket(PrivateKey(random getBytes 32), nodes, payloadsBin.map(_.toArray), assocData)
   }
 
