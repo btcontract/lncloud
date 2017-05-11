@@ -127,10 +127,17 @@ class Responder {
       val data = routes take 10 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 
+    case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
+      val candidates: Seq[NodeAnnouncement] = Router.nodes.nodeId2Announce.values.toVector
+      val Tuple2(resultSize, colSize) = Tuple2(math.min(25, candidates.size), candidates.size)
+      val nodes: Seq[NodeAnnouncement] = Vector.fill(resultSize)(random nextInt colSize) map candidates
+      val data = nodes map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
+      Ok apply ok(data:_*)
+
     case req @ POST -> V1 / "router" / "nodes" =>
       val query = req.params("query").trim.take(50).toLowerCase
       val nodes: Seq[NodeAnnouncement] = Router.nodes.searchTree.getValuesForKeysStartingWith(query).asScala.toList
-      val data = nodes take 20 map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
+      val data = nodes take 25 map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 
     // NEW VERSION WARNING AND TEST
