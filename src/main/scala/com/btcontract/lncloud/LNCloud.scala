@@ -27,7 +27,7 @@ object LNCloud extends ServerApp {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       rpcUrl = "http://foo:bar@127.0.0.1:18332", zmqPoint = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 48001,
-      eclairNodeId = "023a1c4ec1d0167a7fe7cc3eb8c1b64bc0b50dd8ff80114c72319e89e5998e48cf",
+      eclairNodeId = "03c7441511082605d51f0589b4d6e5907b7828703e77d8f8ffab07f29bd7fe7d6b",
       rewindRange = 144, checkByToken = true)
 
     values = config
@@ -123,7 +123,7 @@ class Responder {
       Ok apply error("fromblacklisted")
 
     case req @ POST -> V1 / "router" / "routes" =>
-      val routes: Seq[PaymentRoute] = Router.finder.findRoutes(req params "from", req params "to")
+      val routes = Router.finder.findRoutes(req params "from", req params "to").sortBy(_.size)
       val data = routes take 10 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 

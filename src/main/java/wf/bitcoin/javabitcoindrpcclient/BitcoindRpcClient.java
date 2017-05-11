@@ -261,7 +261,7 @@ public interface BitcoindRpcClient {
 
     public long timeMillis();
 
-    public interface UploadTarget extends Serializable {
+    public interface uploadTarget extends Serializable {
 
       public long timeFrame();
 
@@ -276,7 +276,7 @@ public interface BitcoindRpcClient {
       public long timeLeftInCycle();
     }
 
-    public UploadTarget uploadTarget();
+    public uploadTarget uploadTarget();
   }
 
   public static interface BlockChainInfo extends Serializable {
@@ -405,13 +405,9 @@ public interface BitcoindRpcClient {
 
     public BigDecimal value();
 
-    public String asm();
-
-    public String hex();
+    public ScriptPubKey scriptPubKey();
 
     public long reqSigs();
-
-    public String type();
 
     public List<String> addresses();
 
@@ -536,19 +532,6 @@ public interface BitcoindRpcClient {
 
       public int n();
 
-      public interface ScriptPubKey extends Serializable {
-
-        public String asm();
-
-        public String hex();
-
-        public int reqSigs();
-
-        public String type();
-
-        public List<String> addresses();
-      }
-
       public ScriptPubKey scriptPubKey();
 
       public TxInput toInput();
@@ -568,6 +551,19 @@ public interface BitcoindRpcClient {
     public Date time();
 
     public Date blocktime();
+  }
+
+  public interface ScriptPubKey extends Serializable {
+
+    public String asm();
+
+    public String hex();
+
+    public int reqSigs();
+
+    public String type();
+
+    public List<String> addresses();
   }
 
   public RawTransaction getRawTransaction(String txId) throws BitcoinRpcException;
@@ -895,6 +891,8 @@ public interface BitcoindRpcClient {
   boolean verifyMessage(String bitcoinAddress, String signature, String message);
 
   String addMultiSigAddress(int nRequired, List<String> keyObject);
+
+  String addMultiSigAddress(int nRequired, List<String> keyObject, String account);
 
   boolean verifyChain();
 

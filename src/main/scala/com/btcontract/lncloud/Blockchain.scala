@@ -7,6 +7,7 @@ import zeromq.{SocketRef, SocketType, ZeroMQ}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import rx.lang.scala.{Subscription, Observable => Obs}
 import com.btcontract.lncloud.Utils.{bitcoin, values, errLog}
+
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
@@ -14,7 +15,7 @@ import com.lightning.wallet.ln.Tools.none
 import scala.util.Try
 
 
-case class ChanInfo(txid: String, txo: TxOut, ca: ChannelAnnouncement)
+case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
 case class ChanDirection(channelId: Long, from: BinaryData, to: BinaryData)
 
 trait BlockchainListener {
@@ -32,24 +33,22 @@ object Blockchain { me =>
     .map(bitcoin getBlock _.toString).throttleLast(5.seconds).subscribeOn(IOScheduler.apply)
     .retryWhen(_ delay 10.second).subscribe(block => listeners.foreach(_ onNewBlock block), errLog)
 
-  def rescanBlocks: Unit =
-    bitcoin.getBlockCount match { case count =>
-      for (num <- count - values.rewindRange to count)
-        for (lst <- listeners) lst onNewBlock bitcoin.getBlock(num)
-    }
+  def rescanBlocks = {
+    val currentPoint = bitcoin.getBlockCount
+    val pastPoint = currentPoint - values.rewindRange
+    val blocks = pastPoint to currentPoint map bitcoin.getBlock
+    for (block <- blocks) for (lst <- listeners) lst onNewBlock block
+  }
 
   def isSpent(chanInfo: ChanInfo): Boolean = Try {
     bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex)
   }.isFailure
 
-  def getInfo(ca: ChannelAnnouncement): Obs[ChanInfo] =
-    obsOn(me doGetInfo ca, IOScheduler.apply)
-
-  private def doGetInfo(ca: ChannelAnnouncement) = {
+  def getInfo(ca: ChannelAnnouncement) = obsOn(provider = {
     val txid = bitcoin.getBlock(ca.blockHeight).tx.get(ca.txIndex)
     val output = bitcoin.getTxOut(txid, ca.outputIndex, true)
-    ChanInfo(txid, output, ca)
-  }
+    ChanInfo(txid, output.scriptPubKey, ca)
+  }, IOScheduler.apply)
 
   private def mkObserver(topic: String) = Obs[BinaryData] { obs =>
     val subSocket: SocketRef = ZeroMQ.socket(SocketType.Sub)

@@ -249,7 +249,7 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
 
     Double oldValue;
     for (TxOutput txOutput : outputs) {
-      if ((oldValue = pOutputs.put(txOutput.address(), BitcoinUtil.normalizeAmount(txOutput.amount()))) != null)
+      if ((oldValue = pOutputs.put(txOutput.address(), txOutput.amount())) != null)
         pOutputs.put(txOutput.address(), BitcoinUtil.normalizeAmount(oldValue + txOutput.amount()));
 //                throw new BitcoinRpcException("Duplicate output");
     }
@@ -652,23 +652,13 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
 
     @Override
-    public String asm() {
-      return mapStr("asm");
-    }
-
-    @Override
-    public String hex() {
-      return mapStr("hex");
+    public ScriptPubKey scriptPubKey() {
+      return new ScriptPubKeyImpl((Map) m.get("scriptPubKey"));
     }
 
     @Override
     public long reqSigs() {
       return mapLong("reqSigs");
-    }
-
-    @Override
-    public String type() {
-      return mapStr("type");
     }
 
     @Override
@@ -1086,39 +1076,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
         return mapInt("n");
       }
 
-      private class ScriptPubKeyImpl extends MapWrapper implements ScriptPubKey, Serializable {
-
-        public ScriptPubKeyImpl(Map m) {
-          super(m);
-        }
-
-        @Override
-        public String asm() {
-          return mapStr("asm");
-        }
-
-        @Override
-        public String hex() {
-          return mapStr("hex");
-        }
-
-        @Override
-        public int reqSigs() {
-          return mapInt("reqSigs");
-        }
-
-        @Override
-        public String type() {
-          return mapStr("type");
-        }
-
-        @Override
-        public List<String> addresses() {
-          return (List) m.get("addresses");
-        }
-
-      }
-
       @Override
       public ScriptPubKey scriptPubKey() {
         return new ScriptPubKeyImpl((Map) m.get("scriptPubKey"));
@@ -1174,6 +1131,40 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
 
   }
+
+  private class ScriptPubKeyImpl extends MapWrapper implements ScriptPubKey, Serializable {
+
+    public ScriptPubKeyImpl(Map m) {
+      super(m);
+    }
+
+    @Override
+    public String asm() {
+      return mapStr("asm");
+    }
+
+    @Override
+    public String hex() {
+      return mapStr("hex");
+    }
+
+    @Override
+    public int reqSigs() {
+      return mapInt("reqSigs");
+    }
+
+    @Override
+    public String type() {
+      return mapStr("type");
+    }
+
+    @Override
+    public List<String> addresses() {
+      return (List) m.get("addresses");
+    }
+
+  }
+
 
   public class DecodedScriptImpl extends MapWrapper implements DecodedScript, Serializable {
 
@@ -1234,7 +1225,7 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
       return mapLong("timemillis");
     }
 
-    public class uploadTargetImpl extends MapWrapper implements UploadTarget, Serializable {
+    public class uploadTargetImpl extends MapWrapper implements uploadTarget, Serializable {
 
       public uploadTargetImpl(Map m) {
         super(m);
@@ -1273,7 +1264,7 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
 
     @Override
-    public UploadTarget uploadTarget() {
+    public NetTotals.uploadTarget uploadTarget() {
       return new uploadTargetImpl((Map) m.get("uploadtarget"));
     }
   }
@@ -2067,6 +2058,11 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public String addMultiSigAddress(int nRequired, List<String> keyObject) throws BitcoinRpcException {
     return (String) query("addmultisigaddress", nRequired, keyObject);
+  }
+
+  @Override
+  public String addMultiSigAddress(int nRequired, List<String> keyObject, String account) throws BitcoinRpcException {
+    return (String) query("addmultisigaddress", nRequired, keyObject, account);
   }
 
   @Override

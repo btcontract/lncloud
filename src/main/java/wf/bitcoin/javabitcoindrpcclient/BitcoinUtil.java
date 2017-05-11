@@ -18,17 +18,14 @@
 
 package wf.bitcoin.javabitcoindrpcclient;
 
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
-
 /**
  *
  * @author Mikhail Yevchenko m.ṥῥẚɱ.ѓѐḿởύḙ@azazar.com
  */
 public class BitcoinUtil {
-    private static NumberFormat f = new DecimalFormat("#.########");
+    
     public static double normalizeAmount(double amount) {
-        return Double.parseDouble(f.format(amount));
+        return (long)(0.5d + (amount / 0.00000001)) * 0.00000001;
     }
 
 //    public static void main(String[] args) {

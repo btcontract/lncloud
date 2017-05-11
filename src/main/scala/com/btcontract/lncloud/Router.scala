@@ -1,42 +1,40 @@
 package com.btcontract.lncloud
 
-import java.net.InetAddress
-
+import com.lightning.wallet.ln._
 import com.lightning.wallet.ln.wire._
-
 import scala.collection.JavaConverters._
+
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
 import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
-import com.lightning.wallet.ln._
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
+import com.lightning.wallet.helper.{SocketListener, SocketWrap}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
 import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
-import com.lightning.wallet.helper.{SocketListener, SocketWrap}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.wallet.ln.Scripts.multiSig2of2
+import java.util.concurrent.ConcurrentHashMap
 import org.jgrapht.graph.DefaultDirectedGraph
-
 import scala.concurrent.duration.DurationInt
-import scala.language.implicitConversions
-import com.lightning.wallet.ln.Tools.{Bytes, none}
-import com.btcontract.lncloud.Utils.values
 import com.lightning.wallet.ln.crypto.Noise
-import rx.lang.scala.{Observable => Obs}
-
+import com.btcontract.lncloud.Utils.values
+import scala.language.implicitConversions
+import com.lightning.wallet.ln.Tools.none
+import com.google.common.collect.Sets
 import scala.collection.mutable
+import java.net.InetAddress
 
 
 object Router { me =>
+  // Blacklisted node ids
+  val black = Sets.newConcurrentHashSet[BinaryData].asScala
   // Messages we need to process when there is nothing in `awaits`
-  private val stash = new ConcurrentSkipListSet[RoutingMessage].asScala
+  private val stash = Sets.newConcurrentHashSet[RoutingMessage].asScala
   // We need to check if each chan announcement has a bitcoin transaction
-  private val awaits = new ConcurrentSkipListSet[ChannelAnnouncement].asScala
+  private val awaits = Sets.newConcurrentHashSet[ChannelAnnouncement].asScala
   // Contains a cached graph to search for payment routes, is updated on new and deleted updates
   var finder = new GraphFinder(new ConcurrentHashMap[ChanDirection, ChannelUpdate].asScala, 7)
-  val black = new ConcurrentSkipListSet[BinaryData].asScala
   val channels = new ChannelMappings
   val nodes = new NodesFinder
 
@@ -54,8 +52,8 @@ object Router { me =>
 
     def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] =
       for (foundPath <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
-        for (dir @ ChanDirection(_, from, to) <- foundPath.getEdgeList.asScala.toVector) yield
-          Hop(from, to, updates apply dir)
+        for (dir <- foundPath.getEdgeList.asScala.toVector) yield
+          Hop(dir.from, dir.to, updates apply dir)
   }
 
   class ChannelMappings {
@@ -114,19 +112,19 @@ object Router { me =>
     case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"
     case ca: ChannelAnnouncement =>
 
-      awaits add ca
+      awaits += ca
       Blockchain.getInfo(ca)
         .map(updateOrBlacklistChannel)
-        .doOnTerminate(awaits remove ca)
+        .doOnTerminate(awaits -= ca)
         .doAfterTerminate(resend)
-        .subscribe(none, none)
+        .subscribe(none, errLog)
 
     case node: NodeAnnouncement if awaits.nonEmpty => stash add node
     case node: NodeAnnouncement if black.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if nodes.nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
     case node: NodeAnnouncement if !channels.nodeId2Chans.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
     case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
-    case node: NodeAnnouncement if !Features.isSet(node.features, Features.CHANNELS_PUBLIC_BIT) => nodes rm node
+    //case node: NodeAnnouncement if !Features.isSet(node.features, Features.CHANNELS_PUBLIC_BIT) => nodes rm node
 
     case node: NodeAnnouncement =>
       // Might be a new one or an update
@@ -160,7 +158,7 @@ object Router { me =>
   private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
     // May fail because scripts don't match, may be blacklisted or added/updated
     val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
-    require(Script.write(fundingOutScript) == BinaryData(info.txo.hex), s"Incorrect script in $info")
+    require(Script.write(fundingOutScript) == BinaryData(info.key.hex), s"Incorrect script in $info")
 
     channels isBad info map { old: ChanInfo =>
       val compromisedNodes = List(old.ca.nodeId1, old.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
@@ -197,23 +195,22 @@ object Router { me =>
 }
 
 object RouterConnector {
-  val address = InetAddress getByName values.eclairIp
-  val socket = new SocketWrap(address, values.eclairPort)
+  val socket = new SocketWrap(InetAddress getByName values.eclairIp, values.eclairPort)
   val keyPair = Noise.Secp256k1DHFunctions.generateKeyPair(Utils.random getBytes 32)
   val transportHandler = new TransportHandler(keyPair, values.eclairNodeId,
     Router receive LightningMessageCodecs.deserialize(_), socket)
 
   val socketListener = new SocketListener {
-    override def onConnect: Unit = transportHandler.init
+    override def onConnect = transportHandler.init
     override def onData(chunk: BinaryData) = transportHandler process chunk
-    override def onDisconnect: Unit = Obs.just(null).delay(10.seconds)
-      .doOnTerminate(socket.start).subscribe(none)
+    override def onDisconnect = Obs.just(Tools log "Restarting socket")
+      .delay(10.seconds).doOnTerminate(socket.start).subscribe(none)
   }
 
   val transportListener = new StateMachineListener {
     override def onBecome: PartialFunction[Transition, Unit] = {
       case (_, _, TransportHandler.HANDSHAKE, TransportHandler.WAITING_CYPHERTEXT) =>
-        val init = LightningMessageCodecs serialize Init(globalFeatures = "", localFeatures = "05")
+        val init = LightningMessageCodecs serialize Init("", localFeatures = "05")
         transportHandler process Tuple2(TransportHandler.Send, init)
     }
 
