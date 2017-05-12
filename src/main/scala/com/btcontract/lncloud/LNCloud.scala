@@ -25,7 +25,7 @@ object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
-      rpcUrl = "http://foo:bar@127.0.0.1:18332", zmqPoint = "tcp://127.0.0.1:29000",
+      btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 48001,
       eclairNodeId = "03c7441511082605d51f0589b4d6e5907b7828703e77d8f8ffab07f29bd7fe7d6b",
       rewindRange = 144, checkByToken = true)
@@ -141,7 +141,12 @@ class Responder {
       val data = nodes take 25 map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 
-    // NEW VERSION WARNING AND TEST
+    // NEW VERSION WARNING AND TESTS
+
+    case req @ POST -> Root / _ / "sigcheck" => check.verify(req.params) {
+      // This is a test where we simply check if a user supplied key is valid
+      Ok apply ok("done")
+    }
 
     case req @ POST -> Root / _ / "ping" => Ok apply ok(req params body)
     case POST -> Root / "v2" / _ => Ok apply error("mustupdate")

@@ -53,7 +53,7 @@ object Blockchain { me =>
 
   private def mkObserver(topic: String) = Obs[BinaryData] { obs =>
     val subSocket: SocketRef = ZeroMQ.socket(SocketType.Sub)
-    subSocket.connect(address = values.zmqPoint)
+    subSocket.connect(address = values.zmqApi)
     subSocket.recvAll(obs onNext _(1).toArray)
     subSocket.subscribe(topic = topic)
     Subscription(subSocket.close)

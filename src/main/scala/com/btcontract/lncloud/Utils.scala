@@ -18,7 +18,7 @@ object Utils {
   type StringSeq = Seq[String]
 
   implicit val formats = org.json4s.DefaultFormats
-  lazy val bitcoin = new BitcoinJSONRPCClient(values.rpcUrl)
+  lazy val bitcoin = new BitcoinJSONRPCClient(values.btcApi)
   val hex2Json: String => String = raw => new String(HEX decode raw, "UTF-8")
   val random = new com.lightning.wallet.ln.crypto.RandomGenerator
   val twoHours = 7200000
@@ -46,6 +46,6 @@ object JsonHttpUtils {
 
 case class CacheItem[T](data: T, stamp: Long)
 case class BlindData(invoice: Invoice, k: BigInteger, tokens: StringSeq)
-case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int, rpcUrl: String,
-                zmqPoint: String, eclairApi: String, eclairIp: String, eclairPort: Int,
+case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int, btcApi: String,
+                zmqApi: String, eclairApi: String, eclairIp: String, eclairPort: Int,
                 eclairNodeId: BinaryData, rewindRange: Int, checkByToken: Boolean)
