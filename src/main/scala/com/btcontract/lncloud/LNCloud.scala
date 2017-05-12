@@ -128,6 +128,7 @@ class Responder {
       Ok apply ok(data:_*)
 
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
+      // Initially there is no query so we show a bunch of totally random nodes to user
       val candidates: Seq[NodeAnnouncement] = Router.nodes.nodeId2Announce.values.toVector
       val Tuple2(resultSize, colSize) = Tuple2(math.min(25, candidates.size), candidates.size)
       val nodes: Seq[NodeAnnouncement] = Vector.fill(resultSize)(random nextInt colSize) map candidates

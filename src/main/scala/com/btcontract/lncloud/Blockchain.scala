@@ -24,6 +24,7 @@ trait BlockchainListener {
 }
 
 object Blockchain { me =>
+  var listeners = Set.empty[BlockchainListener]
   mkObserver("rawtx").subscribeOn(IOScheduler.apply)
     .map(Transaction read _).retryWhen(_ delay 10.second)
     .subscribe(tx => listeners.foreach(_ onNewTx tx), errLog)
@@ -57,10 +58,6 @@ object Blockchain { me =>
     subSocket.subscribe(topic = topic)
     Subscription(subSocket.close)
   }
-
-  private var listeners = Set.empty[BlockchainListener]
-  def addListener(lst: BlockchainListener): Unit = listeners += lst
-  def removeListener(lst: BlockchainListener): Unit = listeners -= lst
 }
 
 

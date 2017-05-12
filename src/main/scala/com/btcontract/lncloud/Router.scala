@@ -2,8 +2,8 @@ package com.btcontract.lncloud
 
 import com.lightning.wallet.ln._
 import com.lightning.wallet.ln.wire._
-import scala.collection.JavaConverters._
 
+import scala.collection.JavaConverters._
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
 import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
@@ -24,6 +24,7 @@ import com.lightning.wallet.ln.Tools.none
 import com.google.common.collect.Sets
 import scala.collection.mutable
 import java.net.InetAddress
+import scala.util.Try
 
 
 object Router { me =>
@@ -39,18 +40,19 @@ object Router { me =>
   val nodes = new NodesFinder
 
   class GraphFinder(val updates: mutable.Map[ChanDirection, ChannelUpdate], val maxPathLength: Int) {
-    def outdatedChannels = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7 * 4)
-    def augmented(dir: ChanDirection, upd: ChannelUpdate) = new GraphFinder(updates.updated(dir, upd), maxPathLength)
-    private lazy val defaultDirectedGraph = new DefaultDirectedGraph[BinaryData, ChanDirection](chanDirectionClass)
+    def outdatedChannels: Iterable[ChannelUpdate] = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7 * 4)
+    def augmented(dir: ChanDirection, upd: ChannelUpdate): GraphFinder = new GraphFinder(updates.updated(dir, upd), maxPathLength)
+    def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] = Try apply findPaths(from, to) getOrElse Nil
+    private lazy val directedGraph = new DefaultDirectedGraph[BinaryData, ChanDirection](chanDirectionClass)
     private lazy val chanDirectionClass = classOf[ChanDirection]
 
-    private lazy val graph = {
-      for (direction <- updates.keys) Seq(direction.from, direction.to) foreach defaultDirectedGraph.addVertex
-      for (direction <- updates.keys) defaultDirectedGraph.addEdge(direction.from, direction.to, direction)
-      new CachedAllDirectedPaths[BinaryData, ChanDirection](defaultDirectedGraph)
+    private lazy val graph = updates.keys match { case keys =>
+      for (direction <- keys) Seq(direction.from, direction.to) foreach directedGraph.addVertex
+      for (direction <- keys) directedGraph.addEdge(direction.from, direction.to, direction)
+      new CachedAllDirectedPaths[BinaryData, ChanDirection](directedGraph)
     }
 
-    def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] =
+    private def findPaths(from: BinaryData, to: BinaryData): Seq[PaymentRoute] =
       for (foundPath <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
         for (dir <- foundPath.getEdgeList.asScala.toVector) yield
           Hop(dir.from, dir.to, updates apply dir)
@@ -168,7 +170,7 @@ object Router { me =>
     } getOrElse channels.add(info)
   }
 
-  private def complexRemove(infos: ChanInfo*) = {
+  def complexRemove(infos: ChanInfo*) = {
     for (channelInfo <- infos) channels rm channelInfo
     // Once channels are removed we also have to remove affected updates
     // Removal may result in lost nodes so all nodes with zero channels are removed
@@ -176,22 +178,8 @@ object Router { me =>
     finder = new GraphFinder(finder.updates.filter(channels.chanId2Info contains _._1.channelId), finder.maxPathLength)
   }
 
-  private val spentChannelsWatcher = new BlockchainListener {
-    override def onNewTx(tx: Transaction) = for { input <- tx.txIn
-      chanInfo <- channels.txId2Info.get(input.outPoint.txid)
-      if chanInfo.ca.outputIndex == input.outPoint.index
-    } complexRemove(chanInfo)
-
-    override def onNewBlock(block: Block) = {
-      val spent = channels.txId2Info.values.filter(Blockchain.isSpent)
-      if (spent.isEmpty) Tools log s"No spent channels at ${block.height}"
-      else complexRemove(spent.toSeq:_*)
-    }
-  }
-
   private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(channels chanId2Info _.shortChannelId)
   Obs.interval(6.hours).map(_ => outdatedInfos).filter(_.nonEmpty).foreach(infos => complexRemove(infos.toSeq:_*), errLog)
-  Blockchain addListener spentChannelsWatcher
 }
 
 object RouterConnector {
@@ -220,6 +208,20 @@ object RouterConnector {
     }
   }
 
+  val blockchainListener = new BlockchainListener {
+    override def onNewTx(tx: Transaction) = for { input <- tx.txIn
+      chanInfo <- Router.channels.txId2Info.get(input.outPoint.txid)
+      if chanInfo.ca.outputIndex == input.outPoint.index
+    } Router.complexRemove(chanInfo)
+
+    override def onNewBlock(block: Block) = {
+      val spent = Router.channels.txId2Info.values.filter(Blockchain.isSpent)
+      if (spent.isEmpty) Tools log s"No spent channels at ${block.height}"
+      else Router.complexRemove(spent.toSeq:_*)
+    }
+  }
+
+  Blockchain.listeners += blockchainListener
   transportHandler.listeners += transportListener
   socket.listeners += socketListener
 }
