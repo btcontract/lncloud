@@ -2,16 +2,17 @@ package com.btcontract.lncloud.database
 
 import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
-
 import com.btcontract.lncloud.Utils.StringSeq
+import fr.acinq.bitcoin.Crypto.PublicKey
 import com.lightning.wallet.ln.Invoice
 import language.implicitConversions
+import fr.acinq.bitcoin.BinaryData
 import java.math.BigInteger
 import java.util.Date
 
 
 abstract class Database {
-  def getPublicKeys: StringSeq
+  def keyExists(key: String): Boolean
 
   // Clear tokens storage and cheking
   def getPendingTokens(seskey: String): Option[BlindData]
@@ -29,7 +30,6 @@ class MongoDatabase extends Database {
   val clearTokensMongo: MongoDB = MongoClient("localhost")("clearTokens")
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
-  def getPublicKeys = mongo("keys").find.toList map obj2String
 
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String): Unit =
@@ -47,7 +47,8 @@ class MongoDatabase extends Database {
   def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
   def putClearToken(clear: String): Unit = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
 
-  // Channel closing info and misc
+  // Channel closing info, keys and and misc
+  def keyExists(key: String): Boolean = mongo("keys").findOne("key" $eq key).isDefined
   def getGeneralData(key: String): Option[String] = mongo("generalData").findOne("key" $eq key).map(_ as[String] "value")
   def putGeneralData(key: String, value: String) = mongo("generalData").update("key" $eq key, $set("key" -> key, "value" -> value),
     upsert = true, multi = false, WriteConcern.Safe)

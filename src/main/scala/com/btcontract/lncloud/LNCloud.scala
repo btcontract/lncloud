@@ -174,16 +174,14 @@ class Responder {
   }
 
   class SignatureChecker extends DataChecker {
-    private val pubKeys = db.getPublicKeys map BinaryData.apply map PublicKey.apply
-    private val keysMap = pubKeys.map(key => key.toString.take(8) -> key).toMap
-
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(data, sig, prefix) = extract(params, identity, body, "sig", "prefix")
-      val signatureIsFine = Crypto.verifySignature(BinaryData(data), BinaryData(sig),
-        publicKey = keysMap apply prefix)
+      val Seq(data, sig, key) = extract(params, BinaryData.apply, body, "sig", "pubkey")
+      lazy val signatureIsFine = Crypto.verifySignature(Crypto sha256 data, sig, key)
 
+      val userPubKeyIsPresent = db keyExists key.toString
       if (params(body).length > 8192) Ok apply error("bodytoolarge")
-      else if (!signatureIsFine) Ok apply error("signatureinvalid")
+      else if (!userPubKeyIsPresent) Ok apply error("keynotfound")
+      else if (!signatureIsFine) Ok apply error("siginvalid")
       else next
     }
   }
