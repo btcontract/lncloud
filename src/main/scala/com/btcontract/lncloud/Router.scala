@@ -89,16 +89,18 @@ object Router { me =>
     val nodeId2Announce = new ConcurrentHashMap[BinaryData, NodeAnnouncement].asScala
 
     def rm(node: NodeAnnouncement) =
-      nodeId2Announce get node.nodeId foreach { found =>
+      nodeId2Announce get node.nodeId foreach { old =>
         // Announce may have a new alias so we search for
         // an old one because nodeId should remain the same
-        nodeId2Announce remove found.nodeId
-        searchTree remove found.identifier
+        nodeId2Announce remove old.nodeId
+        searchTree remove old.nodeIdString
+        searchTree remove old.identifier
       }
 
-    def add(newAnnounce: NodeAnnouncement) = {
-      nodeId2Announce(newAnnounce.nodeId) = newAnnounce
-      searchTree.put(newAnnounce.identifier, newAnnounce)
+    def add(node: NodeAnnouncement) = {
+      nodeId2Announce.put(node.nodeId, node)
+      searchTree.put(node.nodeIdString, node)
+      searchTree.put(node.identifier, node)
     }
   }
 

@@ -414,7 +414,6 @@ public interface BitcoindRpcClient {
     public long version();
 
     public boolean coinBase();
-
   }
 
   public static interface Block extends Serializable {
@@ -489,6 +488,19 @@ public interface BitcoindRpcClient {
 
   public String getRawTransactionHex(String txId) throws BitcoinRpcException;
 
+  public interface ScriptPubKey extends Serializable {
+
+    public String asm();
+
+    public String hex();
+
+    public int reqSigs();
+
+    public String type();
+
+    public List<String> addresses();
+  }
+
   public interface RawTransaction extends Serializable {
 
     public String hex();
@@ -551,19 +563,6 @@ public interface BitcoindRpcClient {
     public Date time();
 
     public Date blocktime();
-  }
-
-  public interface ScriptPubKey extends Serializable {
-
-    public String asm();
-
-    public String hex();
-
-    public int reqSigs();
-
-    public String type();
-
-    public List<String> addresses();
   }
 
   public RawTransaction getRawTransaction(String txId) throws BitcoinRpcException;

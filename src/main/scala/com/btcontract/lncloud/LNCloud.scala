@@ -11,7 +11,6 @@ import org.http4s.{HttpService, Response}
 import com.lightning.wallet.ln.wire.NodeAnnouncement
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
-import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
 import com.lightning.wallet.ln.Invoice
 import scodec.Attempt.Successful
@@ -31,7 +30,7 @@ object LNCloud extends ServerApp {
       rewindRange = 144, checkByToken = true)
 
     values = config
-    RouterConnector.socket.start
+    //RouterConnector.socket.start
     val socketAndHttpLnCloudServer = new Responder
     val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
     BlazeBuilder.bindHttp(9002).mountService(postLift).start
@@ -163,7 +162,7 @@ class Responder {
   class BlindTokenChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
       val Seq(point, clearsig, cleartoken) = extract(params, identity, "point", "clearsig", "cleartoken")
-      val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
+      lazy val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
         clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
       if (params(body).length > 8192) Ok apply error("bodytoolarge")

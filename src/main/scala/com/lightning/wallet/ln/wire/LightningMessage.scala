@@ -71,7 +71,8 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: Binar
 case class NodeAnnouncement(signature: BinaryData, timestamp: Long, nodeId: BinaryData, rgbColor: RGB, alias: String,
                             features: BinaryData, addresses: InetSocketAddressList) extends RoutingMessage {
 
-  val identifier = (alias + nodeId.toString).toLowerCase
+  val nodeIdString = nodeId.toString
+  val identifier = s"$alias$nodeIdString".toLowerCase
 }
 
 case class ChannelUpdate(signature: BinaryData, shortChannelId: Long, timestamp: Long, flags: BinaryData,

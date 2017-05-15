@@ -955,6 +955,39 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     return (String) query("getrawtransaction", txId);
   }
 
+  private class ScriptPubKeyImpl extends MapWrapper implements ScriptPubKey, Serializable {
+
+    public ScriptPubKeyImpl(Map m) {
+      super(m);
+    }
+
+    @Override
+    public String asm() {
+      return mapStr("asm");
+    }
+
+    @Override
+    public String hex() {
+      return mapStr("hex");
+    }
+
+    @Override
+    public int reqSigs() {
+      return mapInt("reqSigs");
+    }
+
+    @Override
+    public String type() {
+      return mapStr("type");
+    }
+
+    @Override
+    public List<String> addresses() {
+      return (List) m.get("addresses");
+    }
+
+  }
+
   private class RawTransactionImpl extends MapWrapper implements RawTransaction, Serializable {
 
     public RawTransactionImpl(Map<String, Object> tx) {
@@ -1131,40 +1164,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
 
   }
-
-  private class ScriptPubKeyImpl extends MapWrapper implements ScriptPubKey, Serializable {
-
-    public ScriptPubKeyImpl(Map m) {
-      super(m);
-    }
-
-    @Override
-    public String asm() {
-      return mapStr("asm");
-    }
-
-    @Override
-    public String hex() {
-      return mapStr("hex");
-    }
-
-    @Override
-    public int reqSigs() {
-      return mapInt("reqSigs");
-    }
-
-    @Override
-    public String type() {
-      return mapStr("type");
-    }
-
-    @Override
-    public List<String> addresses() {
-      return (List) m.get("addresses");
-    }
-
-  }
-
 
   public class DecodedScriptImpl extends MapWrapper implements DecodedScript, Serializable {
 
