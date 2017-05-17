@@ -13,11 +13,11 @@ import scodec.{Attempt, Codec, Err}
 
 
 object LightningMessageCodecs { me =>
-  type BitVectorAttempt = Attempt[BitVector]
   type InetSocketAddressList = List[InetSocketAddress]
-  type NodeAnnouncements = Vector[NodeAnnouncement]
+  type BitVectorAttempt = Attempt[BitVector]
   type PaymentRoute = Vector[Hop]
 
+  type AnnounceChansNum = (NodeAnnouncement, Int)
   type AddressPort = (InetAddress, Int)
   type RGB = (Byte, Byte, Byte)
 
@@ -278,10 +278,6 @@ object LightningMessageCodecs { me =>
       (varsizebinarydata withContext "features") ::
       (listOfN(uint16, socketaddress) withContext "addresses")
 
-  private val nodeAnnouncement =
-    (signature withContext "signature") ::
-      nodeAnnouncementWitness
-
   val channelUpdateWitness =
     (int64 withContext "shortChannelId") ::
       (uint32 withContext "timestamp") ::
@@ -291,12 +287,10 @@ object LightningMessageCodecs { me =>
       (uint32 withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths")
 
-  private val channelUpdate =
-    (signature withContext "signature") ::
-      channelUpdateWitness
-
-  val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
+  private val channelUpdate = (signature withContext "signature") :: channelUpdateWitness
+  private val nodeAnnouncement = (signature withContext "signature") :: nodeAnnouncementWitness
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = nodeAnnouncement.as[NodeAnnouncement]
+  val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
 
   private val hop =
     (publicKey withContext "nodeId") ::

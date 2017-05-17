@@ -45,11 +45,11 @@ object Blockchain { me =>
     bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex)
   }.isFailure
 
-  def getInfo(ca: ChannelAnnouncement) = obsOn(provider = {
+  def getInfo(ca: ChannelAnnouncement) = Try {
     val txid = bitcoin.getBlock(ca.blockHeight).tx.get(ca.txIndex)
     val output = bitcoin.getTxOut(txid, ca.outputIndex, true)
     ChanInfo(txid, output.scriptPubKey, ca)
-  }, IOScheduler.apply)
+  }
 
   private def mkObserver(topic: String) = Obs[BinaryData] { obs =>
     val subSocket: SocketRef = ZeroMQ.socket(SocketType.Sub)

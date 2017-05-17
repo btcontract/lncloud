@@ -2,9 +2,10 @@ package com.btcontract.lncloud
 
 import Utils._
 import org.http4s.dsl._
+import fr.acinq.bitcoin._
 import collection.JavaConverters._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, string2binaryData}
+
 import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
 
@@ -30,7 +31,7 @@ object LNCloud extends ServerApp {
       rewindRange = 144, checkByToken = true)
 
     values = config
-    //RouterConnector.socket.start
+    RouterConnector.socket.start
     val socketAndHttpLnCloudServer = new Responder
     val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
     BlazeBuilder.bindHttp(9002).mountService(postLift).start
@@ -49,6 +50,13 @@ class Responder {
     // How an incoming data should be checked
     if (values.checkByToken) new BlindTokenChecker
     else new SignatureChecker
+
+  private val convertNodes: Seq[NodeAnnouncement] => TaskResponse = nodes => {
+    val announces: Seq[String] = nodes.map(nodeAnnouncementCodec.encode(_).require.toHex)
+    val channelsPerNode = nodes.map(announce => Router.maps.nodeId2Chans(announce.nodeId).size)
+    val result = announces zip channelsPerNode map { case (announce, chans) => announce :: chans :: Nil }
+    Ok apply ok(result:_*)
+  }
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -128,17 +136,14 @@ class Responder {
 
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
       // Initially there is no query so we show a bunch of totally random nodes to user
-      val candidates: Seq[NodeAnnouncement] = Router.nodes.nodeId2Announce.values.toVector
+      val candidates: Seq[NodeAnnouncement] = Router.maps.nodeId2Announce.values.toVector
       val Tuple2(resultSize, colSize) = Tuple2(math.min(25, candidates.size), candidates.size)
-      val nodes: Seq[NodeAnnouncement] = Vector.fill(resultSize)(random nextInt colSize) map candidates
-      val data = nodes map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
-      Ok apply ok(data:_*)
+      convertNodes(Vector.fill(resultSize)(random nextInt colSize) map candidates)
 
     case req @ POST -> V1 / "router" / "nodes" =>
-      val query = req.params("query").trim.take(50).toLowerCase
-      val nodes: Seq[NodeAnnouncement] = Router.nodes.searchTree.getValuesForKeysStartingWith(query).asScala.toList
-      val data = nodes take 25 map nodeAnnouncementCodec.encode collect { case Successful(bv) => bv.toHex }
-      Ok apply ok(data:_*)
+      val query: String = req.params("query").trim.take(50).toLowerCase
+      val nodes = Router.maps.searchTree getValuesForKeysStartingWith query
+      convertNodes(nodes.asScala.toList take 25)
 
     // NEW VERSION WARNING AND TESTS
 
