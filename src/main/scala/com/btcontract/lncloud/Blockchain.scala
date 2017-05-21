@@ -1,12 +1,10 @@
 package com.btcontract.lncloud
 
-import com.btcontract.lncloud.JsonHttpUtils._
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
-
-import zeromq.{SocketRef, SocketType, ZeroMQ}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
-import rx.lang.scala.{Subscription, Observable => Obs}
 import com.btcontract.lncloud.Utils.{bitcoin, values, errLog}
+import rx.lang.scala.{Subscription, Observable => Obs}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
+import zeromq.{SocketRef, SocketType, ZeroMQ}
 
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
 import scala.concurrent.duration.DurationInt

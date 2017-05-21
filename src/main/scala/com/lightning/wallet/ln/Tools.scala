@@ -6,18 +6,17 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import java.text.{DecimalFormat, DecimalFormatSymbols}
 import com.lightning.wallet.ln.crypto.RandomGenerator
 import language.implicitConversions
-import org.slf4j.LoggerFactory
 import org.bitcoinj.core.Coin
 import wire.LightningMessage
 import java.util.Locale
 
 
-object >< {
+object ~ {
   // Matching Tuple2 via arrows with much less noise
-  def unapply[A, B](t: (A, B) /* got a tuple */) = Some(t)
+  def unapply[A, B](tuple: (A, B) /* got a tuple */) = Some(tuple)
 }
 
-object Tools { me =>
+object Tools {
   type Bytes = Array[Byte]
   type BinaryDataList = List[BinaryData]
   type LightningMessages = Vector[LightningMessage]

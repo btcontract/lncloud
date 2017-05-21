@@ -7,17 +7,17 @@ import com.lightning.wallet.ln.Tools.random
 import java.nio.ByteOrder
 
 
-trait DataTransport { def send(data: BinaryData): Unit }
-class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData, consume: BinaryData => Unit,
-                       transport: DataTransport) extends StateMachine[Data] { me =>
+abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
+                                transport: Transport) extends StateMachine[Data] { me =>
 
-  def init = {
+  def init: Unit = {
     val writer = makeWriter(keyPair, remotePubKey)
     val (reader, _, msg) = writer write BinaryData.empty
     become(HandshakeData(reader, BinaryData.empty), HANDSHAKE)
     transport.send(prefix +: msg)
   }
 
+  def feedForward(data: BinaryData): Unit
   def doProcess(change: Any): Unit = (data, change, state) match {
     case (HandshakeData(reader1, buffer), bd: BinaryData, HANDSHAKE) =>
       me stayWith HandshakeData(reader1, buffer ++ bd)
@@ -69,7 +69,7 @@ class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData, consume: Bina
       doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, None, buffer),
-      Ping, WAITING_CYPHERTEXT) if buffer.length >= 18 =>
+    Ping, WAITING_CYPHERTEXT) if buffer.length >= 18 =>
 
       val (ciphertext, remainder) = buffer splitAt 18
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
@@ -78,12 +78,12 @@ class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData, consume: Bina
       doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, Some(length), buffer),
-      Ping, WAITING_CYPHERTEXT) if buffer.length >= length + 16 =>
+    Ping, WAITING_CYPHERTEXT) if buffer.length >= length + 16 =>
 
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
       me stayWith CyphertextData(encoder, decoder1, length = None, remainder)
-      me consume plaintext
+      me feedForward plaintext
       doProcess(Ping)
 
     case _ =>
@@ -163,4 +163,9 @@ case class ExtendedCipherState(cs: CipherState, ck: BinaryData) extends CipherSt
 
   def cipher = cs.cipher
   val hasKey = cs.hasKey
+}
+
+trait Transport {
+  def send(data: BinaryData): Unit
+  def onReceive(data: BinaryData): Unit
 }

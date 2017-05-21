@@ -1,24 +1,23 @@
 package com.lightning.wallet.helper
 
 import com.lightning.wallet.ln.Tools.{Bytes, none}
-import com.lightning.wallet.ln.{DataTransport, Tools}
 import java.net.{InetAddress, InetSocketAddress, Socket}
 import concurrent.ExecutionContext.Implicits.global
+import com.lightning.wallet.ln.Transport
 import fr.acinq.bitcoin.BinaryData
 import scala.concurrent.Future
 
 
-class SocketWrap(ip: InetAddress, port: Int) extends DataTransport {
-  def send(data: BinaryData) = worker.socket.getOutputStream write data
-  def shutdown = try worker.socket.close catch none
-  def start = worker = new Worker
+abstract class SocketWrap(ip: InetAddress, port: Int) extends Transport {
+  def send(data: BinaryData): Unit = worker.socket.getOutputStream write data
+  def shutdown: Unit = try worker.socket.close catch none
+  def start: Unit = worker = new Worker
 
   private var worker: Worker = _
   var listeners = Set.empty[SocketListener]
-  private val events = new SocketListener {
+  val events: SocketListener = new SocketListener {
     override def onConnect = for (lst <- listeners) lst.onConnect
     override def onDisconnect = for (lst <- listeners) lst.onDisconnect
-    override def onData(chunk: BinaryData) = for (lst <- listeners) lst onData chunk
   }
 
   class Worker {
@@ -34,7 +33,7 @@ class SocketWrap(ip: InetAddress, port: Int) extends DataTransport {
       while (true) {
         val read = socket.getInputStream.read(buffer, 0, BUFFER_SIZE)
         if (read < 0) throw new RuntimeException("Socket closed")
-        else events onData BinaryData(buffer take read)
+        else onReceive(buffer take read)
       }
     } onComplete { _ =>
       events.onDisconnect
@@ -45,5 +44,4 @@ class SocketWrap(ip: InetAddress, port: Int) extends DataTransport {
 class SocketListener {
   def onConnect: Unit = none
   def onDisconnect: Unit = none
-  def onData(chunk: BinaryData): Unit = none
 }

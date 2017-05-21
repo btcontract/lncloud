@@ -142,7 +142,7 @@ class Responder {
 
     case req @ POST -> V1 / "router" / "nodes" =>
       val query: String = req.params("query").trim.take(50).toLowerCase
-      val nodes = Router.maps.searchTree getValuesForKeysStartingWith query
+      val nodes = Router.maps.searchTrie getValuesForKeysStartingWith query
       convertNodes(nodes.asScala.toList take 25)
 
     // NEW VERSION WARNING AND TESTS

@@ -5,6 +5,7 @@ import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 
 import rx.lang.scala.{Observable => Obs}
+import TransportHandler.{HANDSHAKE, WAITING_CYPHERTEXT}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
 import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
 import com.lightning.wallet.helper.{SocketListener, SocketWrap}
@@ -55,9 +56,9 @@ object Router { me =>
     type ShortChannelIds = Set[Long]
     val chanId2Info: mutable.Map[Long, ChanInfo] = mutable.Map.empty
     val txId2Info: mutable.Map[BinaryData, ChanInfo] = mutable.Map.empty
-    val nodeId2Chans = mutable.Map.empty[BinaryData, ShortChannelIds] withDefaultValue Set.empty
-    val searchTree = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
     val nodeId2Announce: mutable.Map[BinaryData, NodeAnnouncement] = mutable.Map.empty
+    val nodeId2Chans = mutable.Map.empty[BinaryData, ShortChannelIds] withDefaultValue Set.empty
+    val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
 
     def rmChanInfo(info: ChanInfo): Unit = {
       nodeId2Chans(info.ca.nodeId1) -= info.ca.shortChannelId
@@ -78,14 +79,14 @@ object Router { me =>
       nodeId2Announce get node.nodeId foreach { old =>
         // Announce may have a new alias so we search for
         // an old one because nodeId should remain the same
-        searchTree remove old.nodeIdString
-        searchTree remove old.identifier
+        searchTrie remove old.nodeIdString
+        searchTrie remove old.identifier
         nodeId2Announce -= old.nodeId
       }
 
     def addNode(node: NodeAnnouncement) = {
-      searchTree.put(node.nodeIdString, node)
-      searchTree.put(node.identifier, node)
+      searchTrie.put(node.nodeIdString, node)
+      searchTrie.put(node.identifier, node)
       nodeId2Announce(node.nodeId) = node
     }
 
@@ -127,7 +128,7 @@ object Router { me =>
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
       require(Announcements.checkSig(cu, chanDirection.from), s"Ignoring invalid signatures for $cu")
       if (finder.updates contains chanDirection) finder.updates(chanDirection) = cu
-      else finder = finder.augmented(chanDirection, upd = cu)
+      else finder = finder.augmented(chanDirection, cu)
     } catch errLog
 
     case otherwise =>
@@ -148,11 +149,12 @@ object Router { me =>
   }
 
   def complexRemove(infos: ChanInfo*) = me synchronized {
-    for (channelInfoToRemove <- infos) maps rmChanInfo channelInfoToRemove
+    for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
     maps.nodeId2Announce.filterKeys(nodeId => maps.nodeId2Chans(nodeId).isEmpty).values foreach maps.rmNode
     finder = new GraphFinder(finder.updates.filter(maps.chanId2Info contains _._1.channelId), finder.maxPathLength)
+    Tools log s"Removed the following channels: $infos"
   }
 
   private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
@@ -160,30 +162,35 @@ object Router { me =>
 }
 
 object RouterConnector { self =>
-  val socket = new SocketWrap(InetAddress getByName values.eclairIp, values.eclairPort)
+  val ipAddress = InetAddress getByName values.eclairIp
+  lazy val socket = new SocketWrap(ipAddress, values.eclairPort) {
+    def onReceive(chunk: BinaryData): Unit = transportHandler process chunk
+  }
+
   val keyPair = Noise.Secp256k1DHFunctions.generateKeyPair(Utils.random getBytes 32)
-  val transportHandler = new TransportHandler(keyPair, values.eclairNodeId,
-    Router receive LightningMessageCodecs.deserialize(_), socket)
+  val transportHandler: TransportHandler = new TransportHandler(keyPair, values.eclairNodeId, socket) {
+    def feedForward(message: BinaryData): Unit = Router.receive(LightningMessageCodecs deserialize message)
+  }
 
   val socketListener = new SocketListener {
     override def onConnect = transportHandler.init
-    override def onData(chunk: BinaryData) = transportHandler process chunk
     override def onDisconnect = Obs.just(Tools log "Restarting socket")
       .delay(10.seconds).doOnTerminate(socket.start).subscribe(none)
   }
 
-  val transportListener = new StateMachineListener {
-    override def onBecome: PartialFunction[Transition, Unit] = {
-      case (_, _, TransportHandler.HANDSHAKE, TransportHandler.WAITING_CYPHERTEXT) =>
-        val init = LightningMessageCodecs serialize Init("", localFeatures = "05")
-        transportHandler process Tuple2(TransportHandler.Send, init)
-    }
+  val transportListener =
+    new StateMachineListener {
+      override def onBecome = {
+        case (_, _, HANDSHAKE, WAITING_CYPHERTEXT) =>
+          val init = LightningMessageCodecs serialize Init("", "05")
+          transportHandler process Tuple2(TransportHandler.Send, init)
+      }
 
-    override def onError = { case err =>
-      Tools.log(s"Transport failure: $err")
-      socket.shutdown
+      override def onError = { case err =>
+        Tools log s"Transport failure: $err"
+        socket.shutdown
+      }
     }
-  }
 
   val blockchainListener = new BlockchainListener {
     override def onNewTx(tx: Transaction) = for { input <- tx.txIn

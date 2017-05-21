@@ -61,7 +61,7 @@ object ChaCha20Legacy extends SkippingStreamCipherEngine { def getEngine = new C
 
 object Poly1305 {
   def mac(key: Bytes, data: Bytes) = {
-    val poly = new org.spongycastle.crypto.macs.Poly1305
+    val poly = new org.spongycastle.crypto.macs.Poly1305New
     val out = new Bytes(16)
 
     poly init new KeyParameter(key)
