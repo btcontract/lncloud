@@ -5,6 +5,7 @@ import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 
 import rx.lang.scala.{Observable => Obs}
+import com.lightning.wallet.ln.Tools.{wrap, none}
 import TransportHandler.{HANDSHAKE, WAITING_CYPHERTEXT}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
 import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
@@ -20,7 +21,6 @@ import scala.concurrent.duration.DurationInt
 import com.lightning.wallet.ln.crypto.Noise
 import com.btcontract.lncloud.Utils.values
 import scala.language.implicitConversions
-import com.lightning.wallet.ln.Tools.none
 import scala.collection.mutable
 import java.net.InetAddress
 import scala.util.Try
@@ -105,13 +105,7 @@ object Router { me =>
     case node: NodeAnnouncement if maps.nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
     case node: NodeAnnouncement if !maps.nodeId2Chans.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
     case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
-
-    case node: NodeAnnouncement =>
-      // Might be a new one or an update
-      // with a new alias so should replace
-
-      maps rmNode node
-      maps addNode node
+    case node: NodeAnnouncement => wrap(maps addNode node)(maps rmNode node) // Might be an update
 
     case cu: ChannelUpdate if cu.flags.data.size != 2 => Tools log s"Ignoring invalid flags length ${cu.flags.data.size}"
     case cu: ChannelUpdate if !maps.chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
@@ -161,7 +155,7 @@ object Router { me =>
   Obs.interval(6.hours).map(_ => outdatedInfos).foreach(infos => complexRemove(infos.toSeq:_*), errLog)
 }
 
-object RouterConnector { self =>
+object RouterConnector {
   val ipAddress = InetAddress getByName values.eclairIp
   lazy val socket = new SocketWrap(ipAddress, values.eclairPort) {
     def onReceive(chunk: BinaryData): Unit = transportHandler process chunk
@@ -193,7 +187,11 @@ object RouterConnector { self =>
     }
 
   val blockchainListener = new BlockchainListener {
-    override def onNewTx(tx: Transaction) = for { input <- tx.txIn
+    override def onNewTx(transaction: Transaction) = for {
+      // We need to check if any input spends a channel output
+      // i.e. has identical transaction id and output index
+
+      input <- transaction.txIn
       chanInfo <- Router.maps.txId2Info get input.outPoint.txid
       if chanInfo.ca.outputIndex == input.outPoint.index
     } Router.complexRemove(chanInfo)

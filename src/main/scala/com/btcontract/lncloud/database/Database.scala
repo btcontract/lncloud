@@ -19,10 +19,6 @@ abstract class Database {
   def putPendingTokens(data: BlindData, seskey: String)
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
-
-  // Channel recovery info and misc
-  def getGeneralData(key: String): Option[String]
-  def putGeneralData(key: String, value: String)
 }
 
 class MongoDatabase extends Database {
@@ -49,7 +45,4 @@ class MongoDatabase extends Database {
 
   // Channel closing info, keys and and misc
   def keyExists(key: String): Boolean = mongo("keys").findOne("key" $eq key).isDefined
-  def getGeneralData(key: String): Option[String] = mongo("generalData").findOne("key" $eq key).map(_ as[String] "value")
-  def putGeneralData(key: String, value: String) = mongo("generalData").update("key" $eq key, $set("key" -> key, "value" -> value),
-    upsert = true, multi = false, WriteConcern.Safe)
 }

@@ -21,7 +21,6 @@ object Utils {
   lazy val bitcoin = new BitcoinJSONRPCClient(values.btcApi)
   val hex2Json: String => String = raw => new String(HEX decode raw, "UTF-8")
   val random = new com.lightning.wallet.ln.crypto.RandomGenerator
-  val twoHours = 7200000
 
   implicit def binData2PublicKey(data: BinaryData): PublicKey = PublicKey(data)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)

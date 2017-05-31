@@ -16,7 +16,7 @@ import ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
 object Scripts { me =>
   type ScriptEltSeq = Seq[ScriptElt]
 
-  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey) =
+  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): ScriptEltSeq =
     LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin) match {
       case false => Script.createMultiSigMofN(m = 2, pubkey2 :: pubkey1 :: Nil)
       case true => Script.createMultiSigMofN(m = 2, pubkey1 :: pubkey2 :: Nil)
@@ -163,7 +163,6 @@ object Scripts { me =>
   def weight2fee(feeratePerKw: Long, weight: Int) =
     Satoshi(feeratePerKw * weight / 1000)
 
-
   // Commit tx with obscured tx number
   // SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
   def obscuredCommitTxNumber(number: Long, isFunder: Boolean, local: Point, remote: Point) = {
@@ -181,8 +180,8 @@ object Scripts { me =>
   def decodeTxNumber(sequence: Long, locktime: Long) = (sequence & 0xffffffL).<<(24) + (locktime & 0xffffffL)
 
   // Tx siging and checking
-  def addSigs(commit: CommitTx, localFunding: PublicKey, remoteFunding: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx =
-  commit.modify(_.tx).using(_ updateWitnesses witness2of2(localSig, remoteSig, localFunding, remoteFunding) :: Nil)
+  def addSigs(commit: CommitTx, localKey: PublicKey, remoteKey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx =
+    commit.modify(_.tx).using(_ updateWitnesses witness2of2(localSig, remoteSig, localKey, remoteKey) :: Nil)
 
   def addSigs(closing: ClosingTx, localFunding: PublicKey, remoteFunding: PublicKey, localSig: BinaryData, remoteSig: BinaryData): ClosingTx =
     closing.modify(_.tx).using(_ updateWitnesses witness2of2(localSig, remoteSig, localFunding, remoteFunding) :: Nil)
@@ -263,51 +262,5 @@ object Scripts { me =>
       txIn = TxIn(input.outPoint, Array.emptyByteArray, sequence) :: Nil,
       txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
       lockTime = expiry)
-  }
-
-  // Concrete templates
-
-  def makeClaimHtlcTimeoutTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey,
-                             remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData,
-                             add: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcTimeoutTx = {
-
-    val hash = Crypto ripemd160 add.paymentHash
-    val redeem = htlcReceived(remotePubkey, localPubkey, remoteRevocationPubkey, hash, add.expiry)
-    ClaimHtlcTimeoutTx tupled makeClaimHtlcTx(commitTx, redeem, pubKeyScript = Script pay2wsh redeem,
-      localFinalScriptPubKey, weight2fee(feeratePerKw, claimHtlcTimeoutWeight), add.expiry, 0x00000000L)
-  }
-
-  def makeClaimHtlcSuccessTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey,
-                             remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData,
-                             add: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcSuccessTx = {
-
-    val hash = Crypto ripemd160 add.paymentHash
-    val redeem = htlcOffered(remotePubkey, localPubkey, remoteRevocationPubkey, hash)
-    ClaimHtlcSuccessTx tupled makeClaimHtlcTx(commitTx, redeem, pubKeyScript = Script pay2wsh redeem,
-      localFinalScriptPubKey, weight2fee(feeratePerKw, claimHtlcSuccessWeight), 0L, 0xffffffffL)
-  }
-
-  def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localPubkey: PublicKey,
-                              localFinalScriptPubKey: BinaryData, feeratePerKw: Long) =
-
-    ClaimP2WPKHOutputTx tupled makeClaimHtlcTx(parent = delayedOutputTx,
-      redeemScript = Script pay2pkh localPubkey, pubKeyScript = Script pay2wpkh localPubkey,
-      localFinalScriptPubKey, weight2fee(feeratePerKw, claimP2WPKHOutputWeight), 0L, 0x00000000L)
-
-  def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localRevocationPubkey: PublicKey, toLocalDelay: Int,
-                               localDelayedPubkey: PublicKey, localFinalScriptPubKey: BinaryData,
-                               feeratePerKw: Long): ClaimDelayedOutputTx = {
-
-    val redeem = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)
-    ClaimDelayedOutputTx tupled makeClaimHtlcTx(delayedOutputTx, redeem, pubKeyScript = Script pay2wsh redeem,
-      localFinalScriptPubKey, weight2fee(feeratePerKw, claimHtlcDelayedWeight), 0L, sequence = toLocalDelay)
-  }
-
-  def makeMainPenaltyTx(commitTx: Transaction, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData,
-                        toRemoteDelay: Int, remoteDelayedPubkey: PublicKey, feeratePerKw: Long): MainPenaltyTx = {
-
-    val redeem = toLocalDelayed(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPubkey)
-    MainPenaltyTx tupled makeClaimHtlcTx(commitTx, redeem, pubKeyScript = Script pay2wsh redeem,
-      localFinalScriptPubKey, weight2fee(feeratePerKw, mainPenaltyWeight), expiry = 0L, 0xffffffffL)
   }
 }

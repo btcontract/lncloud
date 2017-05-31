@@ -1,13 +1,14 @@
 package com.lightning.wallet.ln
 
+import com.lightning.wallet.ln.wire._
 import com.lightning.wallet.ln.Tools._
 import com.lightning.wallet.ln.Exceptions._
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+
 import java.text.{DecimalFormat, DecimalFormatSymbols}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import com.lightning.wallet.ln.crypto.RandomGenerator
 import language.implicitConversions
 import org.bitcoinj.core.Coin
-import wire.LightningMessage
 import java.util.Locale
 
 
@@ -22,8 +23,8 @@ object Tools {
   type LightningMessages = Vector[LightningMessage]
   val random = new RandomGenerator
 
-  def log(message: String) = println(message)
   def runAnd[T](result: T)(action: Any): T = result
+  def log(message: String) = println("LNCloud log", message)
   def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }
 
@@ -57,9 +58,12 @@ object MSat {
 
   def btcBigDecimal2MilliSatoshi(btc: BigDecimal): MilliSatoshi = MilliSatoshi(amount = (btc * btcFactor).toLong)
   def satString2MilliSatoshi(sat: String): MilliSatoshi = MilliSatoshi(amount = (BigDecimal(sat) * satFactor).toLong)
-  implicit def milliSatoshi2String(msat: MilliSatoshi): String = baseSat.format(BigDecimal(msat.amount) / satFactor)
+
   implicit def milliSatoshi2Coin(msat: MilliSatoshi): Coin = Coin.valueOf(msat.amount / satFactor)
   implicit def coin2MilliSatoshi(coin: Coin): MilliSatoshi = MilliSatoshi(coin.value * satFactor)
+
+  implicit def milliSatoshi2String(msat: MilliSatoshi): String = baseSat format BigDecimal(msat.amount) / satFactor
+  implicit def satoshi2String(msat: Satoshi): String = baseSat format BigDecimal(msat.amount)
   implicit def coin2String(coin: Coin): String = baseSat format coin.value
   def withSign(sum: String) = s"ⓢ $sum"
 }
@@ -91,7 +95,7 @@ trait StateMachineListener {
 abstract class StateMachine[T] { self =>
   var listeners = Set.empty[StateMachineListener]
   def stayWith(data1: T) = become(data1, state)
-  def doProcess(change: Any)
+  def doProcess(change: Any): Unit
   var state: String = _
   var data: T = _
 

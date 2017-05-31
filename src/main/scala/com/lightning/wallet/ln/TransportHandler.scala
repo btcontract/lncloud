@@ -88,7 +88,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
 
     case _ =>
       // Let know if received an unhandled message
-      Tools.log(s"TransportHandler: unhandled $data : $change")
+      Tools log s"TransportHandler: unhandled $data : $change"
   }
 }
 

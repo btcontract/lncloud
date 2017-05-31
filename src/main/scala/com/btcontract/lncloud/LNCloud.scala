@@ -1,9 +1,9 @@
 package com.btcontract.lncloud
 
-import Utils._
 import org.http4s.dsl._
 import fr.acinq.bitcoin._
 import collection.JavaConverters._
+import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 
 import org.http4s.server.{Server, ServerApp}
@@ -42,8 +42,11 @@ class Responder {
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
   private val blindTokens = new BlindTokens
+  private val exchangeRates = new ExchangeRates
+  private val feeRates = new FeeRates
   private val db = new MongoDatabase
   private val V1 = Root / "v1"
+  private val dummy = "unknown"
   private val body = "body"
 
   private val check =
@@ -101,27 +104,6 @@ class Responder {
         case None => Ok apply error("notfound")
       }
 
-    // BREACH TXS
-
-    case req @ POST -> V1 / "tx" / "watch" => check.verify(req.params) {
-      // Record a transaction to be broadcasted in case of channel breach
-      Ok apply okSingle("done")
-    }
-
-    // DATA STORAGE
-
-    case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
-      // Rewrites user's channel data but can be used for general purposes
-      db.putGeneralData(req params "key", req params body)
-      Ok apply okSingle("done")
-    }
-
-    case req @ POST -> V1 / "data" / "get" =>
-      db.getGeneralData(req params "key") match {
-        case Some(result) => Ok apply okSingle(result)
-        case _ => Ok apply error("notfound")
-      }
-
     // ROUTER
 
     case req @ POST -> V1 / "router" / "routes"
@@ -144,6 +126,17 @@ class Responder {
       val query: String = req.params("query").trim.take(50).toLowerCase
       val nodes = Router.maps.searchTrie getValuesForKeysStartingWith query
       convertNodes(nodes.asScala.toList take 25)
+
+    // FEERATE AND EXCHANGE RATES
+
+    case POST -> Root / _ / "feerates" =>
+      val result = feeRates.rates.mapValues(_ getOrElse dummy)
+      Ok apply ok(Serialization write result)
+
+    case POST -> Root / _ / "exchangerates" =>
+      val computed = exchangeRates.currencies.map(c => c.code -> c.average)
+      val result = computed.toMap.mapValues(_ getOrElse dummy)
+      Ok apply ok(Serialization write result)
 
     // NEW VERSION WARNING AND TESTS
 

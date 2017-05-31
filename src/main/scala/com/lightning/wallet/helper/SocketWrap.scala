@@ -13,7 +13,7 @@ abstract class SocketWrap(ip: InetAddress, port: Int) extends Transport {
   def shutdown: Unit = try worker.socket.close catch none
   def start: Unit = worker = new Worker
 
-  private var worker: Worker = _
+  var worker: Worker = _
   var listeners = Set.empty[SocketListener]
   val events: SocketListener = new SocketListener {
     override def onConnect = for (lst <- listeners) lst.onConnect
@@ -24,9 +24,9 @@ abstract class SocketWrap(ip: InetAddress, port: Int) extends Transport {
     val socket = new Socket
     private val BUFFER_SIZE = 1024
     private val buffer = new Bytes(BUFFER_SIZE)
-    private val where = new InetSocketAddress(ip, port)
 
-    Future {
+    val work = Future {
+      val where = new InetSocketAddress(ip, port)
       socket.connect(where, 10000)
       events.onConnect
 
@@ -35,7 +35,9 @@ abstract class SocketWrap(ip: InetAddress, port: Int) extends Transport {
         if (read < 0) throw new RuntimeException("Socket closed")
         else onReceive(buffer take read)
       }
-    } onComplete { _ =>
+    }
+
+    work onComplete { _ =>
       events.onDisconnect
     }
   }
