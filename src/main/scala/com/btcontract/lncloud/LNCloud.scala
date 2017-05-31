@@ -129,14 +129,12 @@ class Responder {
 
     // FEERATE AND EXCHANGE RATES
 
-    case POST -> Root / _ / "feerates" =>
-      val result = feeRates.rates.mapValues(_ getOrElse dummy)
-      Ok apply ok(Serialization write result)
-
-    case POST -> Root / _ / "exchangerates" =>
-      val computed = exchangeRates.currencies.map(c => c.code -> c.average)
-      val result = computed.toMap.mapValues(_ getOrElse dummy)
-      Ok apply ok(Serialization write result)
+    case POST -> Root / _ / "rates" =>
+      val feeEstimates = feeRates.rates.mapValues(_ getOrElse dummy)
+      val exchanges = exchangeRates.currencies.map(c => c.code -> c.average)
+      val processedExchanges = exchanges.toMap.mapValues(_ getOrElse dummy)
+      val result = feeEstimates :: processedExchanges :: Nil
+      Ok apply okSingle(result)
 
     case GET -> Root / "exchangerates" / "state" =>
       Ok(exchangeRates.displayState mkString "\r\n\r\n")

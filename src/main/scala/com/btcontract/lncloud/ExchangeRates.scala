@@ -27,8 +27,11 @@ import org.knowm.xchange.bter.BTERExchange
 import org.knowm.xchange.gdax.GDAXExchange
 
 
-class AveragePrice(val pair: CurrencyPair) {
-  def code: String = pair.counter.getCurrencyCode
+class AveragePrice(val pair: CurrencyPair, val code: String) {
+  val history = new ConcurrentHashMap[String, PriceHistory].asScala
+  val exchanges: List[String] = List.empty
+  type PriceTry = Try[BigDecimal]
+
   def update: Unit = for (exchangeName <- exchanges)
     history.getOrElseUpdate(exchangeName, new PriceHistory) add Try {
       val exchangeInstance = ExchangeFactory.INSTANCE createExchange exchangeName
@@ -45,40 +48,26 @@ class AveragePrice(val pair: CurrencyPair) {
     def add(item: PriceTry): Unit = prices = item :: prices take 5
     def recentValue: Option[PriceTry] = prices.find(_.isSuccess)
   }
-
-  type PriceTry = Try[BigDecimal]
-  val exchanges: List[String] = List.empty
-  val history: mutable.Map[String, PriceHistory] =
-    new ConcurrentHashMap[String, PriceHistory].asScala
 }
 
 class ExchangeRates {
-  val usd = new AveragePrice(BTC_USD) {
-    override val exchanges: List[String] =
-      classOf[BitstampExchange].getName ::
-        classOf[BitfinexExchange].getName ::
-        classOf[KrakenExchange].getName ::
-        classOf[GDAXExchange].getName ::
-        Nil
+  val usd = new AveragePrice(BTC_USD, "dollar") {
+    override val exchanges: List[String] = classOf[BitstampExchange].getName ::
+      classOf[BitfinexExchange].getName :: classOf[KrakenExchange].getName ::
+      classOf[GDAXExchange].getName :: Nil
   }
 
-  val eur = new AveragePrice(BTC_EUR) {
-    override val exchanges: List[String] =
-      classOf[PaymiumExchange].getName ::
-        classOf[KrakenExchange].getName ::
-        classOf[BitstampExchange].getName ::
-        classOf[GDAXExchange].getName ::
-        Nil
+  val eur = new AveragePrice(BTC_EUR, "euro") {
+    override val exchanges: List[String] = classOf[PaymiumExchange].getName ::
+      classOf[KrakenExchange].getName :: classOf[BitstampExchange].getName ::
+      classOf[GDAXExchange].getName :: Nil
   }
 
-  val cny = new AveragePrice(BTC_CNY) {
-    override val exchanges: List[String] =
-      classOf[BTCChinaExchange].getName ::
-        classOf[OkCoinExchange].getName ::
-        classOf[ChbtcExchange].getName ::
-        classOf[Btc38Exchange].getName ::
-        classOf[BTERExchange].getName ::
-        Nil
+  val cny = new AveragePrice(BTC_CNY, "yuan") {
+    override val exchanges: List[String] = classOf[BTCChinaExchange].getName ::
+      classOf[OkCoinExchange].getName :: classOf[ChbtcExchange].getName ::
+      classOf[Btc38Exchange].getName :: classOf[BTERExchange].getName ::
+      Nil
   }
 
   def displayState = for {
