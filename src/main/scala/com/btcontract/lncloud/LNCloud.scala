@@ -27,7 +27,7 @@ object LNCloud extends ServerApp {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 48001,
-      eclairNodeId = "03c7441511082605d51f0589b4d6e5907b7828703e77d8f8ffab07f29bd7fe7d6b",
+      eclairNodeId = "032e790e58b944265b56cf15c0b9955c9cf844f9e3a668c1aa23cc4c78b781ae86",
       rewindRange = 144, checkByToken = true)
 
     values = config
@@ -137,6 +137,9 @@ class Responder {
       val computed = exchangeRates.currencies.map(c => c.code -> c.average)
       val result = computed.toMap.mapValues(_ getOrElse dummy)
       Ok apply ok(Serialization write result)
+
+    case GET -> Root / "exchangerates" / "state" =>
+      Ok(exchangeRates.displayState mkString "\r\n\r\n")
 
     // NEW VERSION WARNING AND TESTS
 

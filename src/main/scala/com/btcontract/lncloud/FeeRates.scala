@@ -17,6 +17,6 @@ class FeeRates {
   type TryDouble = Try[Double]
   val rates: mutable.Map[Int, TryDouble] = new ConcurrentHashMap[Int, TryDouble].asScala
   def update: Unit = for (block <- 2 to 10) rates(block) = Try(bitcoin getEstimateFee block)
-  retry(obsOn(update, IOScheduler.apply), pickInc, 1 to 3).repeatWhen(_ delay 10.minutes)
+  retry(obsOn(update, IOScheduler.apply), pickInc, 1 to 3).repeatWhen(_ delay 15.minutes)
     .doOnNext(_ => Tools log "Fees were updated").subscribe(none)
 }

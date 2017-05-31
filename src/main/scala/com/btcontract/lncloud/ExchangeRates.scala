@@ -2,27 +2,29 @@ package com.btcontract.lncloud
 
 import collection.JavaConverters._
 import com.btcontract.lncloud.JsonHttpUtils._
+import org.knowm.xchange.currency.CurrencyPair._
+
+import com.lightning.wallet.ln.~
+import org.knowm.xchange.currency.CurrencyPair
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
-import com.lightning.wallet.ln.Tools
+import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
-import org.knowm.xchange.currency.CurrencyPair
+import com.lightning.wallet.ln.Tools
+import scala.collection.mutable
+import scala.util.Try
+
 import org.knowm.xchange.ExchangeFactory
 import org.knowm.xchange.bitfinex.v1.BitfinexExchange
 import org.knowm.xchange.bitstamp.BitstampExchange
-import org.knowm.xchange.btc38.Btc38Exchange
 import org.knowm.xchange.btcchina.BTCChinaExchange
-import org.knowm.xchange.bter.BTERExchange
-import org.knowm.xchange.chbtc.ChbtcExchange
-import org.knowm.xchange.currency.CurrencyPair.{BTC_CNY, BTC_EUR, BTC_USD}
-import org.knowm.xchange.gdax.GDAXExchange
+import org.knowm.xchange.paymium.PaymiumExchange
 import org.knowm.xchange.kraken.KrakenExchange
 import org.knowm.xchange.okcoin.OkCoinExchange
-import org.knowm.xchange.paymium.PaymiumExchange
-import rx.lang.scala.schedulers.IOScheduler
-
-import scala.collection.mutable
-import scala.util.Try
+import org.knowm.xchange.btc38.Btc38Exchange
+import org.knowm.xchange.chbtc.ChbtcExchange
+import org.knowm.xchange.bter.BTERExchange
+import org.knowm.xchange.gdax.GDAXExchange
 
 
 class AveragePrice(val pair: CurrencyPair) {
@@ -79,8 +81,16 @@ class ExchangeRates {
         Nil
   }
 
+  def displayState = for {
+    averagePrice: AveragePrice <- currencies
+    exchange ~ history <- averagePrice.history
+  } yield {
+    val humanHistory = history.prices mkString "\r\n-- "
+    s"${averagePrice.pair} $exchange \r\n-- $humanHistory"
+  }
+
   val currencies = List(usd, eur, cny)
   retry(obsOn(currencies.foreach(_.update), IOScheduler.apply), pickInc, 1 to 3)
-    .repeatWhen(_ delay 20.minutes).doOnNext(_ => Tools log "Exchange rates were updated")
+    .repeatWhen(_ delay 30.minutes).doOnNext(_ => Tools log "Exchange rates were updated")
     .subscribe(none)
 }
