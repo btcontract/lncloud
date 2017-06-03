@@ -26,15 +26,15 @@ object LNCloud extends ServerApp {
   def server(args: ProgramArguments): Task[Server] = {
     val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-      eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 48001,
-      eclairNodeId = "032e790e58b944265b56cf15c0b9955c9cf844f9e3a668c1aa23cc4c78b781ae86",
+      eclairApi = "http://127.0.0.1:8083", eclairIp = "127.0.0.1", eclairPort = 48003,
+      eclairNodeId = "0221b6e4fb5cefd7e77bb4af917be639c8a67a4a2369e267db48f96634e09fd381",
       rewindRange = 144, checkByToken = true)
 
     values = config
     RouterConnector.socket.start
     val socketAndHttpLnCloudServer = new Responder
     val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
-    BlazeBuilder.bindHttp(9002).mountService(postLift).start
+    BlazeBuilder.bindHttp(9001).mountService(postLift).start
   }
 }
 
@@ -71,7 +71,7 @@ class Responder {
     // Record tokens and send an Invoice
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val prunedTokens = toClass[StringSeq](hex2Json apply tokens) take values.quantity
+      val prunedTokens = toClass[StringSeq](hex2Ascii apply tokens) take values.quantity
       // We put request details in a db and provide an invoice for them to fulfill
 
       val requestInvoice = for {
@@ -141,13 +141,13 @@ class Responder {
 
     // NEW VERSION WARNING AND TESTS
 
-    case req @ POST -> Root / _ / "sigcheck" => check.verify(req.params) {
-      // This is a test where we simply check if a user supplied key is valid
-      Ok apply ok("done")
+    case req @ POST -> Root / _ / "check" => check.verify(req.params) {
+      // This is a test where we simply check if a user supplied data is ok
+      Ok apply ok(req.params apply body)
     }
 
-    case req @ POST -> Root / _ / "ping" => Ok apply ok(req params body)
-    case POST -> Root / "v2" / _ => Ok apply error("mustupdate")
+    case POST -> Root / "v2" / _ =>
+      Ok apply error("mustupdate")
   }
 
   // HTTP answer as JSON array
@@ -160,7 +160,7 @@ class Responder {
 
   class BlindTokenChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(point, clearsig, cleartoken) = extract(params, identity, "point", "clearsig", "cleartoken")
+      val Seq(point, cleartoken, clearsig) = extract(params, identity, "point", "cleartoken", "clearsig")
       lazy val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
         clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
@@ -173,7 +173,7 @@ class Responder {
 
   class SignatureChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(data, sig, key) = extract(params, BinaryData.apply, body, "sig", "pubkey")
+      val Seq(data, sig, key) = extract(params, BinaryData.apply, body, "sig", "key")
       lazy val signatureIsFine = Crypto.verifySignature(Crypto sha256 data, sig, key)
 
       val userPubKeyIsPresent = db keyExists key.toString
