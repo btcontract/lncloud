@@ -12,7 +12,12 @@ import java.util.Date
 
 
 abstract class Database {
+  // For signature-based auth
   def keyExists(key: String): Boolean
+
+  // Recording all transactions
+  def putTx(txids: StringSeq, hex: String)
+  def getTxs(txid: String): StringSeq
 
   // Clear tokens storage and cheking
   def getPendingTokens(seskey: String): Option[BlindData]
@@ -40,9 +45,12 @@ class MongoDatabase extends Database {
     }
 
   // Many collections in total to store clear tokens because we have to keep every token
-  def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
   def putClearToken(clear: String): Unit = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
+  def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
 
   // Channel closing info, keys and and misc
-  def keyExists(key: String): Boolean = mongo("keys").findOne("key" $eq key).isDefined
+  def keyExists(key: String): Boolean = mongo("authKeys").findOne("key" $eq key).isDefined
+  // Recording all transactions because clients may need to know which txs has been spent by whom
+  def putTx(txids: StringSeq, hex: String) = mongo("txs") insert MongoDBObject("txids" -> txids, "hex" -> hex)
+  def getTxs(txid: String): StringSeq = mongo("txs").find("txids" $eq txid).map(_ as[String] "hex").toList
 }

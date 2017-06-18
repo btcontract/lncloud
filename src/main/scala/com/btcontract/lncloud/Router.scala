@@ -34,7 +34,7 @@ object Router { me =>
   val maps = new Mappings
 
   class GraphFinder(val updates: mutable.Map[ChanDirection, ChannelUpdate], val maxPathLength: Int) {
-    def outdatedChannels: Iterable[ChannelUpdate] = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7 * 2)
+    def outdatedChannels: Iterable[ChannelUpdate] = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7)
     def augmented(dir: ChanDirection, upd: ChannelUpdate): GraphFinder = new GraphFinder(updates.updated(dir, upd), maxPathLength)
     def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] = Try apply findPaths(from, to) getOrElse Nil
     private lazy val directedGraph = new DefaultDirectedGraph[BinaryData, ChanDirection](chanDirectionClass)
@@ -54,9 +54,9 @@ object Router { me =>
 
   class Mappings {
     type ShortChannelIds = Set[Long]
-    val chanId2Info: mutable.Map[Long, ChanInfo] = mutable.Map.empty
-    val txId2Info: mutable.Map[BinaryData, ChanInfo] = mutable.Map.empty
-    val nodeId2Announce: mutable.Map[BinaryData, NodeAnnouncement] = mutable.Map.empty
+    val chanId2Info = mutable.Map.empty[Long, ChanInfo]
+    val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
+    val nodeId2Announce = mutable.Map.empty[BinaryData, NodeAnnouncement]
     val nodeId2Chans = mutable.Map.empty[BinaryData, ShortChannelIds] withDefaultValue Set.empty
     val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
 
@@ -79,13 +79,13 @@ object Router { me =>
       nodeId2Announce get node.nodeId foreach { old =>
         // Announce may have a new alias so we search for
         // an old one because nodeId should remain the same
-        searchTrie remove old.nodeIdString
+        searchTrie remove old.nodeId.toString
         searchTrie remove old.identifier
         nodeId2Announce -= old.nodeId
       }
 
     def addNode(node: NodeAnnouncement) = {
-      searchTrie.put(node.nodeIdString, node)
+      searchTrie.put(node.nodeId.toString, node)
       searchTrie.put(node.identifier, node)
       nodeId2Announce(node.nodeId) = node
     }
@@ -151,8 +151,9 @@ object Router { me =>
     Tools log s"Removed the following channels: $infos"
   }
 
+  // Channels may disappear silently without closing transaction on a blockchain so we must remove them too
   private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
-  Obs.interval(6.hours).map(_ => outdatedInfos).foreach(infos => complexRemove(infos.toSeq:_*), errLog)
+  Obs.interval(1.hour).foreach(_ => complexRemove(outdatedInfos.toSeq:_*), errLog)
 }
 
 object RouterConnector {
@@ -169,7 +170,7 @@ object RouterConnector {
   val socketListener = new SocketListener {
     override def onConnect = transportHandler.init
     override def onDisconnect = Obs.just(Tools log "Restarting socket")
-      .delay(10.seconds).doOnTerminate(socket.start).subscribe(none)
+      .delay(10.seconds).subscribe(_ => socket.start, _.printStackTrace)
   }
 
   val transportListener =
@@ -189,7 +190,6 @@ object RouterConnector {
   val blockchainListener = new BlockchainListener {
     override def onNewTx(transaction: Transaction) = for {
       // We need to check if any input spends a channel output
-      // i.e. has identical transaction id and output index
 
       input <- transaction.txIn
       chanInfo <- Router.maps.txId2Info get input.outPoint.txid

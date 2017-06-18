@@ -38,7 +38,7 @@ object LNCloud extends ServerApp {
   }
 }
 
-class Responder {
+class Responder { me =>
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
   private val blindTokens = new BlindTokens
@@ -46,13 +46,25 @@ class Responder {
   private val feeRates = new FeeRates
   private val db = new MongoDatabase
   private val V1 = Root / "v1"
-  private val dummy = "unknown"
   private val body = "body"
+
+  // Record incoming transactions
+
+  Blockchain.listeners += new BlockchainListener {
+    override def onNewTx(transaction: Transaction) = {
+      val encodedOutPoints = transaction.txIn.map(_.outPoint.txid.toString)
+      db.putTx(encodedOutPoints, Transaction.write(transaction).toString)
+    }
+  }
+
+  // Define an auth method
 
   private val check =
     // How an incoming data should be checked
     if (values.checkByToken) new BlindTokenChecker
     else new SignatureChecker
+
+  // Json4s converts tuples incorrectly sowe use lists
 
   private val convertNodes: Seq[NodeAnnouncement] => TaskResponse = nodes => {
     val announces: Seq[String] = nodes.map(nodeAnnouncementCodec.encode(_).require.toHex)
@@ -113,7 +125,7 @@ class Responder {
 
     case req @ POST -> V1 / "router" / "routes" =>
       val routes = Router.finder.findRoutes(req params "from", req params "to").sortBy(_.size)
-      val data = routes take 10 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
+      val data = routes take 15 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
       Ok apply ok(data:_*)
 
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
@@ -127,12 +139,18 @@ class Responder {
       val nodes = Router.maps.searchTrie getValuesForKeysStartingWith query
       convertNodes(nodes.asScala.toList take 25)
 
+    // TRANSACTIONS
+
+    case req @ POST -> V1 / "txs" =>
+      val txs = db.getTxs(req params "txid")
+      Ok apply ok(txs:_*)
+
     // FEERATE AND EXCHANGE RATES
 
     case POST -> Root / _ / "rates" =>
-      val feeEstimates = feeRates.rates.mapValues(_ getOrElse dummy)
+      val feeEstimates = feeRates.rates.mapValues(_ getOrElse 0)
       val exchanges = exchangeRates.currencies.map(c => c.code -> c.average)
-      val processedExchanges = exchanges.toMap.mapValues(_ getOrElse dummy)
+      val processedExchanges = exchanges.toMap.mapValues(_ getOrElse 0)
       val result = feeEstimates :: processedExchanges :: Nil
       Ok apply okSingle(result)
 
