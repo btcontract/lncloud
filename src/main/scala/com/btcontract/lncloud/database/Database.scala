@@ -50,7 +50,9 @@ class MongoDatabase extends Database {
 
   // Channel closing info, keys and and misc
   def keyExists(key: String): Boolean = mongo("authKeys").findOne("key" $eq key).isDefined
+
   // Recording all transactions because clients may need to know which txs has been spent by whom
-  def putTx(txids: StringSeq, hex: String) = mongo("txs") insert MongoDBObject("txids" -> txids, "hex" -> hex)
   def getTxs(txid: String): StringSeq = mongo("txs").find("txids" $eq txid).map(_ as[String] "hex").toList
+  def putTx(txids: StringSeq, hex: String) = mongo("txs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex),
+    upsert = true, multi = false, WriteConcern.Safe)
 }

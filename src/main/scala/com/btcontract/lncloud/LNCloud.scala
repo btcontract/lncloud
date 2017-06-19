@@ -1,14 +1,10 @@
 package com.btcontract.lncloud
 
 import org.http4s.dsl._
-import fr.acinq.bitcoin._
 import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-
-import org.http4s.server.{Server, ServerApp}
-import org.http4s.{HttpService, Response}
-
+import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient
 import com.lightning.wallet.ln.wire.NodeAnnouncement
 import org.http4s.server.middleware.UrlFormLifter
 import org.http4s.server.blaze.BlazeBuilder
@@ -19,6 +15,11 @@ import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import database.MongoDatabase
 import java.math.BigInteger
+
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Transaction}
+import org.http4s.server.{Server, ServerApp}
+import org.http4s.{HttpService, Response}
+import scala.util.{Success, Try}
 
 
 object LNCloud extends ServerApp {
@@ -55,6 +56,12 @@ class Responder { me =>
       val encodedOutPoints = transaction.txIn.map(_.outPoint.txid.toString)
       db.putTx(encodedOutPoints, Transaction.write(transaction).toString)
     }
+
+    override def onNewBlock(block: BitcoindRpcClient.Block) = {
+      val txs1 = for (txid <- block.tx.asScala) yield Try(bitcoin getRawTransactionHex txid)
+      val txs2 = for (rawTxTry <- txs1) yield rawTxTry map Transaction.read
+      for (Success(transaction) <- txs2) onNewTx(transaction)
+    }
   }
 
   // Define an auth method
@@ -64,7 +71,7 @@ class Responder { me =>
     if (values.checkByToken) new BlindTokenChecker
     else new SignatureChecker
 
-  // Json4s converts tuples incorrectly sowe use lists
+  // Json4s converts tuples incorrectly so we use lists
 
   private val convertNodes: Seq[NodeAnnouncement] => TaskResponse = nodes => {
     val announces: Seq[String] = nodes.map(nodeAnnouncementCodec.encode(_).require.toHex)
@@ -135,7 +142,7 @@ class Responder { me =>
       convertNodes(Vector.fill(resultSize)(random nextInt colSize) map candidates)
 
     case req @ POST -> V1 / "router" / "nodes" =>
-      val query: String = req.params("query").trim.take(50).toLowerCase
+      val query: String = req.params("query").trim.take(32).toLowerCase
       val nodes = Router.maps.searchTrie getValuesForKeysStartingWith query
       convertNodes(nodes.asScala.toList take 25)
 
