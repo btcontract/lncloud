@@ -5,17 +5,15 @@ import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 
 import rx.lang.scala.{Observable => Obs}
-import java.net.{InetAddress, InetSocketAddress}
-import com.btcontract.lncloud.Utils.{errLog, values}
-import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Script}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
 import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
-import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
+import com.btcontract.lncloud.Utils.errLog
 import scala.language.implicitConversions
 import com.lightning.wallet.ln.Tools.wrap
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -149,35 +147,5 @@ object Router { me =>
 
   // Channels may disappear silently without closing transaction on a blockchain so we must remove them too
   private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
-  Obs.interval(1.hour).foreach(_ => complexRemove(outdatedInfos.toSeq:_*), errLog)
-}
-
-object RouterConnector {
-  def connect = ConnectionManager requestConnection announce
-  val announce = NodeAnnouncement(null, 0, values.eclairNodeId, null, "Routing source", null,
-    new InetSocketAddress(InetAddress getByName values.eclairIp, values.eclairPort) :: Nil)
-
-  ConnectionManager.listeners += new ConnectionListener {
-    override def onMessage(msg: LightningMessage) = Router receive msg
-    override def onOperational(id: PublicKey, their: Init) = Tools log "Socket is operational"
-    override def onTerminalError(id: PublicKey) = ConnectionManager.connections.get(id).foreach(_.socket.close)
-    override def onDisconnect(id: PublicKey): Unit = Obs.just(Tools log "Restarting socket").delay(10.seconds)
-      .subscribe(_ => connect, _.printStackTrace)
-  }
-
-  Blockchain.listeners += new BlockchainListener {
-    override def onNewTx(transaction: Transaction) = for {
-      // We need to check if any input spends a channel output
-
-      input <- transaction.txIn
-      chanInfo <- Router.maps.txId2Info get input.outPoint.txid
-      if chanInfo.ca.outputIndex == input.outPoint.index
-    } Router.complexRemove(chanInfo)
-
-    override def onNewBlock(block: Block) = {
-      val spent = Router.maps.txId2Info.values filter Blockchain.isSpent
-      if (spent.isEmpty) Tools log s"No spent channels at ${block.height}"
-      else Router.complexRemove(spent.toSeq:_*)
-    }
-  }
+  Obs.interval(2.hours).foreach(_ => complexRemove(outdatedInfos.toSeq:_*), errLog)
 }

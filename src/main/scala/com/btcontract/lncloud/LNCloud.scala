@@ -4,12 +4,10 @@ import org.http4s.dsl._
 import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
-import scala.util.{Success, Try}
 
-import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient
 import com.lightning.wallet.ln.wire.NodeAnnouncement
 import com.btcontract.lncloud.Utils.string2PublicKey
 import org.http4s.server.middleware.UrlFormLifter
@@ -35,7 +33,6 @@ object LNCloud extends ServerApp {
       rewindRange = 144 * 7, checkByToken = true)
 
     LNParams.setup(random getBytes 32)
-    RouterConnector.connect
     val socketAndHttpLnCloudServer = new Responder
     val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
     BlazeBuilder.bindHttp(9001).mountService(postLift).start
@@ -52,19 +49,8 @@ class Responder { me =>
   private val V1 = Root / "v1"
   private val body = "body"
 
-  // Record incoming transactions
-  Blockchain.listeners += new BlockchainListener {
-    override def onNewTx(transaction: Transaction) = {
-      val encodedOutPoints = transaction.txIn.map(_.outPoint.txid.toString)
-      db.putTx(encodedOutPoints, Transaction.write(transaction).toString)
-    }
-
-    override def onNewBlock(block: BitcoindRpcClient.Block) = {
-      val txs1 = for (txid <- block.tx.asScala) yield Try(bitcoin getRawTransactionHex txid)
-      val txs2 = for (rawTxTry <- txs1) yield rawTxTry map Transaction.read
-      for (Success(transaction) <- txs2) onNewTx(transaction)
-    }
-  }
+  // Watching chain and socket
+  new ListenerManager(db).connect
 
   private val check =
     // How an incoming data should be checked
