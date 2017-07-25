@@ -2,9 +2,8 @@ package com.btcontract.lncloud.database
 
 import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
+
 import com.btcontract.lncloud.Utils.StringSeq
-import fr.acinq.bitcoin.Crypto.PublicKey
-import com.lightning.wallet.ln.Invoice
 import language.implicitConversions
 import fr.acinq.bitcoin.BinaryData
 import java.math.BigInteger
@@ -35,13 +34,13 @@ class MongoDatabase extends Database {
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String): Unit =
     mongo("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
-      "invoice" -> Invoice.serialize(data.invoice), "tokens" -> data.tokens, "date" -> new Date),
+      "paymentHash" -> data.paymentHash.toString, "tokens" -> data.tokens, "date" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def getPendingTokens(seskey: String): Option[BlindData] =
     mongo("blindTokens").findOne("seskey" $eq seskey) map { result =>
       val tokens: StringSeq = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString)
-      BlindData(Invoice.parse(result get "invoice"), new BigInteger(result get "k"), tokens.toList)
+      BlindData(BinaryData(result get "paymentHash"), new BigInteger(result get "k"), tokens.toList)
     }
 
   // Many collections in total to store clear tokens because we have to keep every token

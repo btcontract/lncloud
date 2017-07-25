@@ -4,14 +4,13 @@ import collection.JavaConverters._
 import com.btcontract.lncloud.JsonHttpUtils._
 import org.knowm.xchange.currency.CurrencyPair._
 
-import com.lightning.wallet.ln.~
 import org.knowm.xchange.currency.CurrencyPair
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
 import com.lightning.wallet.ln.Tools
-import scala.collection.mutable
+import com.lightning.wallet.ln.~
 import scala.util.Try
 
 import org.knowm.xchange.ExchangeFactory
@@ -80,6 +79,6 @@ class ExchangeRates {
 
   val currencies = List(usd, eur, cny)
   retry(obsOn(currencies.foreach(_.update), IOScheduler.apply), pickInc, 1 to 3)
-    .repeatWhen(_ delay 30.minutes).doOnNext(_ => Tools log "Exchange rates were updated")
+    .repeatWhen(_ delay 30.minutes).doOnNext(_ => Tools log "Exchange rates updated")
     .subscribe(none)
 }

@@ -10,10 +10,10 @@ import shapeless.HNil
 
 object Announcements { me =>
   private def hashTwice[T](attempt: BitVectorAttempt) = hash256(serialize(attempt).data)
-  private def channelAnnouncementWitnessEncode(shortChannelId: Long, nodeId1: BinaryData, nodeId2: BinaryData, bitcoinKey1: BinaryData, bitcoinKey2: BinaryData, features: BinaryData) =
+  private def channelAnnouncementWitnessEncode(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData) =
     me hashTwice LightningMessageCodecs.channelAnnouncementWitness.encode(shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: features :: HNil)
 
-  private def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: BinaryData, rgbColor: RGB, alias: String, features: BinaryData, addresses: InetSocketAddressList) =
+  private def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String, features: BinaryData, addresses: InetSocketAddressList) =
     me hashTwice LightningMessageCodecs.nodeAnnouncementWitness.encode(timestamp :: nodeId :: rgbColor :: alias :: features :: addresses :: HNil)
 
   private def channelUpdateWitnessEncode(shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) =
@@ -96,8 +96,8 @@ object Announcements { me =>
       ann.nodeId, ann.rgbColor, ann.alias, ann.features, ann.addresses),
       ann.signature, PublicKey apply ann.nodeId)
 
-  def checkSig(ann: ChannelUpdate, nodeId: BinaryData): Boolean =
+  def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean =
     verifySignature(channelUpdateWitnessEncode(ann.shortChannelId, ann.timestamp, ann.flags,
       ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths),
-      ann.signature, PublicKey apply nodeId)
+      ann.signature, nodeId)
 }

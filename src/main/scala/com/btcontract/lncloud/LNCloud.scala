@@ -4,35 +4,38 @@ import org.http4s.dsl._
 import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Transaction}
+import org.http4s.server.{Server, ServerApp}
+import org.http4s.{HttpService, Response}
+import scala.util.{Success, Try}
+
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient
 import com.lightning.wallet.ln.wire.NodeAnnouncement
+import com.btcontract.lncloud.Utils.string2PublicKey
 import org.http4s.server.middleware.UrlFormLifter
+import fr.acinq.eclair.payment.PaymentRequest
 import org.http4s.server.blaze.BlazeBuilder
+import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
-import com.lightning.wallet.ln.Invoice
+import com.lightning.wallet.ln.LNParams
 import scodec.Attempt.Successful
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import database.MongoDatabase
 import java.math.BigInteger
 
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Transaction}
-import org.http4s.server.{Server, ServerApp}
-import org.http4s.{HttpService, Response}
-import scala.util.{Success, Try}
-
 
 object LNCloud extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
-    val config = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
+    values = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-      eclairApi = "http://127.0.0.1:8083", eclairIp = "127.0.0.1", eclairPort = 48003,
-      eclairNodeId = "0221b6e4fb5cefd7e77bb4af917be639c8a67a4a2369e267db48f96634e09fd381",
-      rewindRange = 144, checkByToken = true)
+      eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735,
+      eclairNodeId = "02c4696ad573bdeb6a41a779dbd0d141c41c9158d578786a11f74b9474fdc20a7e",
+      rewindRange = 144 * 7, checkByToken = true)
 
-    values = config
-    RouterConnector.socket.start
+    LNParams.setup(random getBytes 32)
+    RouterConnector.connect
     val socketAndHttpLnCloudServer = new Responder
     val postLift = UrlFormLifter(socketAndHttpLnCloudServer.http)
     BlazeBuilder.bindHttp(9001).mountService(postLift).start
@@ -50,7 +53,6 @@ class Responder { me =>
   private val body = "body"
 
   // Record incoming transactions
-
   Blockchain.listeners += new BlockchainListener {
     override def onNewTx(transaction: Transaction) = {
       val encodedOutPoints = transaction.txIn.map(_.outPoint.txid.toString)
@@ -64,15 +66,12 @@ class Responder { me =>
     }
   }
 
-  // Define an auth method
-
   private val check =
     // How an incoming data should be checked
     if (values.checkByToken) new BlindTokenChecker
     else new SignatureChecker
 
   // Json4s converts tuples incorrectly so we use lists
-
   private val convertNodes: Seq[NodeAnnouncement] => TaskResponse = nodes => {
     val announces: Seq[String] = nodes.map(nodeAnnouncementCodec.encode(_).require.toHex)
     val channelsPerNode = nodes.map(announce => Router.maps.nodeId2Chans(announce.nodeId).size)
@@ -95,11 +94,11 @@ class Responder { me =>
 
       val requestInvoice = for {
         privateKey <- blindTokens.cache get sesKey
-        invoice = blindTokens generateInvoice values.price
-        blind = BlindData(invoice, privateKey.data, prunedTokens)
+        request: PaymentRequest = blindTokens generateInvoice values.price
+        blind = BlindData(request.paymentHash, privateKey.data, prunedTokens)
       } yield {
         db.putPendingTokens(blind, sesKey)
-        okSingle(Invoice serialize invoice)
+        okSingle(PaymentRequest write request)
       }
 
       requestInvoice match {
@@ -112,8 +111,9 @@ class Responder { me =>
       // We only sign tokens if the request has been paid
 
       val blindSignatures = for {
-        blindData <- db getPendingTokens req.params("seskey")
-        if blindTokens isFulfilled blindData.invoice.paymentHash
+        blindData <- db.getPendingTokens(req params "seskey")
+        if blindTokens isFulfilled blindData.paymentHash
+
         bigInts = for (blindToken <- blindData.tokens) yield new BigInteger(blindToken)
         signatures = for (bi <- bigInts) yield blindTokens.signer.blindSign(bi, blindData.k).toString
       } yield signatures
@@ -199,12 +199,12 @@ class Responder { me =>
   class SignatureChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
       val Seq(data, sig, key) = extract(params, BinaryData.apply, body, "sig", "key")
-      lazy val signatureIsFine = Crypto.verifySignature(Crypto sha256 data, sig, key)
+      lazy val sigOk = Crypto.verifySignature(Crypto sha256 data, sig, PublicKey apply key)
 
       val userPubKeyIsPresent = db keyExists key.toString
       if (params(body).length > 8192) Ok apply error("bodytoolarge")
       else if (!userPubKeyIsPresent) Ok apply error("keynotfound")
-      else if (!signatureIsFine) Ok apply error("siginvalid")
+      else if (!sigOk) Ok apply error("siginvalid")
       else next
     }
   }

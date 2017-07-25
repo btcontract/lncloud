@@ -1,7 +1,7 @@
 package com.btcontract.lncloud
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
-import com.btcontract.lncloud.Utils.{bitcoin, values, errLog}
+import com.btcontract.lncloud.Utils.{bitcoin, errLog, values}
 import rx.lang.scala.{Subscription, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import zeromq.{SocketRef, SocketType, ZeroMQ}
@@ -10,11 +10,12 @@ import com.lightning.wallet.ln.wire.ChannelAnnouncement
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
+import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.util.Try
 
 
 case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
-case class ChanDirection(channelId: Long, from: BinaryData, to: BinaryData)
+case class ChanDirection(channelId: Long, from: PublicKey, to: PublicKey)
 
 trait BlockchainListener {
   def onNewBlock(block: Block): Unit = none

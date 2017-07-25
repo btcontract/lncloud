@@ -7,17 +7,21 @@ import com.lightning.wallet.ln.Tools.random
 import java.nio.ByteOrder
 
 
-abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
-                                transport: Transport) extends StateMachine[Data] { me =>
+// Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
+abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) extends StateMachine[Data] { me =>
+  override def process(change: Any) = try super.process(change) catch { case err: Throwable => me handleError err }
+  def handleDecryptedIncomingData(data: BinaryData): Unit
+  def handleEncryptedOutgoingData(data: BinaryData): Unit
+  def handleEnterOperationalState: Unit
+  def handleError(err: Throwable): Unit
 
   def init: Unit = {
     val writer = makeWriter(keyPair, remotePubKey)
     val (reader, _, msg) = writer write BinaryData.empty
     become(HandshakeData(reader, BinaryData.empty), HANDSHAKE)
-    transport.send(prefix +: msg)
+    handleEncryptedOutgoingData(prefix +: msg)
   }
 
-  def feedForward(data: BinaryData): Unit
   def doProcess(change: Any): Unit = (data, change, state) match {
     case (HandshakeData(reader1, buffer), bd: BinaryData, HANDSHAKE) =>
       me stayWith HandshakeData(reader1, buffer ++ bd)
@@ -35,6 +39,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
           val decoder1 = ExtendedCipherState(decoder, ck)
           val d1 = CyphertextData(encoder1, decoder1, None, remainder)
           become(d1, WAITING_CYPHERTEXT)
+          handleEnterOperationalState
           doProcess(Ping)
 
         case (writer, _, _) =>
@@ -43,15 +48,14 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
               val encoder1 = ExtendedCipherState(encoder, ck)
               val decoder1 = ExtendedCipherState(decoder, ck)
               val d1 = CyphertextData(encoder1, decoder1, None, remainder)
-              transport.send(prefix +: message)
+              handleEncryptedOutgoingData(prefix +: message)
               become(d1, WAITING_CYPHERTEXT)
+              handleEnterOperationalState
               doProcess(Ping)
 
             case (reader2, _, message) =>
-              require(remainder.isEmpty, s"Unexpected data")
-              val d1 = HandshakeData(reader2, remainder)
-              transport.send(prefix +: message)
-              become(d1, HANDSHAKE)
+              handleEncryptedOutgoingData(prefix +: message)
+              become(HandshakeData(reader2, remainder), HANDSHAKE)
               doProcess(Ping)
           }
       }
@@ -59,9 +63,8 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
     // WAITING_CYPHERTEXT length phase
 
     case (cd: CyphertextData, (Send, data: BinaryData), WAITING_CYPHERTEXT) =>
-      val (encoder1: CipherState, ciphertext: BinaryData) = encryptMsg(cd.enc, data)
-
-      transport send ciphertext
+      val (encoder1, ciphertext) = encryptMsg(cd.enc, data)
+      handleEncryptedOutgoingData(ciphertext)
       me stayWith cd.copy(enc = encoder1)
 
     case (cd: CyphertextData, bd: BinaryData, WAITING_CYPHERTEXT) =>
@@ -83,12 +86,12 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData,
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
       me stayWith CyphertextData(encoder, decoder1, length = None, remainder)
-      me feedForward plaintext
+      handleDecryptedIncomingData(plaintext)
       doProcess(Ping)
 
     case _ =>
       // Let know if received an unhandled message
-      Tools log s"TransportHandler: unhandled $data : $change"
+      Tools log s"TransportHandler: unhandled $change : $data"
   }
 }
 
@@ -163,9 +166,4 @@ case class ExtendedCipherState(cs: CipherState, ck: BinaryData) extends CipherSt
 
   def cipher = cs.cipher
   val hasKey = cs.hasKey
-}
-
-trait Transport {
-  def send(data: BinaryData): Unit
-  def onReceive(data: BinaryData): Unit
 }

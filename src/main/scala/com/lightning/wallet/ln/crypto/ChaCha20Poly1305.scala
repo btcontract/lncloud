@@ -1,10 +1,10 @@
 package com.lightning.wallet.ln.crypto
 
-import com.lightning.wallet.ln.Exceptions._
-import com.lightning.wallet.ln.crypto.MultiStreamUtils.aconcat
 import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import org.spongycastle.crypto.engines.{ChaCha7539Engine, ChaChaEngine}
+import com.lightning.wallet.ln.crypto.MultiStreamUtils.aconcat
 import org.spongycastle.crypto.SkippingStreamCipher
+import com.lightning.wallet.ln.LightningException
 import fr.acinq.bitcoin.Protocol.writeUInt64
 import com.lightning.wallet.ln.Tools.Bytes
 import java.nio.ByteOrder.LITTLE_ENDIAN
@@ -20,10 +20,8 @@ object ChaCha20Poly1305 {
   def decrypt(key: Bytes, nonce: Bytes, ciphertext: Bytes, aad: Bytes, mac: Bytes): Bytes = {
     val polykey = ChaCha20.process(new Bytes(32), key, nonce, encrypt = true, skipBlock = false)
     val same = Poly1305.mac(data = pack(aad, ciphertext), key = polykey) sameElements mac
-
-    if (!same) throw ChannelException(CHACHA_INVALID_MAC)
-    else ChaCha20.process(ciphertext, key, nonce,
-      encrypt = false, skipBlock = true)
+    if (same) ChaCha20.process(ciphertext, key, nonce, encrypt = false, skipBlock = true)
+    else throw new LightningException
   }
 
   def pack(aad: Bytes, txt: Bytes) =
@@ -51,8 +49,7 @@ trait SkippingStreamCipherEngine {
     // Skip 1 block == set skip to true instead of false
     if (skipBlock) engine.processBytes(new Bytes(64), 0, 64, new Bytes(64), 0)
     val same = engine.processBytes(data, 0, data.length, resultData, 0) == data.length
-    if (!same) throw ChannelException(CHACHA_INVALID_DATA_LENGTH)
-    resultData
+    if (same) resultData else throw new LightningException
   }
 }
 
@@ -61,7 +58,7 @@ object ChaCha20Legacy extends SkippingStreamCipherEngine { def getEngine = new C
 
 object Poly1305 {
   def mac(key: Bytes, data: Bytes) = {
-    val poly = new org.spongycastle.crypto.macs.Poly1305New
+    val poly = new org.spongycastle.crypto.macs.Poly1305
     val out = new Bytes(16)
 
     poly init new KeyParameter(key)

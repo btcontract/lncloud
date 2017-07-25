@@ -1,6 +1,6 @@
 package com.lightning.wallet.ln.crypto
 
-import com.lightning.wallet.ln.Exceptions._
+import com.lightning.wallet.ln.LightningException
 import com.lightning.wallet.ln.Tools.Bytes
 import org.bitcoinj.core.Sha256Hash
 import ShaChain.Index
@@ -32,13 +32,14 @@ object ShaChain { me =>
     if (index.last) hashes.updated(index, hash) else index dropRight 1 match { case index1 =>
       val check = deriveChild(node = Joint(None, hash, index1.length), right = true).value
       val canRecompute = getHash(hashes, index1 :+ true).forall(_ sameElements check)
-      if (!canRecompute) throw ChannelException(SHA_CHAIN_HASH_CHECK_FAILED)
+
+      if (!canRecompute) throw new LightningException
       doAddHash(hashes - (index1 :+ false) - (index1 :+ true), hash, index1)
     }
 
-  def addHash(shi: ShaHashesWithIndex, hash: Bytes, index: Long) = {
-    for (last <- shi.lastIndex if index != last - 1L) throw ChannelException(SHA_CHAIN_WRONG_INDEX)
-    ShaHashesWithIndex(doAddHash(shi.hashes, hash, me moves index), Some apply index)
+  def addHash(shwi: ShaHashesWithIndex, hash: Bytes, index: Long) = {
+    for (last <- shwi.lastIndex if index != last - 1) throw new LightningException
+    ShaHashesWithIndex(doAddHash(shwi.hashes, hash, me moves index), Some apply index)
   }
 
   def getHash(hashes: Map[Index, Bytes], index: Index) =

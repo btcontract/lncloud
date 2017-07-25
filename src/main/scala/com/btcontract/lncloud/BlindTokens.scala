@@ -1,18 +1,18 @@
 package com.btcontract.lncloud
 
+import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import org.json4s.jackson.JsonMethods._
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 
-import collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import com.btcontract.lncloud.crypto.ECBlindSign
 import com.github.kevinsawicki.http.HttpRequest
 import java.util.concurrent.ConcurrentHashMap
+import fr.acinq.eclair.payment.PaymentRequest
 import scala.concurrent.duration.DurationInt
 import org.json4s.jackson.Serialization
 import org.spongycastle.math.ec.ECPoint
-import com.lightning.wallet.ln.Invoice
 import org.bitcoinj.core.Utils.HEX
 import com.lightning.wallet.ln.~
 import org.bitcoinj.core.ECKey
@@ -32,21 +32,15 @@ class BlindTokens { me =>
     for (hex ~ item <- cache if item.stamp < now - 2.hours.toMillis) cache remove hex
   }
 
-  def generateInvoice(price: MilliSatoshi): Invoice = {
-    val params = Map("params" -> List(price.amount), "method" -> "receive")
+  def generateInvoice(price: MilliSatoshi): PaymentRequest = {
+    val params = Map("params" -> List(price.amount, "Blind tokens"), "method" -> "receive")
     val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
-    Invoice parse raw.values.toString
-
-//    val preimage = BinaryData("9273f6a0a42b82d14c759e3756bd2741d51a0b3ecc5f284dbe222b59ea903942")
-//    val pk = BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
-//    Invoice(None, PublicKey(pk), price, Crypto sha256 preimage)
+    PaymentRequest read raw.values.toString
   }
 
   def isFulfilled(paymentHash: BinaryData): Boolean = {
-    val params = Map("paymentHash" -> List(paymentHash.toString), "method" -> "status")
+    val params = Map("params" -> List(paymentHash.toString), "method" -> "status")
     val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
     raw.extract[StampOpt].isDefined
-
-//    true
   }
 }

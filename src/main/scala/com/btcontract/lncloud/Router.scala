@@ -5,11 +5,9 @@ import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 
 import rx.lang.scala.{Observable => Obs}
-import com.lightning.wallet.ln.Tools.{wrap, none}
-import TransportHandler.{HANDSHAKE, WAITING_CYPHERTEXT}
+import java.net.{InetAddress, InetSocketAddress}
+import com.btcontract.lncloud.Utils.{errLog, values}
 import fr.acinq.bitcoin.{BinaryData, Script, Transaction}
-import com.btcontract.lncloud.Utils.{binData2PublicKey, errLog}
-import com.lightning.wallet.helper.{SocketListener, SocketWrap}
 
 import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
 import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
@@ -18,17 +16,16 @@ import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
-import com.lightning.wallet.ln.crypto.Noise
-import com.btcontract.lncloud.Utils.values
 import scala.language.implicitConversions
+import com.lightning.wallet.ln.Tools.wrap
+import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
-import java.net.InetAddress
 import scala.util.Try
 
 
 object Router { me =>
   // Blacklisted node ids
-  val black = mutable.Set.empty[BinaryData]
+  val black = mutable.Set.empty[PublicKey]
   // A cached graph to search for routes, updated on new and deleted updates
   var finder = new GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 7)
   val maps = new Mappings
@@ -36,17 +33,17 @@ object Router { me =>
   class GraphFinder(val updates: mutable.Map[ChanDirection, ChannelUpdate], val maxPathLength: Int) {
     def outdatedChannels: Iterable[ChannelUpdate] = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7)
     def augmented(dir: ChanDirection, upd: ChannelUpdate): GraphFinder = new GraphFinder(updates.updated(dir, upd), maxPathLength)
-    def findRoutes(from: BinaryData, to: BinaryData): Seq[PaymentRoute] = Try apply findPaths(from, to) getOrElse Nil
-    private lazy val directedGraph = new DefaultDirectedGraph[BinaryData, ChanDirection](chanDirectionClass)
+    def findRoutes(from: PublicKey, to: PublicKey): Seq[PaymentRoute] = Try apply findPaths(from, to) getOrElse Nil
+    private lazy val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
     private lazy val chanDirectionClass = classOf[ChanDirection]
 
     private lazy val graph = updates.keys match { case keys =>
       for (direction <- keys) Seq(direction.from, direction.to) foreach directedGraph.addVertex
       for (direction <- keys) directedGraph.addEdge(direction.from, direction.to, direction)
-      new CachedAllDirectedPaths[BinaryData, ChanDirection](directedGraph)
+      new CachedAllDirectedPaths[PublicKey, ChanDirection](directedGraph)
     }
 
-    private def findPaths(from: BinaryData, to: BinaryData): Seq[PaymentRoute] =
+    private def findPaths(from: PublicKey, to: PublicKey): Seq[PaymentRoute] =
       for (foundPath <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
         for (dir <- foundPath.getEdgeList.asScala.toVector) yield
           Hop(dir.from, dir.to, updates apply dir)
@@ -56,8 +53,8 @@ object Router { me =>
     type ShortChannelIds = Set[Long]
     val chanId2Info = mutable.Map.empty[Long, ChanInfo]
     val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
-    val nodeId2Announce = mutable.Map.empty[BinaryData, NodeAnnouncement]
-    val nodeId2Chans = mutable.Map.empty[BinaryData, ShortChannelIds] withDefaultValue Set.empty
+    val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
+    val nodeId2Chans = mutable.Map.empty[PublicKey, ShortChannelIds] withDefaultValue Set.empty
     val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
 
     def rmChanInfo(info: ChanInfo): Unit = {
@@ -111,12 +108,11 @@ object Router { me =>
     case cu: ChannelUpdate if !maps.chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
 
     case cu: ChannelUpdate => try {
-      val isNode1 = Announcements isNode1 cu.flags
       val info = maps chanId2Info cu.shortChannelId
-
-      val chanDirection =
-        if (isNode1) ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
-        else ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
+      val chanDirection = Announcements isNode1 cu.flags match {
+        case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
+        case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
+      }
 
       require(!black.contains(info.ca.nodeId1) & !black.contains(info.ca.nodeId2), s"Ignoring $cu")
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
@@ -157,37 +153,19 @@ object Router { me =>
 }
 
 object RouterConnector {
-  val ipAddress = InetAddress getByName values.eclairIp
-  lazy val socket = new SocketWrap(ipAddress, values.eclairPort) {
-    def onReceive(chunk: BinaryData): Unit = transportHandler process chunk
+  def connect = ConnectionManager requestConnection announce
+  val announce = NodeAnnouncement(null, 0, values.eclairNodeId, null, "Routing source", null,
+    new InetSocketAddress(InetAddress getByName values.eclairIp, values.eclairPort) :: Nil)
+
+  ConnectionManager.listeners += new ConnectionListener {
+    override def onMessage(msg: LightningMessage) = Router receive msg
+    override def onOperational(id: PublicKey, their: Init) = Tools log "Socket is operational"
+    override def onTerminalError(id: PublicKey) = ConnectionManager.connections.get(id).foreach(_.socket.close)
+    override def onDisconnect(id: PublicKey): Unit = Obs.just(Tools log "Restarting socket").delay(10.seconds)
+      .subscribe(_ => connect, _.printStackTrace)
   }
 
-  val keyPair = Noise.Secp256k1DHFunctions.generateKeyPair(Utils.random getBytes 32)
-  val transportHandler: TransportHandler = new TransportHandler(keyPair, values.eclairNodeId, socket) {
-    def feedForward(message: BinaryData): Unit = Router.receive(LightningMessageCodecs deserialize message)
-  }
-
-  val socketListener = new SocketListener {
-    override def onConnect = transportHandler.init
-    override def onDisconnect = Obs.just(Tools log "Restarting socket")
-      .delay(10.seconds).subscribe(_ => socket.start, _.printStackTrace)
-  }
-
-  val transportListener =
-    new StateMachineListener {
-      override def onBecome = {
-        case (_, _, HANDSHAKE, WAITING_CYPHERTEXT) =>
-          val init = LightningMessageCodecs serialize Init("", "05")
-          transportHandler process Tuple2(TransportHandler.Send, init)
-      }
-
-      override def onError = { case err =>
-        Tools log s"Transport failure: $err"
-        socket.shutdown
-      }
-    }
-
-  val blockchainListener = new BlockchainListener {
+  Blockchain.listeners += new BlockchainListener {
     override def onNewTx(transaction: Transaction) = for {
       // We need to check if any input spends a channel output
 
@@ -202,8 +180,4 @@ object RouterConnector {
       else Router.complexRemove(spent.toSeq:_*)
     }
   }
-
-  Blockchain.listeners += blockchainListener
-  transportHandler.listeners += transportListener
-  socket.listeners += socketListener
 }

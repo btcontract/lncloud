@@ -1,14 +1,13 @@
 package com.btcontract.lncloud
 
 import org.json4s.jackson.JsonMethods._
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
-import rx.lang.scala.{Scheduler, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-import com.lightning.wallet.ln.{Invoice, Tools}
-
+import rx.lang.scala.{Scheduler, Observable => Obs}
+import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.btcontract.lncloud.Utils.StringSeq
 import fr.acinq.bitcoin.Crypto.PublicKey
+import com.lightning.wallet.ln.Tools
 import language.implicitConversions
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
@@ -23,7 +22,7 @@ object Utils {
   val hex2Ascii: String => String = raw => new String(HEX decode raw, "UTF-8")
   val random = new com.lightning.wallet.ln.crypto.RandomGenerator
 
-  implicit def binData2PublicKey(data: BinaryData): PublicKey = PublicKey(data)
+  implicit def string2PublicKey(raw: String): PublicKey = PublicKey(BinaryData apply raw)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
   def extract[T](src: Map[String, String], fn: String => T, args: String*): Seq[T] = args.map(src andThen fn)
@@ -45,7 +44,7 @@ object JsonHttpUtils {
 // tokens is a list of yet unsigned blind BigInts from client
 
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindData(invoice: Invoice, k: BigInteger, tokens: StringSeq)
+case class BlindData(paymentHash: BinaryData, k: BigInteger, tokens: StringSeq)
 case class Vals(privKey: BigInt, price: MilliSatoshi, quantity: Int, btcApi: String,
                 zmqApi: String, eclairApi: String, eclairIp: String, eclairPort: Int,
-                eclairNodeId: BinaryData, rewindRange: Int, checkByToken: Boolean)
+                eclairNodeId: PublicKey, rewindRange: Int, checkByToken: Boolean)

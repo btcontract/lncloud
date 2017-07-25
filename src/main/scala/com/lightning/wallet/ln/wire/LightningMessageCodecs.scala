@@ -2,14 +2,15 @@ package com.lightning.wallet.ln.wire
 
 import java.net._
 import scodec.codecs._
-import com.lightning.wallet.ln.Exceptions._
-import com.lightning.wallet.ln.crypto.Sphinx
-import java.math.BigInteger
 
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec, Err}
+
+import com.lightning.wallet.ln.ExtendedException
+import com.lightning.wallet.ln.crypto.Sphinx
+import java.math.BigInteger
 
 
 object LightningMessageCodecs { me =>
@@ -24,14 +25,14 @@ object LightningMessageCodecs { me =>
   def serialize(msg: LightningMessage): BinaryData =
     serialize(lightningMessageCodec encode msg)
 
-  def serialize(attempt: BitVectorAttempt): BinaryData = attempt match {
-    case Attempt.Failure(some) => throw DetailedException(SERIALIZATION_ERROR, some)
+  def serialize(attempt: BitVectorAttempt) = attempt match {
+    case Attempt.Failure(some) => throw ExtendedException(some)
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
   }
 
-  def deserialize(transferred: BinaryData): LightningMessage =
-    lightningMessageCodec decode BitVector(transferred.data) match {
-      case Attempt.Failure(_) => throw ChannelException(DESERIALIZATION_ERROR)
+  def deserialize(raw: BinaryData): LightningMessage =
+    lightningMessageCodec decode BitVector(raw.data) match {
+      case Attempt.Failure(some) => throw ExtendedException(some)
       case Attempt.Successful(result) => result.value
     }
 
@@ -53,16 +54,10 @@ object LightningMessageCodecs { me =>
   private val bv2Inet6 = (bv: ByteVector) => InetAddress.getByAddress(bv.toArray).asInstanceOf[Inet6Address]
   private val bv2Inet4 = (bv: ByteVector) => InetAddress.getByAddress(bv.toArray).asInstanceOf[Inet4Address]
 
-  // DER encoded <-> wire encoded
-  def fixSize(data: BinaryData): BinaryData = data.length match {
-    case length if length < 32 => Array.fill(32 - length)(0.toByte) ++ data
-    case 32 => data
-  }
-
   def der2wire(signature: BinaryData): BinaryData =
     Crypto decodeSignature signature match { case (r, s) =>
-      val fixedR = me fixSize r.toByteArray.dropWhile(0.==)
-      val fixedS = me fixSize s.toByteArray.dropWhile(0.==)
+      val fixedR = Crypto fixSize r.toByteArray.dropWhile(0.==)
+      val fixedS = Crypto fixSize s.toByteArray.dropWhile(0.==)
       fixedR ++ fixedS
     }
 
@@ -118,8 +113,8 @@ object LightningMessageCodecs { me =>
     } yield decodeResult map vec2Bin map PublicKey.apply
   )
 
-  private val uint64: Codec[Long] = int64.narrow(long =>
-    if (long < 0) Attempt failure Err(s"Overflow for $long")
+  val uint64: Codec[Long] = int64.narrow(long =>
+    if (long < 0) Attempt failure Err(s"Overflow $long")
     else Attempt successful long, identity)
 
   private val ipv6address: Codec[Inet6Address] = bytes(16).xmap(bv2Inet6, inet2Bv)
@@ -155,6 +150,11 @@ object LightningMessageCodecs { me =>
   private val pong =
     varsizebinarydata withContext "data"
 
+  val channelReestablish =
+    (binarydata(32) withContext "channelId") ::
+      (uint64 withContext "nextLocalCommitmentNumber") ::
+      (uint64 withContext "nextRemoteRevocationNumber")
+
   private val openChannel =
     (binarydata(32) withContext "chainHash") ::
       (binarydata(32) withContext "temporaryChannelId") ::
@@ -163,7 +163,7 @@ object LightningMessageCodecs { me =>
       (uint64 withContext "dustLimitSatoshis") ::
       (uint64 withContext "maxHtlcValueInFlightMsat") ::
       (uint64 withContext "channelReserveSatoshis") ::
-      (uint32 withContext "htlcMinimumMsat") ::
+      (uint64 withContext "htlcMinimumMsat") ::
       (uint32 withContext "feeratePerKw") ::
       (uint16 withContext "toSelfDelay") ::
       (uint16 withContext "maxAcceptedHtlcs") ::
@@ -171,15 +171,16 @@ object LightningMessageCodecs { me =>
       (point withContext "revocationBasepoint") ::
       (point withContext "paymentBasepoint") ::
       (point withContext "delayedPaymentBasepoint") ::
-      (point withContext "firstPerCommitmentPoint")
+      (point withContext "firstPerCommitmentPoint") ::
+      (byte withContext "channelFlags")
 
   private val acceptChannel =
     (binarydata(32) withContext "temporaryChannelId") ::
       (uint64 withContext "dustLimitSatoshis") ::
       (uint64 withContext "maxHtlcValueInFlightMsat") ::
       (uint64 withContext "channelReserveSatoshis") ::
+      (uint64 withContext "htlcMinimumMsat") ::
       (uint32 withContext "minimumDepth") ::
-      (uint32 withContext "htlcMinimumMsat") ::
       (uint16 withContext "toSelfDelay") ::
       (uint16 withContext "maxAcceptedHtlcs") ::
       (publicKey withContext "fundingPubkey") ::
@@ -202,22 +203,30 @@ object LightningMessageCodecs { me =>
     (binarydata(32) withContext "channelId" ) ::
       (point withContext "nextPerCommitmentPoint")
 
+  val fundingLockedCodec: Codec[FundingLocked] = fundingLocked.as[FundingLocked]
+
   private val shutdown =
     (binarydata(32) withContext "channelId") ::
       (varsizebinarydata withContext "scriptPubKey")
+
+  val shutdownCodec: Codec[Shutdown] = shutdown.as[Shutdown]
 
   private val closingSigned =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "feeSatoshis") ::
       (signature withContext "signature")
 
+  val closingSignedCodec: Codec[ClosingSigned] = closingSigned.as[ClosingSigned]
+
   private val updateAddHtlc =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "id") ::
-      (uint32 withContext "amountMsat") ::
-      (uint32 withContext "expiry") ::
+      (uint64 withContext "amountMsat") ::
       (binarydata(32) withContext "paymentHash") ::
+      (uint32 withContext "expiry") ::
       (binarydata(Sphinx.PacketLength) withContext "onionRoutingPacket")
+
+  val updateAddHtlcCodec: Codec[UpdateAddHtlc] = updateAddHtlc.as[UpdateAddHtlc]
 
   private val updateFulfillHtlc =
     (binarydata(32) withContext "channelId") ::
@@ -240,6 +249,8 @@ object LightningMessageCodecs { me =>
       (signature withContext "signature") ::
       (listOfN(uint16, signature) withContext "htlcSignatures")
 
+  val commitSigCodec: Codec[CommitSig] = commitSig.as[CommitSig]
+
   private val revokeAndAck =
     (binarydata(32) withContext "channelId") ::
       (scalar withContext "perCommitmentSecret") ::
@@ -257,10 +268,10 @@ object LightningMessageCodecs { me =>
 
   val channelAnnouncementWitness =
     (int64 withContext "shortChannelId") ::
-      (binarydata(33) withContext "nodeId1") ::
-      (binarydata(33) withContext "nodeId2") ::
-      (binarydata(33) withContext "bitcoinKey1") ::
-      (binarydata(33) withContext "bitcoinKey2") ::
+      (publicKey withContext "nodeId1") ::
+      (publicKey withContext "nodeId2") ::
+      (publicKey withContext "bitcoinKey1") ::
+      (publicKey withContext "bitcoinKey2") ::
       (varsizebinarydata withContext "features")
 
   private val channelAnnouncement =
@@ -272,7 +283,7 @@ object LightningMessageCodecs { me =>
 
   val nodeAnnouncementWitness =
     (uint32 withContext "timestamp") ::
-      (binarydata(33) withContext "nodeId") ::
+      (publicKey withContext "nodeId") ::
       (rgb withContext "rgbColor") ::
       (zeropaddedstring withContext "alias") ::
       (varsizebinarydata withContext "features") ::
@@ -283,7 +294,7 @@ object LightningMessageCodecs { me =>
       (uint32 withContext "timestamp") ::
       (binarydata(2) withContext "flags") ::
       (uint16 withContext "cltvExpiryDelta") ::
-      (uint32 withContext "htlcMinimumMsat") ::
+      (uint64 withContext "htlcMinimumMsat") ::
       (uint32 withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths")
 
@@ -300,9 +311,9 @@ object LightningMessageCodecs { me =>
   val perHopPayload =
     (constant(ByteVector fromByte 0) withContext "realm") ::
       (uint64 withContext "channel_id") ::
-      (uint32 withContext "amt_to_forward") ::
+      (uint64 withContext "amt_to_forward") ::
       (int32 withContext "outgoing_cltv_value") ::
-      (ignore(8 * 16) withContext "unused_with_v0_version_on_header")
+      (ignore(8 * 12) withContext "unused_with_v0_version_on_header")
 
   val hopsCodec: Codec[PaymentRoute] = vectorOfN(valueCodec = hop.as[Hop], countCodec = uint16)
   val perHopPayloadCodec: Codec[PerHopPayload] = perHopPayload.as[PerHopPayload]
@@ -317,16 +328,17 @@ object LightningMessageCodecs { me =>
       .typecase(cr = acceptChannel.as[AcceptChannel], tag = 33)
       .typecase(cr = fundingCreated.as[FundingCreated], tag = 34)
       .typecase(cr = fundingSigned.as[FundingSigned], tag = 35)
-      .typecase(cr = fundingLocked.as[FundingLocked], tag = 36)
-      .typecase(cr = shutdown.as[Shutdown], tag = 38)
-      .typecase(cr = closingSigned.as[ClosingSigned], tag = 39)
-      .typecase(cr = updateAddHtlc.as[UpdateAddHtlc], tag = 128)
+      .typecase(cr = fundingLockedCodec, tag = 36)
+      .typecase(cr = shutdownCodec, tag = 38)
+      .typecase(cr = closingSignedCodec, tag = 39)
+      .typecase(cr = updateAddHtlcCodec, tag = 128)
       .typecase(cr = updateFulfillHtlc.as[UpdateFulfillHtlc], tag = 130)
       .typecase(cr = updateFailHtlc.as[UpdateFailHtlc], tag = 131)
-      .typecase(cr = commitSig.as[CommitSig], tag = 132)
+      .typecase(cr = commitSigCodec, tag = 132)
       .typecase(cr = revokeAndAck.as[RevokeAndAck], tag = 133)
       .typecase(cr = updateFee.as[UpdateFee], tag = 134)
       .typecase(cr = updateFailMalformedHtlc.as[UpdateFailMalformedHtlc], tag = 135)
+      .typecase(cr = channelReestablish.as[ChannelReestablish], tag = 136)
       .typecase(cr = channelAnnouncement.as[ChannelAnnouncement], tag = 256)
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
       .typecase(cr = channelUpdateCodec, tag = 258)

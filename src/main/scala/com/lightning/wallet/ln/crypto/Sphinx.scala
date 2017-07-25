@@ -1,8 +1,8 @@
 package com.lightning.wallet.ln.crypto
 
-import com.lightning.wallet.ln.Exceptions._
 import com.lightning.wallet.ln.crypto.Sphinx._
 import com.lightning.wallet.ln.crypto.MultiStreamUtils._
+import com.lightning.wallet.ln.{ExtendedException, LightningException}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import fr.acinq.bitcoin.{Crypto, Protocol}
@@ -16,16 +16,16 @@ import java.math.BigInteger
 import java.nio.ByteOrder
 
 
-case class Packet(v: Bytes, publicKey: Bytes, routingInfo: Bytes, hmac: Bytes) { self =>
+case class Packet(v: Bytes, publicKey: Bytes, routingInfo: Bytes, hmac: Bytes) { me =>
   require(hmac.length == MacLength, s"Onion header hmac length should be exactly $MacLength bytes")
   require(publicKey.length == 33, "Onion header public key length should be exactly 33 bytes")
   require(routingInfo.length == DataLength, "Invalid routing info length")
   def isLast: Boolean = hmac sameElements zeroes(MacLength)
-  def serialize: Bytes = Packet write self
+  def serialize: Bytes = Packet write me
 }
 
-object Packet { self =>
-  def read(in: Bytes): Packet = self read new ByteArrayInputStream(in)
+object Packet { me =>
+  def read(in: Bytes): Packet = me read new ByteArrayInputStream(in)
   def write(packet: Packet): Bytes = write(new ByteArrayOutputStream(PacketLength), packet)
   def write(out: ByteArrayOutputStream, header: Packet): Bytes = awrite(out, header.v,
     header.publicKey, header.routingInfo, header.hmac).toByteArray
@@ -170,7 +170,7 @@ object Sphinx { me =>
 
   def createErrorPacket(sharedSecret: Bytes, failure: FailureMessage) = {
     val message: Bytes = failureMessageCodec.encode(failure).require.toByteArray
-    if (message.length > 128) throw ChannelException(SPHINX_ERR_PACKET_WRONG_LENGTH)
+    if (message.length > 128) throw new LightningException
 
     val payload = aconcat(Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN),
       message, Protocol.writeUInt16(128 - message.length, ByteOrder.BIG_ENDIAN),
@@ -180,20 +180,21 @@ object Sphinx { me =>
     forwardErrorPacket(aconcat(mac1, payload), sharedSecret)
   }
 
-  def extractFailureMessage(packet: Bytes) = packet drop MacLength match { case payload =>
-    if (packet.length != ErrorPacketLength) throw ChannelException(SPHINX_ERR_PACKET_WRONG_LENGTH)
-    val failureMessage = BitVector apply payload.slice(2, Protocol.uint16(payload, ByteOrder.BIG_ENDIAN) + 2)
-    failureMessageCodec.decode(failureMessage).require.value
-  }
+  def extractFailureMessage(packet: Bytes) =
+    packet drop MacLength match { case payload =>
+      if (packet.length != ErrorPacketLength) throw new LightningException
+      val msg = payload.slice(2, Protocol.uint16(payload, ByteOrder.BIG_ENDIAN) + 2)
+      failureMessageCodec.decode(BitVector apply msg).require.value
+    }
 
   def forwardErrorPacket(packet: Bytes, sharedSecret: Bytes): Bytes = {
-    if (packet.length != ErrorPacketLength) throw ChannelException(SPHINX_ERR_PACKET_WRONG_LENGTH)
+    if (packet.length != ErrorPacketLength) throw ExtendedException(packet.length)
     val stream = generateStream(generateKey("ammag", sharedSecret), ErrorPacketLength)
     xor(packet, stream)
   }
 
-  def parseErrorPacket(sharedSecrets: Vector[BytesAndKey], packet: Bytes): Option[ErrorPacket] = {
-    if (packet.length != ErrorPacketLength) throw ChannelException(SPHINX_ERR_PACKET_WRONG_LENGTH)
+  def parseErrorPacket(sharedSecrets: Vector[BytesAndKey],
+                       packet: Bytes): Option[ErrorPacket] =
 
     sharedSecrets match {
       case (secret, pubkey) +: tail =>
@@ -211,5 +212,4 @@ object Sphinx { me =>
       case _ =>
         None
     }
-  }
 }

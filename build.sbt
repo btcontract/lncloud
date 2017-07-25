@@ -23,7 +23,6 @@ libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.4.8"
 
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.10.3"
 libraryDependencies += "io.reactivex" % "rxscala_2.11" % "0.26.5"
-libraryDependencies += "fr.acinq" % "bitcoin-lib_2.11" % "0.9.10"
 libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.0.1"
 libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.0.1"
 
