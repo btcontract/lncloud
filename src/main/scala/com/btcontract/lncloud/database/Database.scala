@@ -2,8 +2,8 @@ package com.btcontract.lncloud.database
 
 import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
-
 import com.btcontract.lncloud.Utils.StringSeq
+import com.mongodb.casbah.MongoCollection
 import language.implicitConversions
 import fr.acinq.bitcoin.BinaryData
 import java.math.BigInteger
@@ -23,11 +23,16 @@ abstract class Database {
   def putPendingTokens(data: BlindData, seskey: String)
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
+
+  // Checking incoming LN payment status
+  def isPaymentFulfilled(hash: BinaryData): Boolean
 }
 
 class MongoDatabase extends Database {
   val mongo: MongoDB = MongoClient("localhost")("lncloud")
   val clearTokensMongo: MongoDB = MongoClient("localhost")("clearTokens")
+  val eclair: MongoCollection = MongoClient("localhost")("eclair")("paymentRequest")
+
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
 
@@ -54,4 +59,10 @@ class MongoDatabase extends Database {
   def getTxs(txid: String): StringSeq = mongo("txs").find("txids" $eq txid).map(_ as[String] "hex").toList
   def putTx(txids: StringSeq, hex: String) = mongo("txs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex),
     upsert = true, multi = false, WriteConcern.Safe)
+
+  // Checking incoming LN payment status
+  def isPaymentFulfilled(hash: BinaryData) = {
+    val result = eclair.findOne("hash" $eq hash.toString)
+    result.map(_ as[Boolean] "isFulfilled") exists identity
+  }
 }

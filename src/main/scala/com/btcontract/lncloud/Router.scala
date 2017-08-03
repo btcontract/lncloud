@@ -99,6 +99,7 @@ object Router { me =>
     case node: NodeAnnouncement if black.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if maps.nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
     case node: NodeAnnouncement if !maps.nodeId2Chans.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
+    case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
     case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
     case node: NodeAnnouncement => wrap(maps addNode node)(maps rmNode node) // Might be an update
 

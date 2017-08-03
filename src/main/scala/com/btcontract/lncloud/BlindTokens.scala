@@ -4,7 +4,6 @@ import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import org.json4s.jackson.JsonMethods._
 import rx.lang.scala.{Observable => Obs}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 
 import com.btcontract.lncloud.crypto.ECBlindSign
 import com.github.kevinsawicki.http.HttpRequest
@@ -13,6 +12,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import scala.concurrent.duration.DurationInt
 import org.json4s.jackson.Serialization
 import org.spongycastle.math.ec.ECPoint
+import fr.acinq.bitcoin.MilliSatoshi
 import org.bitcoinj.core.Utils.HEX
 import com.lightning.wallet.ln.~
 import org.bitcoinj.core.ECKey
@@ -24,7 +24,6 @@ class BlindTokens { me =>
   type SesKeyCacheItem = CacheItem[BigInteger]
   val signer: ECBlindSign = new ECBlindSign(values.privKey.bigInteger)
   val cache: collection.concurrent.Map[String, SesKeyCacheItem] = new ConcurrentHashMap[String, SesKeyCacheItem].asScala
-  private def rpcRequest = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
   def decodeECPoint(raw: String): ECPoint = ECKey.CURVE.getCurve.decodePoint(HEX decode raw)
 
   // Periodically remove used and outdated requests
@@ -34,13 +33,8 @@ class BlindTokens { me =>
 
   def generateInvoice(price: MilliSatoshi): PaymentRequest = {
     val params = Map("params" -> List(price.amount, "Blind tokens"), "method" -> "receive")
-    val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
+    val request = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
+    val raw = parse(request.send(Serialization write params).body) \ "result"
     PaymentRequest read raw.values.toString
-  }
-
-  def isFulfilled(paymentHash: BinaryData): Boolean = {
-    val params = Map("params" -> List(paymentHash.toString), "method" -> "status")
-    val raw = parse(rpcRequest.send(Serialization write params).body) \ "result"
-    raw.extract[StampOpt].isDefined
   }
 }

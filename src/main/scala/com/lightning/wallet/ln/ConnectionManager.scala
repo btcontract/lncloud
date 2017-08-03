@@ -68,11 +68,11 @@ object ConnectionManager {
     def intercept(message: LightningMessage) = message match {
       case Ping(length, _) if length > 0 => me send Pong("00" * length)
       case their: Init if Features areSupported their.localFeatures =>
-        if (savedInit == null) events.onOperational(nodeId, their)
+        events.onOperational(nodeId, their)
         savedInit = their
 
       case their: Init =>
-        Tools log s"Unsupported features $their"
+        Tools log s"Wrong features $their"
         events.onTerminalError(nodeId)
 
       case error: Error =>

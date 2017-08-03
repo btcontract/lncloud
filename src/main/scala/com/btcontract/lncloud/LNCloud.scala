@@ -29,7 +29,7 @@ object LNCloud extends ServerApp {
     values = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735,
-      eclairNodeId = "02c4696ad573bdeb6a41a779dbd0d141c41c9158d578786a11f74b9474fdc20a7e",
+      eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
       rewindRange = 144 * 7, checkByToken = true)
 
     LNParams.setup(random getBytes 32)
@@ -98,7 +98,7 @@ class Responder { me =>
 
       val blindSignatures = for {
         blindData <- db.getPendingTokens(req params "seskey")
-        if blindTokens isFulfilled blindData.paymentHash
+        if db isPaymentFulfilled blindData.paymentHash
 
         bigInts = for (blindToken <- blindData.tokens) yield new BigInteger(blindToken)
         signatures = for (bi <- bigInts) yield blindTokens.signer.blindSign(bi, blindData.k).toString
@@ -166,7 +166,7 @@ class Responder { me =>
   def ok(data: Any*): String = Serialization write "ok" +: data
   def error(data: Any*): String = Serialization write "error" +: data
 
-  // Ckecking if incoming data can be accepted either by signature or blind token
+  // Ckecking if incoming data can be accepted either by signature or disposable blind token
   trait DataChecker { def verify(params: HttpParams)(next: => TaskResponse): TaskResponse }
 
   class BlindTokenChecker extends DataChecker {
