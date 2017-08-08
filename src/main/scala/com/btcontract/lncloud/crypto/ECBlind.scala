@@ -27,7 +27,7 @@ class ECBlind(signerQ: ECPoint, signerR: ECPoint) {
   }
 }
 
-// We blind messages but unblind their signatures
+// We blind a token but unblind it's signature
 case class BlindParam(point: Bytes, a: BigInteger, b: BigInteger, c: BigInteger, bInv: BigInteger) {
   def blind(msg: BigInteger): BigInteger = b.multiply(keyBigInt mod getN).multiply(msg).add(a) mod getN
   def keyBigInt: BigInteger = ECKey.CURVE.getCurve.decodePoint(point).getAffineXCoord.toBigInteger
