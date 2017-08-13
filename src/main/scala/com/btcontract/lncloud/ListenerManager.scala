@@ -30,7 +30,8 @@ class ListenerManager(db: Database) {
 
   Blockchain.listeners += new BlockchainListener {
     override def onNewTx(transaction: Transaction) = for {
-    // We need to check if any input spends a channel output
+      // We need to check if any input spends a channel output
+      // Respected payment channels should be removed
 
       input <- transaction.txIn
       chanInfo <- Router.maps.txId2Info get input.outPoint.txid
@@ -44,15 +45,14 @@ class ListenerManager(db: Database) {
     }
   }
 
-  Blockchain.listeners += new BlockchainListener {
-    override def onNewTx(transaction: Transaction) = {
-      val encodedOutPoints = transaction.txIn.map(_.outPoint.txid.toString)
-      db.putTx(encodedOutPoints, Transaction.write(transaction).toString)
-    }
+  Blockchain.listeners +=
+    new BlockchainListener {
+      override def onNewBlock(block: Block) = for {
+        // We need to save txids of parent transactions
+        // Lite clients will need this to extract preimages
 
-    override def onNewBlock(block: Block) = {
-      val txs1 = for (txid <- block.tx.asScala) yield Try(bitcoin getRawTransactionHex txid)
-      for (rawTxTry <- txs1) rawTxTry map Transaction.read foreach onNewTx
+        txid <- block.tx.asScala
+        tx <- Try(bitcoin getRawTransactionHex txid) map Transaction.read
+      } db.putTx(tx.txIn.map(_.outPoint.txid.toString), tx.toString)
     }
-  }
 }

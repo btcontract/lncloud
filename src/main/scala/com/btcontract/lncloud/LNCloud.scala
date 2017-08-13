@@ -30,7 +30,7 @@ object LNCloud extends ServerApp {
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735,
       eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
-      rewindRange = 144 * 7, checkByToken = true)
+      rewindRange = 144 * 7, checkByToken = false)
 
     LNParams.setup(random getBytes 32)
     val socketAndHttpLnCloudServer = new Responder
@@ -147,7 +147,7 @@ class Responder { me =>
       val result = feeEstimates :: processedExchanges :: Nil
       Ok apply okSingle(result)
 
-    case GET -> Root / "exchangerates" / "state" =>
+    case GET -> Root / "rates" / "state" =>
       Ok(exchangeRates.displayState mkString "\r\n\r\n")
 
     // NEW VERSION WARNING AND TESTS
