@@ -4,6 +4,7 @@ import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import com.lightning.wallet.ln.Tools.fromShortId
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair.UInt64
 
 
 trait LightningMessage
@@ -24,13 +25,13 @@ case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: 
 
 case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData,
                        fundingSatoshis: Long, pushMsat: Long, dustLimitSatoshis: Long,
-                       maxHtlcValueInFlightMsat: Long, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
+                       maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
                        feeratePerKw: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int, fundingPubkey: PublicKey,
                        revocationBasepoint: Point, paymentBasepoint: Point, delayedPaymentBasepoint: Point,
                        firstPerCommitmentPoint: Point, channelFlags: Byte) extends ChannelMessage
 
 case class AcceptChannel(temporaryChannelId: BinaryData,
-                         dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: Long,
+                         dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64,
                          channelReserveSatoshis: Long, htlcMinimumMsat: Long, minimumDepth: Long, toSelfDelay: Int,
                          maxAcceptedHtlcs: Int, fundingPubkey: PublicKey, revocationBasepoint: Point, paymentBasepoint: Point,
                          delayedPaymentBasepoint: Point, firstPerCommitmentPoint: Point) extends ChannelMessage
@@ -65,14 +66,14 @@ case class AnnouncementSignatures(channelId: BinaryData,
                                   bitcoinSignature: BinaryData) extends RoutingMessage
 
 case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: BinaryData, bitcoinSignature1: BinaryData,
-                               bitcoinSignature2: BinaryData, shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey,
-                               bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData) extends RoutingMessage {
+                               bitcoinSignature2: BinaryData, features: BinaryData, shortChannelId: Long, nodeId1: PublicKey,
+                               nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey) extends RoutingMessage {
 
   val (blockHeight, txIndex, outputIndex) = fromShortId(shortChannelId)
 }
 
-case class NodeAnnouncement(signature: BinaryData, timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String,
-                            features: BinaryData, addresses: InetSocketAddressList) extends RoutingMessage {
+case class NodeAnnouncement(signature: BinaryData, features: BinaryData, timestamp: Long, nodeId: PublicKey,
+                            rgbColor: RGB, alias: String, addresses: InetSocketAddressList) extends RoutingMessage {
 
   val identifier = (alias + nodeId.toString).toLowerCase
 }

@@ -17,7 +17,7 @@ import scala.util.Try
 
 class ListenerManager(db: Database) {
   def connect = ConnectionManager requestConnection announce
-  val announce = NodeAnnouncement(null, 0, values.eclairNodeId, null, "Routing source", null,
+  val announce = NodeAnnouncement(null, null, 0, values.eclairNodeId, null, "Routing source",
     new InetSocketAddress(InetAddress getByName values.eclairIp, values.eclairPort) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {

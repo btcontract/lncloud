@@ -10,6 +10,7 @@ import scodec.{Attempt, Codec, Err}
 
 import com.lightning.wallet.ln.ExtendedException
 import com.lightning.wallet.ln.crypto.Sphinx
+import fr.acinq.eclair.UInt64
 import java.math.BigInteger
 
 
@@ -117,6 +118,9 @@ object LightningMessageCodecs { me =>
     if (long < 0) Attempt failure Err(s"Overflow $long")
     else Attempt successful long, identity)
 
+  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.toArray),
+    a => ByteVector(a.underlying.toByteArray) takeRight 8 padLeft 8)
+
   private val ipv6address: Codec[Inet6Address] = bytes(16).xmap(bv2Inet6, inet2Bv)
   private val ipv4address: Codec[Inet4Address] = bytes(4).xmap(bv2Inet4, inet2Bv)
 
@@ -161,7 +165,7 @@ object LightningMessageCodecs { me =>
       (uint64 withContext "fundingSatoshis") ::
       (uint64 withContext "pushMsat") ::
       (uint64 withContext "dustLimitSatoshis") ::
-      (uint64 withContext "maxHtlcValueInFlightMsat") ::
+      (uint64ex withContext "maxHtlcValueInFlightMsat") ::
       (uint64 withContext "channelReserveSatoshis") ::
       (uint64 withContext "htlcMinimumMsat") ::
       (uint32 withContext "feeratePerKw") ::
@@ -177,7 +181,7 @@ object LightningMessageCodecs { me =>
   private val acceptChannel =
     (binarydata(32) withContext "temporaryChannelId") ::
       (uint64 withContext "dustLimitSatoshis") ::
-      (uint64 withContext "maxHtlcValueInFlightMsat") ::
+      (uint64ex withContext "maxHtlcValueInFlightMsat") ::
       (uint64 withContext "channelReserveSatoshis") ::
       (uint64 withContext "htlcMinimumMsat") ::
       (uint32 withContext "minimumDepth") ::
@@ -188,6 +192,9 @@ object LightningMessageCodecs { me =>
       (point withContext "paymentBasepoint") ::
       (point withContext "delayedPaymentBasepoint") ::
       (point withContext "firstPerCommitmentPoint")
+
+  val acceptChannelCodec: Codec[AcceptChannel] =
+    acceptChannel.as[AcceptChannel]
 
   private val fundingCreated =
     (binarydata(32) withContext "temporaryChannelId") ::
@@ -203,20 +210,23 @@ object LightningMessageCodecs { me =>
     (binarydata(32) withContext "channelId" ) ::
       (point withContext "nextPerCommitmentPoint")
 
-  val fundingLockedCodec: Codec[FundingLocked] = fundingLocked.as[FundingLocked]
+  val fundingLockedCodec: Codec[FundingLocked] =
+    fundingLocked.as[FundingLocked]
 
   private val shutdown =
     (binarydata(32) withContext "channelId") ::
       (varsizebinarydata withContext "scriptPubKey")
 
-  val shutdownCodec: Codec[Shutdown] = shutdown.as[Shutdown]
+  val shutdownCodec: Codec[Shutdown] =
+    shutdown.as[Shutdown]
 
   private val closingSigned =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "feeSatoshis") ::
       (signature withContext "signature")
 
-  val closingSignedCodec: Codec[ClosingSigned] = closingSigned.as[ClosingSigned]
+  val closingSignedCodec: Codec[ClosingSigned] =
+    closingSigned.as[ClosingSigned]
 
   private val updateAddHtlc =
     (binarydata(32) withContext "channelId") ::
@@ -226,7 +236,8 @@ object LightningMessageCodecs { me =>
       (uint32 withContext "expiry") ::
       (binarydata(Sphinx.PacketLength) withContext "onionRoutingPacket")
 
-  val updateAddHtlcCodec: Codec[UpdateAddHtlc] = updateAddHtlc.as[UpdateAddHtlc]
+  val updateAddHtlcCodec: Codec[UpdateAddHtlc] =
+    updateAddHtlc.as[UpdateAddHtlc]
 
   private val updateFulfillHtlc =
     (binarydata(32) withContext "channelId") ::
@@ -237,6 +248,9 @@ object LightningMessageCodecs { me =>
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "id") ::
       (varsizebinarydata withContext "reason")
+
+  val updateFailHtlcCodec: Codec[UpdateFailHtlc] =
+    updateFailHtlc.as[UpdateFailHtlc]
 
   private val updateFailMalformedHtlc =
     (binarydata(32) withContext "channelId") ::
@@ -249,7 +263,8 @@ object LightningMessageCodecs { me =>
       (signature withContext "signature") ::
       (listOfN(uint16, signature) withContext "htlcSignatures")
 
-  val commitSigCodec: Codec[CommitSig] = commitSig.as[CommitSig]
+  val commitSigCodec: Codec[CommitSig] =
+    commitSig.as[CommitSig]
 
   private val revokeAndAck =
     (binarydata(32) withContext "channelId") ::
@@ -267,12 +282,12 @@ object LightningMessageCodecs { me =>
       (signature withContext "bitcoinSignature")
 
   val channelAnnouncementWitness =
-    (int64 withContext "shortChannelId") ::
+    (varsizebinarydata withContext "features") ::
+      (int64 withContext "shortChannelId") ::
       (publicKey withContext "nodeId1") ::
       (publicKey withContext "nodeId2") ::
       (publicKey withContext "bitcoinKey1") ::
-      (publicKey withContext "bitcoinKey2") ::
-      (varsizebinarydata withContext "features")
+      (publicKey withContext "bitcoinKey2")
 
   private val channelAnnouncement =
     (signature withContext "nodeSignature1") ::
@@ -282,12 +297,12 @@ object LightningMessageCodecs { me =>
       channelAnnouncementWitness
 
   val nodeAnnouncementWitness =
-    (uint32 withContext "timestamp") ::
+    (varsizebinarydata withContext "features") ::
+      (uint32 withContext "timestamp") ::
       (publicKey withContext "nodeId") ::
       (rgb withContext "rgbColor") ::
       (zeropaddedstring withContext "alias") ::
-      (varsizebinarydata withContext "features") ::
-      (listOfN(uint16, socketaddress) withContext "addresses")
+      (variableSizeBytes(value = list(socketaddress), size = uint16) withContext "addresses")
 
   val channelUpdateWitness =
     (int64 withContext "shortChannelId") ::
@@ -325,7 +340,7 @@ object LightningMessageCodecs { me =>
       .typecase(cr = ping.as[Ping], tag = 18)
       .typecase(cr = pong.as[Pong], tag = 19)
       .typecase(cr = openChannel.as[OpenChannel], tag = 32)
-      .typecase(cr = acceptChannel.as[AcceptChannel], tag = 33)
+      .typecase(cr = acceptChannelCodec, tag = 33)
       .typecase(cr = fundingCreated.as[FundingCreated], tag = 34)
       .typecase(cr = fundingSigned.as[FundingSigned], tag = 35)
       .typecase(cr = fundingLockedCodec, tag = 36)
@@ -333,7 +348,7 @@ object LightningMessageCodecs { me =>
       .typecase(cr = closingSignedCodec, tag = 39)
       .typecase(cr = updateAddHtlcCodec, tag = 128)
       .typecase(cr = updateFulfillHtlc.as[UpdateFulfillHtlc], tag = 130)
-      .typecase(cr = updateFailHtlc.as[UpdateFailHtlc], tag = 131)
+      .typecase(cr = updateFailHtlcCodec, tag = 131)
       .typecase(cr = commitSigCodec, tag = 132)
       .typecase(cr = revokeAndAck.as[RevokeAndAck], tag = 133)
       .typecase(cr = updateFee.as[UpdateFee], tag = 134)

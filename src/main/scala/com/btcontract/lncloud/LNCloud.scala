@@ -5,17 +5,15 @@ import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import com.lightning.wallet.ln.{LNParams, PaymentRequest}
 import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
 
-import com.lightning.wallet.ln.wire.NodeAnnouncement
 import com.btcontract.lncloud.Utils.string2PublicKey
 import org.http4s.server.middleware.UrlFormLifter
-import fr.acinq.eclair.payment.PaymentRequest
 import org.http4s.server.blaze.BlazeBuilder
 import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
-import com.lightning.wallet.ln.LNParams
 import scodec.Attempt.Successful
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
@@ -28,7 +26,7 @@ object LNCloud extends ServerApp {
   def server(args: ProgramArguments): Task[Server] = {
     values = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-      eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735,
+      eclairApi = "http://127.0.0.1:7070", eclairIp = "127.0.0.1", eclairPort = 48000,
       eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
       rewindRange = 144 * 7, checkByToken = false)
 
@@ -56,14 +54,6 @@ class Responder { me =>
     // How an incoming data should be checked
     if (values.checkByToken) new BlindTokenChecker
     else new SignatureChecker
-
-  // Json4s converts tuples incorrectly so we use lists
-  private val convertNodes: Seq[NodeAnnouncement] => TaskResponse = nodes => {
-    val announces: Seq[String] = nodes.map(nodeAnnouncementCodec.encode(_).require.toHex)
-    val channelsPerNode = nodes.map(announce => Router.maps.nodeId2Chans(announce.nodeId).size)
-    val result = announces zip channelsPerNode map { case (announce, chans) => announce :: chans :: Nil }
-    Ok apply ok(result:_*)
-  }
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -118,19 +108,23 @@ class Responder { me =>
 
     case req @ POST -> V1 / "router" / "routes" =>
       val routes = Router.finder.findRoutes(req params "from", req params "to").sortBy(_.size)
-      val data = routes take 15 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
-      Ok apply ok(data:_*)
+      val data = routes take 10 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
+      if (data.isEmpty) Ok apply error("noroutefound") else Ok apply ok(data:_*)
 
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
-      // Initially there is no query so we show a bunch of totally random nodes to user
-      val candidates: Seq[NodeAnnouncement] = Router.maps.nodeId2Announce.values.toVector
-      val Tuple2(resultSize, colSize) = Tuple2(math.min(25, candidates.size), candidates.size)
-      convertNodes(Vector.fill(resultSize)(random nextInt colSize) map candidates)
+      val sizes = Router.maps.nodeId2Chans.mapping.take(25).values.map(chanIds => chanIds.size)
+      val announces = Router.maps.nodeId2Chans.mapping.take(25).keys.map(Router.maps.nodeId2Announce)
+      val result = announces.map(nodeAnnouncementCodec.encode(_).require.toHex) zip sizes
+      val fixed = result map { case (encoded, size) => encoded :: size :: Nil }
+      Ok apply ok(fixed.toList:_*)
 
     case req @ POST -> V1 / "router" / "nodes" =>
-      val query: String = req.params("query").trim.take(32).toLowerCase
-      val nodes = Router.maps.searchTrie getValuesForKeysStartingWith query
-      convertNodes(nodes.asScala.toList take 25)
+      val query = req.params("query").trim.take(32).toLowerCase
+      val announces = Router.maps.searchTrie.getValuesForKeysStartingWith(query).asScala.take(25)
+      val sizes = announces.map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
+      val result = announces.map(nodeAnnouncementCodec.encode(_).require.toHex) zip sizes
+      val fixed = result map { case (encoded, size) => encoded :: size :: Nil }
+      Ok apply ok(fixed.toList:_*)
 
     // TRANSACTIONS
 
