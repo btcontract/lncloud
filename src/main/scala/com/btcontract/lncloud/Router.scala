@@ -50,14 +50,15 @@ object Router { me =>
     type ShortChannelIds = Set[Long]
     var mapping = mutable.LinkedHashMap.empty[PublicKey, ShortChannelIds] withDefaultValue Set.empty
     def map1 = mutable.LinkedHashMap(mapping.toSeq.sortWith(_._2.size > _._2.size).takeWhile(_._2.nonEmpty):_*)
+    // Filtering out nodes without channels and keeping valid nodes sorted by number of connected channels
 
-    def addShortChannelId(info: ChanInfo) = {
+    def plusShortChannelId(info: ChanInfo) = {
       mapping(info.ca.nodeId1) += info.ca.shortChannelId
       mapping(info.ca.nodeId2) += info.ca.shortChannelId
       mapping = map1
     }
 
-    def removeShortChannelId(info: ChanInfo) = {
+    def minusShortChannelId(info: ChanInfo) = {
       mapping(info.ca.nodeId1) -= info.ca.shortChannelId
       mapping(info.ca.nodeId2) -= info.ca.shortChannelId
       mapping = map1
@@ -72,13 +73,13 @@ object Router { me =>
     val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
 
     def rmChanInfo(info: ChanInfo) = {
-      nodeId2Chans removeShortChannelId info
+      nodeId2Chans minusShortChannelId info
       chanId2Info -= info.ca.shortChannelId
       txId2Info -= info.txid
     }
 
     def addChanInfo(info: ChanInfo) = {
-      nodeId2Chans addShortChannelId info
+      nodeId2Chans plusShortChannelId info
       chanId2Info(info.ca.shortChannelId) = info
       txId2Info(info.txid) = info
     }
@@ -157,7 +158,7 @@ object Router { me =>
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
     maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.mapping(_).isEmpty).values foreach maps.rmNode
     finder = new GraphFinder(finder.updates.filter(maps.chanId2Info contains _._1.channelId), finder.maxPathLength)
-    Tools log s"Removed the following channels: $infos"
+    Tools log s"Removed channels: $infos"
   }
 
   // Channels may disappear silently without closing transaction on a blockchain so we must remove them too
