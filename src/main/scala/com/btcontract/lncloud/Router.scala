@@ -21,15 +21,32 @@ import scala.util.Try
 
 
 object Router { me =>
-  // Blacklisted node ids
+  type ShortChannelIds = Set[Long]
+  type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIds]
+  var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 7)
   val black = mutable.Set.empty[PublicKey]
-  // A cached graph to search for routes, updated on new and deleted updates
-  var finder = new GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 7)
   val maps = new Mappings
 
-  class GraphFinder(val updates: mutable.Map[ChanDirection, ChannelUpdate], val maxPathLength: Int) {
+  case class Node2Channels(mapping: NodeChannelsMap) {
+    lazy val seq = mapping.toSeq.sortWith(_._2.size > _._2.size)
+
+    def plusShortChannelId(info: ChanInfo) = {
+      mapping(info.ca.nodeId1) += info.ca.shortChannelId
+      mapping(info.ca.nodeId2) += info.ca.shortChannelId
+      Node2Channels(mapping)
+    }
+
+    def minusShortChannelId(info: ChanInfo) = {
+      mapping(info.ca.nodeId1) -= info.ca.shortChannelId
+      mapping(info.ca.nodeId2) -= info.ca.shortChannelId
+      val mapping1 = mapping.filter(_._2.nonEmpty)
+      Node2Channels(mapping1)
+    }
+  }
+
+  case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate], maxPathLength: Int) {
     def outdatedChannels: Iterable[ChannelUpdate] = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7)
-    def augmented(dir: ChanDirection, upd: ChannelUpdate): GraphFinder = new GraphFinder(updates.updated(dir, upd), maxPathLength)
+    def augmented(dir: ChanDirection, upd: ChannelUpdate): GraphFinder = GraphFinder(updates.updated(dir, upd), maxPathLength)
     def findRoutes(from: PublicKey, to: PublicKey): Seq[PaymentRoute] = Try apply findPaths(from, to) getOrElse Nil
     private lazy val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
     private lazy val chanDirectionClass = classOf[ChanDirection]
@@ -46,40 +63,21 @@ object Router { me =>
           Hop(dir.from, dir.to, updates apply dir)
   }
 
-  class Node2Channels {
-    type ShortChannelIds = Set[Long]
-    var mapping = mutable.LinkedHashMap.empty[PublicKey, ShortChannelIds] withDefaultValue Set.empty
-    def map1 = mutable.LinkedHashMap(mapping.toSeq.sortWith(_._2.size > _._2.size).takeWhile(_._2.nonEmpty):_*)
-    // Filtering out nodes without channels and keeping valid nodes sorted by number of connected channels
-
-    def plusShortChannelId(info: ChanInfo) = {
-      mapping(info.ca.nodeId1) += info.ca.shortChannelId
-      mapping(info.ca.nodeId2) += info.ca.shortChannelId
-      mapping = map1
-    }
-
-    def minusShortChannelId(info: ChanInfo) = {
-      mapping(info.ca.nodeId1) -= info.ca.shortChannelId
-      mapping(info.ca.nodeId2) -= info.ca.shortChannelId
-      mapping = map1
-    }
-  }
-
   class Mappings {
-    val nodeId2Chans = new Node2Channels
     val chanId2Info = mutable.Map.empty[Long, ChanInfo]
     val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
     val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
     val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
+    var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
 
     def rmChanInfo(info: ChanInfo) = {
-      nodeId2Chans minusShortChannelId info
+      nodeId2Chans = nodeId2Chans minusShortChannelId info
       chanId2Info -= info.ca.shortChannelId
       txId2Info -= info.txid
     }
 
     def addChanInfo(info: ChanInfo) = {
-      nodeId2Chans plusShortChannelId info
+      nodeId2Chans = nodeId2Chans plusShortChannelId info
       chanId2Info(info.ca.shortChannelId) = info
       txId2Info(info.txid) = info
     }
@@ -157,7 +155,7 @@ object Router { me =>
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
     maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.mapping(_).isEmpty).values foreach maps.rmNode
-    finder = new GraphFinder(finder.updates.filter(maps.chanId2Info contains _._1.channelId), finder.maxPathLength)
+    finder = GraphFinder(finder.updates.filter(maps.chanId2Info contains _._1.channelId), finder.maxPathLength)
     Tools log s"Removed channels: $infos"
   }
 

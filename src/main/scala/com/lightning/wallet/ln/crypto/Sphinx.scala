@@ -2,6 +2,7 @@ package com.lightning.wallet.ln.crypto
 
 import com.lightning.wallet.ln.crypto.Sphinx._
 import com.lightning.wallet.ln.crypto.MultiStreamUtils._
+
 import com.lightning.wallet.ln.{ExtendedException, LightningException}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
@@ -58,8 +59,8 @@ object Sphinx { me =>
     +----------------+----------------------------------+-----------------+----------------------+-----+
     with failure message length + pad length = 128
    */
-
-  val ErrorPacketLength = MacLength + 128 + 2 + 2
+  val MaxErrorPayloadLength = 256
+  val ErrorPacketLength = MacLength + MaxErrorPayloadLength + 2 + 2
   val DataLength = (PayloadLength + MacLength) * MaxHops
   val PacketLength = 1 + 33 + MacLength + DataLength
 
@@ -170,11 +171,11 @@ object Sphinx { me =>
 
   def createErrorPacket(sharedSecret: Bytes, failure: FailureMessage) = {
     val message: Bytes = failureMessageCodec.encode(failure).require.toByteArray
-    if (message.length > 128) throw new LightningException
+    if (message.length > MaxErrorPayloadLength) throw new LightningException
 
     val payload = aconcat(Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN),
-      message, Protocol.writeUInt16(128 - message.length, ByteOrder.BIG_ENDIAN),
-        me zeroes 128 - message.length)
+      message, Protocol.writeUInt16(MaxErrorPayloadLength - message.length, ByteOrder.BIG_ENDIAN),
+        me zeroes MaxErrorPayloadLength - message.length)
 
     val mac1 = mac(generateKey("um", sharedSecret), payload)
     forwardErrorPacket(aconcat(mac1, payload), sharedSecret)
@@ -209,7 +210,7 @@ object Sphinx { me =>
           Some(errPack)
         }
 
-      case _ =>
-        None
+      // End of secrets
+      case _ => None
     }
 }

@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.Crypto.PrivateKey
 
 
-object LNParams {
+object LNParams { me =>
   val maxReserveToFundingRatio = 0.05 // %
   val updateFeeMinDiffRatio = 0.25 // %
   val reserveToFundingRatio = 0.01 // %
@@ -13,8 +13,10 @@ object LNParams {
   val globalFeatures = ""
   val minDepth = 2
 
+  val htlcMinimumMsat = 500
   val maxHtlcValue = MilliSatoshi(4000000000L)
   val maxChannelCapacity = MilliSatoshi(16777216000L)
+  val chainHash = Block.RegtestGenesisBlock.blockId
 
   var nodePrivateKey: PrivateKey = _
   var cloudPrivateKey: PrivateKey = _

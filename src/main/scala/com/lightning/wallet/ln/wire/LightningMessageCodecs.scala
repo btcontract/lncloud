@@ -283,6 +283,7 @@ object LightningMessageCodecs { me =>
 
   val channelAnnouncementWitness =
     (varsizebinarydata withContext "features") ::
+      (binarydata(32) withContext "chainHash") ::
       (int64 withContext "shortChannelId") ::
       (publicKey withContext "nodeId1") ::
       (publicKey withContext "nodeId2") ::
@@ -305,7 +306,8 @@ object LightningMessageCodecs { me =>
       (variableSizeBytes(value = list(socketaddress), size = uint16) withContext "addresses")
 
   val channelUpdateWitness =
-    (int64 withContext "shortChannelId") ::
+    (binarydata(32) withContext "chainHash") ::
+      (int64 withContext "shortChannelId") ::
       (uint32 withContext "timestamp") ::
       (binarydata(2) withContext "flags") ::
       (uint16 withContext "cltvExpiryDelta") ::

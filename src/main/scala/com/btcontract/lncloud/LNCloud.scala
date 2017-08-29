@@ -4,6 +4,7 @@ import org.http4s.dsl._
 import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
+
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import com.lightning.wallet.ln.{LNParams, PaymentRequest}
 import org.http4s.server.{Server, ServerApp}
@@ -40,8 +41,8 @@ object LNCloud extends ServerApp {
 class Responder { me =>
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
-  private val blindTokens = new BlindTokens
   private val exchangeRates = new ExchangeRates
+  private val blindTokens = new BlindTokens
   private val feeRates = new FeeRates
   private val db = new MongoDatabase
   private val V1 = Root / "v1"
@@ -50,8 +51,7 @@ class Responder { me =>
   // Watching chain and socket
   new ListenerManager(db).connect
 
-  private val check =
-    // How an incoming data should be checked
+  private val check: DataChecker =
     if (values.checkByToken) new BlindTokenChecker
     else new SignatureChecker
 
@@ -70,7 +70,7 @@ class Responder { me =>
 
       val requestInvoice = for {
         privateKey <- blindTokens.cache get sesKey
-        request: PaymentRequest = blindTokens generateInvoice values.price
+        request = blindTokens generateInvoice values.price
         blind = BlindData(request.paymentHash, privateKey.data, prunedTokens)
       } yield {
         db.putPendingTokens(blind, sesKey)
@@ -112,18 +112,19 @@ class Responder { me =>
       if (data.isEmpty) Ok apply error("noroutefound") else Ok apply ok(data:_*)
 
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
-      val sizes = Router.maps.nodeId2Chans.mapping.take(25).values.map(chanIds => chanIds.size)
-      val announces = Router.maps.nodeId2Chans.mapping.take(25).keys.map(Router.maps.nodeId2Announce)
-      val result = announces.map(nodeAnnouncementCodec.encode(_).require.toHex) zip sizes
-      val fixed = result map { case (encoded, size) => encoded :: size :: Nil }
+      // A node may be well connected but not public and thus having no node announcement
+      val announces = Router.maps.nodeId2Chans.seq.take(50).flatMap(Router.maps.nodeId2Announce get _._1)
+      val encoded = announces.take(25).map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
+      val sizes = announces.take(25).map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
+      val fixed = encoded zip sizes map { case (enc, size) => enc :: size :: Nil }
       Ok apply ok(fixed.toList:_*)
 
     case req @ POST -> V1 / "router" / "nodes" =>
       val query = req.params("query").trim.take(32).toLowerCase
-      val announces = Router.maps.searchTrie.getValuesForKeysStartingWith(query).asScala.take(25)
+      val announces = Router.maps.searchTrie.getValuesForKeysStartingWith(query).asScala.take(20)
+      val encoded = announces.map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
       val sizes = announces.map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
-      val result = announces.map(nodeAnnouncementCodec.encode(_).require.toHex) zip sizes
-      val fixed = result map { case (encoded, size) => encoded :: size :: Nil }
+      val fixed = encoded zip sizes map { case (enc, size) => enc :: size :: Nil }
       Ok apply ok(fixed.toList:_*)
 
     // TRANSACTIONS

@@ -9,22 +9,22 @@ import shapeless.HNil
 
 
 object Announcements { me =>
-  private def hashTwice[T](attempt: BitVectorAttempt) = hash256(serialize(attempt).data)
-  private def channelAnnouncementWitnessEncode(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData) =
-    me hashTwice LightningMessageCodecs.channelAnnouncementWitness.encode(features :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: HNil)
+  private def hashTwice(attempt: BitVectorAttempt) = hash256(serialize(attempt).data)
+  private def channelAnnouncementWitnessEncode(chainHash: BinaryData, shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData) =
+    me hashTwice LightningMessageCodecs.channelAnnouncementWitness.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: HNil)
 
   private def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String, features: BinaryData, addresses: InetSocketAddressList) =
     me hashTwice LightningMessageCodecs.nodeAnnouncementWitness.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: HNil)
 
-  private def channelUpdateWitnessEncode(shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) =
-    me hashTwice LightningMessageCodecs.channelUpdateWitness.encode(shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil)
+  private def channelUpdateWitnessEncode(chainHash: BinaryData, shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) =
+    me hashTwice LightningMessageCodecs.channelUpdateWitness.encode(chainHash :: shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil)
 
-  def signChannelAnnouncement(shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey,
-                              remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
+  def signChannelAnnouncement(chainHash: BinaryData, shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey,
+                              localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
 
     val witness = isNode1(localNodeSecret.publicKey.toBin, remoteNodeId.toBin) match {
-      case true => channelAnnouncementWitnessEncode(shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features)
-      case false => channelAnnouncementWitnessEncode(shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey, features)
+      case true => channelAnnouncementWitnessEncode(chainHash, shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features)
+      case false => channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey, features)
     }
 
     val nodeSig = Crypto encodeSignature Crypto.sign(witness, localNodeSecret)
@@ -32,18 +32,17 @@ object Announcements { me =>
     (nodeSig :+ 1.toByte, bitcoinSig :+ 1.toByte)
   }
 
-  def makeChannelAnnouncement(shortChannelId: Long, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey,
-                              remoteFundingKey: PublicKey, localNodeSignature: BinaryData, remoteNodeSignature: BinaryData,
-                              localBitcoinSignature: BinaryData, remoteBitcoinSignature: BinaryData): ChannelAnnouncement =
+  def makeChannelAnnouncement(chainHash: BinaryData, shortChannelId: Long, localNodeId: PublicKey, remoteNodeId: PublicKey,
+                              localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: BinaryData,
+                              remoteNodeSignature: BinaryData, localBitcoinSignature: BinaryData,
+                              remoteBitcoinSignature: BinaryData): ChannelAnnouncement =
 
     isNode1(localNodeId.toBin, remoteNodeId.toBin) match {
-      case true => ChannelAnnouncement(nodeSignature1 = localNodeSignature, nodeSignature2 = remoteNodeSignature,
-        bitcoinSignature1 = localBitcoinSignature, bitcoinSignature2 = remoteBitcoinSignature, shortChannelId = shortChannelId,
-        nodeId1 = localNodeId, nodeId2 = remoteNodeId, bitcoinKey1 = localFundingKey, bitcoinKey2 = remoteFundingKey, features = "")
+      case true => ChannelAnnouncement(localNodeSignature, remoteNodeSignature, localBitcoinSignature, remoteBitcoinSignature,
+        features = "", chainHash, shortChannelId, nodeId1 = localNodeId, nodeId2 = remoteNodeId, localFundingKey, remoteFundingKey)
 
-      case false => ChannelAnnouncement(nodeSignature1 = remoteNodeSignature, nodeSignature2 = localNodeSignature,
-        bitcoinSignature1 = remoteBitcoinSignature, bitcoinSignature2 = localBitcoinSignature, shortChannelId = shortChannelId,
-        nodeId1 = remoteNodeId, nodeId2 = localNodeId, bitcoinKey1 = remoteFundingKey, bitcoinKey2 = localFundingKey, features = "")
+      case false => ChannelAnnouncement(remoteNodeSignature, localNodeSignature, remoteBitcoinSignature, localBitcoinSignature,
+        features = "", chainHash, shortChannelId, nodeId1 = remoteNodeId, nodeId2 = localNodeId, remoteFundingKey, localFundingKey)
     }
 
   def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: RGB, addresses: InetSocketAddressList, timestamp: Long): NodeAnnouncement = {
@@ -69,20 +68,20 @@ object Announcements { me =>
   def isEnabled(flags: BinaryData) = !BitVector(flags.data).reverse.get(1)
 
   def makeFlags(isNode1: Boolean, enable: Boolean): BinaryData = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(16).toByteArray
-  def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long,
-                        feeBaseMsat: Long, feeProportionalMillionths: Long, isEnabled: Boolean, timestamp: Long): ChannelUpdate = {
+  def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,
+                        htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, isEnabled: Boolean,
+                        timestamp: Long): ChannelUpdate = {
 
-    val flags = makeFlags(isNode1 = isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), isEnabled)
-    val sig = Crypto encodeSignature Crypto.sign(channelUpdateWitnessEncode(shortChannelId, timestamp, flags,
-      cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths), nodeSecret)
+    val flags = makeFlags(isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), isEnabled)
+    val sig = Crypto encodeSignature Crypto.sign(channelUpdateWitnessEncode(chainHash, shortChannelId,
+      timestamp, flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths), nodeSecret)
 
-    ChannelUpdate(signature = sig :+ 1.toByte, shortChannelId = shortChannelId, timestamp,
-      flags = flags, cltvExpiryDelta = cltvExpiryDelta, htlcMinimumMsat = htlcMinimumMsat,
-      feeBaseMsat = feeBaseMsat, feeProportionalMillionths = feeProportionalMillionths)
+    ChannelUpdate(signature = sig :+ 1.toByte, chainHash, shortChannelId, timestamp,
+      flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
   }
 
   def checkSigs(ann: ChannelAnnouncement): Boolean = {
-    val witness = channelAnnouncementWitnessEncode(ann.shortChannelId,
+    val witness = channelAnnouncementWitnessEncode(ann.chainHash, ann.shortChannelId,
       ann.nodeId1, ann.nodeId2, ann.bitcoinKey1, ann.bitcoinKey2, ann.features)
 
     verifySignature(witness, ann.nodeSignature1, PublicKey apply ann.nodeId1) &&
@@ -92,12 +91,10 @@ object Announcements { me =>
   }
 
   def checkSig(ann: NodeAnnouncement): Boolean =
-    verifySignature(nodeAnnouncementWitnessEncode(ann.timestamp,
-      ann.nodeId, ann.rgbColor, ann.alias, ann.features, ann.addresses),
-      ann.signature, PublicKey apply ann.nodeId)
+    verifySignature(nodeAnnouncementWitnessEncode(ann.timestamp, ann.nodeId, ann.rgbColor,
+      ann.alias, ann.features, ann.addresses), ann.signature, PublicKey apply ann.nodeId)
 
   def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean =
-    verifySignature(channelUpdateWitnessEncode(ann.shortChannelId, ann.timestamp, ann.flags,
-      ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths),
-      ann.signature, nodeId)
+    verifySignature(channelUpdateWitnessEncode(ann.chainHash,ann.shortChannelId, ann.timestamp, ann.flags,
+      ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths), ann.signature, nodeId)
 }

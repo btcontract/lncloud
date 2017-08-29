@@ -2,7 +2,9 @@ name := "lncloud"
 
 version := "1.0"
 
-scalaVersion := "2.11.8"
+scalaVersion := "2.11.11"
+
+libraryDependencies += "com.googlecode.concurrentlinkedhashmap" % "concurrentlinkedhashmap-lru" % "1.4.2"
 
 // Network
 libraryDependencies += "org.http4s" % "http4s-dsl_2.11" % "0.15.5"
@@ -20,9 +22,8 @@ libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.12"
 // Misc
 libraryDependencies += "com.googlecode.concurrent-trees" % "concurrent-trees" % "2.6.0"
 libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.4.8"
-
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.10.3"
-libraryDependencies += "fr.acinq" % "bitcoin-lib_2.11" % "0.9.12"
+libraryDependencies += "fr.acinq" % "bitcoin-lib_2.11" % "0.9.13"
 libraryDependencies += "io.reactivex" % "rxscala_2.11" % "0.26.5"
 libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.0.1"
 libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.0.1"
