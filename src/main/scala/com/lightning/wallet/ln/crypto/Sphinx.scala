@@ -2,14 +2,13 @@ package com.lightning.wallet.ln.crypto
 
 import com.lightning.wallet.ln.crypto.Sphinx._
 import com.lightning.wallet.ln.crypto.MultiStreamUtils._
-
-import com.lightning.wallet.ln.{ExtendedException, LightningException}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import fr.acinq.bitcoin.{Crypto, Protocol}
 
 import com.lightning.wallet.ln.wire.FailureMessageCodecs.failureMessageCodec
 import com.lightning.wallet.ln.wire.FailureMessage
+import com.lightning.wallet.ln.LightningException
 import com.lightning.wallet.ln.Tools.Bytes
 import org.bitcoinj.core.Sha256Hash
 import scodec.bits.BitVector
@@ -57,7 +56,7 @@ object Sphinx { me =>
     +----------------+----------------------------------+-----------------+----------------------+-----+
     | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
     +----------------+----------------------------------+-----------------+----------------------+-----+
-    with failure message length + pad length = 128
+    with failure message length + pad length = 256
    */
   val MaxErrorPayloadLength = 256
   val ErrorPacketLength = MacLength + MaxErrorPayloadLength + 2 + 2
@@ -188,8 +187,8 @@ object Sphinx { me =>
       failureMessageCodec.decode(BitVector apply msg).require.value
     }
 
-  def forwardErrorPacket(packet: Bytes, sharedSecret: Bytes): Bytes = {
-    if (packet.length != ErrorPacketLength) throw ExtendedException(packet.length)
+  def forwardErrorPacket(packet: Bytes, sharedSecret: Bytes) = {
+    if (packet.length != ErrorPacketLength) throw new LightningException
     val stream = generateStream(generateKey("ammag", sharedSecret), ErrorPacketLength)
     xor(packet, stream)
   }

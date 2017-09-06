@@ -33,7 +33,8 @@ object ConnectionManager {
 
   class Worker(nodeId: PublicKey, location: InetSocketAddress) { me =>
     val pair: KeyPair = KeyPair(nodePrivateKey.publicKey, nodePrivateKey.toBin)
-    val handler: TransportHandler = new TransportHandler(pair, remotePubKey = nodeId) {
+
+    val handler: TransportHandler = new TransportHandler(pair, nodeId) {
       def handleDecryptedIncomingData(data: BinaryData) = intercept(LightningMessageCodecs deserialize data)
       def handleEncryptedOutgoingData(data: BinaryData) = try socket.getOutputStream write data catch none
       def handleEnterOperationalState = me send Init(LNParams.globalFeatures, LNParams.localFeatures)
@@ -61,9 +62,10 @@ object ConnectionManager {
       events onDisconnect nodeId
     }
 
-    def send(message: LightningMessage) =
-      handler process Tuple2(TransportHandler.Send,
-        LightningMessageCodecs serialize message)
+    def send(msg: LightningMessage) = {
+      val bytes = LightningMessageCodecs serialize msg
+      handler process Tuple2(TransportHandler.Send, bytes)
+    }
 
     def intercept(message: LightningMessage) = message match {
       case Ping(length, _) if length > 0 => me send Pong("00" * length)

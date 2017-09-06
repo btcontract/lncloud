@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec, Err}
 
-import com.lightning.wallet.ln.ExtendedException
+import com.lightning.wallet.ln.LightningException
 import com.lightning.wallet.ln.crypto.Sphinx
 import fr.acinq.eclair.UInt64
 import java.math.BigInteger
@@ -27,13 +27,13 @@ object LightningMessageCodecs { me =>
     serialize(lightningMessageCodec encode msg)
 
   def serialize(attempt: BitVectorAttempt) = attempt match {
-    case Attempt.Failure(some) => throw ExtendedException(some)
+    case Attempt.Failure(some) => throw new LightningException
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
   }
 
   def deserialize(raw: BinaryData): LightningMessage =
     lightningMessageCodec decode BitVector(raw.data) match {
-      case Attempt.Failure(some) => throw ExtendedException(some)
+      case Attempt.Failure(some) => throw new LightningException
       case Attempt.Successful(result) => result.value
     }
 

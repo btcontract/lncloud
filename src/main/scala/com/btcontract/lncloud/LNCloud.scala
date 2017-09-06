@@ -27,7 +27,7 @@ object LNCloud extends ServerApp {
   def server(args: ProgramArguments): Task[Server] = {
     values = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-      eclairApi = "http://127.0.0.1:7070", eclairIp = "127.0.0.1", eclairPort = 48000,
+      eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 9736,
       eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
       rewindRange = 144 * 7, checkByToken = false)
 

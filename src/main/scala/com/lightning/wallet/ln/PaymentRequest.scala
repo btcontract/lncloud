@@ -72,17 +72,18 @@ object FallbackAddressTag {
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long,
                           nodeId: PublicKey, tags: Vector[Tag], signature: BinaryData) {
 
+  def routingInfo: Vector[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t }
+  def paymentHash: BinaryData = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
+  def finalSum = amount.get
+
   def isFresh: Boolean = {
     val expiry = tags.collectFirst { case ex: ExpiryTag => ex.seconds }
     timestamp + expiry.getOrElse(3600L) > System.currentTimeMillis / 1000L
   }
 
-  def routingInfo: Vector[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t }
-  def paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
-
   def description = tags.collectFirst {
-    case DescriptionHashTag(hash) => "hash " + hash.toString
-    case DescriptionTag(textDescription) => textDescription
+    case DescriptionHashTag(hash) => Left(hash)
+    case DescriptionTag(text) => Right(text)
   }.get
 
   def fallbackAddress: Option[String] = tags.collectFirst {
@@ -127,9 +128,9 @@ object PaymentRequest {
   }
 
   def getPrefix(chain: BinaryData) = chain match {
-    case Block.RegtestGenesisBlock.blockId => "lntb"
-    case Block.TestnetGenesisBlock.blockId => "lntb"
-    case Block.LivenetGenesisBlock.blockId => "lnbc"
+    case Block.RegtestGenesisBlock.hash => "lntb"
+    case Block.TestnetGenesisBlock.hash => "lntb"
+    case Block.LivenetGenesisBlock.hash => "lnbc"
   }
 
   object Amount {

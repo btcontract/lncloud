@@ -4,8 +4,6 @@ version := "1.0"
 
 scalaVersion := "2.11.11"
 
-libraryDependencies += "com.googlecode.concurrentlinkedhashmap" % "concurrentlinkedhashmap-lru" % "1.4.2"
-
 // Network
 libraryDependencies += "org.http4s" % "http4s-dsl_2.11" % "0.15.5"
 libraryDependencies += "org.http4s" % "http4s-blaze-server_2.11" % "0.15.5"

@@ -24,7 +24,7 @@ class ListenerManager(db: Database) {
     override def onMessage(msg: LightningMessage) = Router receive msg
     override def onOperational(id: PublicKey, their: Init) = Tools log "Socket is operational"
     override def onTerminalError(id: PublicKey) = ConnectionManager.connections.get(id).foreach(_.socket.close)
-    override def onDisconnect(id: PublicKey): Unit = Obs.just(Tools log "Restarting socket").delay(10.seconds)
+    override def onDisconnect(id: PublicKey): Unit = Obs.just(Tools log "Restarting socket").delay(5.seconds)
       .subscribe(_ => connect, _.printStackTrace)
   }
 
