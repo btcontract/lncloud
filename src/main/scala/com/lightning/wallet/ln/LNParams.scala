@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 
 
 object LNParams { me =>
-  val localFeatures = "00"
+  val localFeatures = "08"
   val globalFeatures = ""
 
   var nodePrivateKey: PrivateKey = _

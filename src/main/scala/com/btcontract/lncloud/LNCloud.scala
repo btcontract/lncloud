@@ -4,7 +4,6 @@ import org.http4s.dsl._
 import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import com.lightning.wallet.ln.{LNParams, PaymentRequest}
 import org.http4s.server.{Server, ServerApp}
@@ -28,7 +27,7 @@ object LNCloud extends ServerApp {
     values = Vals(new ECKey(random).getPrivKey, MilliSatoshi(500000), 50,
       btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8081", eclairIp = "127.0.0.1", eclairPort = 9736,
-      eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
+      eclairNodeId = "036e6dbc4c2cab88557005c1ba76d79da042d3843217299d93d27a9d0792f133ce",
       rewindRange = 144 * 7, checkByToken = false)
 
     LNParams.setup(random getBytes 32)
@@ -51,9 +50,11 @@ class Responder { me =>
   // Watching chain and socket
   new ListenerManager(db).connect
 
-  private val check: DataChecker =
-    if (values.checkByToken) new BlindTokenChecker
-    else new SignatureChecker
+  private val check =
+    values.checkByToken match {
+      case true => new BlindTokenChecker
+      case false => new SignatureChecker
+    }
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -114,14 +115,14 @@ class Responder { me =>
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
       // A node may be well connected but not public and thus having no node announcement
       val announces = Router.maps.nodeId2Chans.seq.take(50).flatMap(Router.maps.nodeId2Announce get _._1)
-      val encoded = announces.take(25).map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
-      val sizes = announces.take(25).map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
+      val encoded = announces.take(24).map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
+      val sizes = announces.take(24).map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
       val fixed = encoded zip sizes map { case (enc, size) => enc :: size :: Nil }
       Ok apply ok(fixed.toList:_*)
 
     case req @ POST -> V1 / "router" / "nodes" =>
       val query = req.params("query").trim.take(32).toLowerCase
-      val announces = Router.maps.searchTrie.getValuesForKeysStartingWith(query).asScala.take(20)
+      val announces = Router.maps.searchTrie.getValuesForKeysStartingWith(query).asScala.take(24)
       val encoded = announces.map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
       val sizes = announces.map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
       val fixed = encoded zip sizes map { case (enc, size) => enc :: size :: Nil }
@@ -132,6 +133,20 @@ class Responder { me =>
     case req @ POST -> V1 / "txs" =>
       val txs = db.getTxs(req params "txid")
       Ok apply ok(txs:_*)
+
+    // ARBITRARY DATA
+
+    case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
+      val Seq(storageKey, data) = extract(req.params, identity, "key", "data")
+      db.putData(storageKey, data)
+      Ok apply ok("done")
+    }
+
+    case req @ POST -> V1 / "data" =>
+      db.getData(req.params apply "key") match {
+        case Some(userData) => Ok apply ok(userData)
+        case None => Ok apply error("notfound")
+      }
 
     // FEERATE AND EXCHANGE RATES
 
@@ -170,7 +185,7 @@ class Responder { me =>
       lazy val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
         clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
-      if (params(body).length > 8192) Ok apply error("bodytoolarge")
+      if (params(body).length > 10000) Ok apply error("bodytoolarge")
       else if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
       else if (!signatureIsFine) Ok apply error("tokeninvalid")
       else try next finally db putClearToken cleartoken
@@ -183,7 +198,7 @@ class Responder { me =>
       lazy val sigOk = Crypto.verifySignature(Crypto sha256 data, sig, PublicKey apply key)
 
       val userPubKeyIsPresent = db keyExists key.toString
-      if (params(body).length > 8192) Ok apply error("bodytoolarge")
+      if (params(body).length > 10000) Ok apply error("bodytoolarge")
       else if (!userPubKeyIsPresent) Ok apply error("keynotfound")
       else if (!sigOk) Ok apply error("siginvalid")
       else next
