@@ -29,7 +29,7 @@ abstract class Database {
 
   // Storing arbitrary data
   def putData(key: String, data: String)
-  def getData(key: String): Option[String]
+  def getDatas(key: String): List[String]
 }
 
 class MongoDatabase extends Database {
@@ -63,8 +63,8 @@ class MongoDatabase extends Database {
   def getTxs(txid: String): StringSeq = mongo("allTxs").find("txids" $eq txid).map(_ as[String] "hex").toList
 
   def putTx(txids: StringSeq, hex: String) =
-    mongo("allTxs").update("hex" $eq hex, $set("txids" -> txids,
-      "hex" -> hex), upsert = true, multi = false, WriteConcern.Safe)
+    mongo("allTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
+      "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   // Checking incoming LN payment status
   def isPaymentFulfilled(hash: BinaryData) = {
@@ -72,10 +72,15 @@ class MongoDatabase extends Database {
     result.map(_ as[Boolean] "isFulfilled") exists identity
   }
 
-  // Storing arbitrary data (like static channel parameters to restore a lost channel)
-  def getData(key: String) = mongo("anyData").findOne("key" $eq key).map(_ as[String] "data")
+  // Storing arbitrary data
+  def putData(key: String, data: String) = {
+    val record = DBObject("key" -> key, "data" -> data, "date" -> new Date)
+    mongo("userData").insert(doc = record, WriteConcern.Safe)
+  }
 
-  def putData(key: String, data: String) =
-    mongo("anyData").update("key" $eq key, $set("key" -> key,
-      "data" -> data), upsert = true, multi = false, WriteConcern.Safe)
+  def getDatas(key: String) = {
+    val desc = DBObject("date" -> -1)
+    val allResults = mongo("userData").find("key" $eq key)
+    allResults.sort(desc).take(5).map(_ as[String] "data").toList
+  }
 }

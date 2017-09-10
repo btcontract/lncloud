@@ -67,7 +67,7 @@ class Responder { me =>
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
       val prunedTokens = toClass[StringSeq](hex2Ascii apply tokens) take values.quantity
-      // We put request details in a db and provide an invoice for them to fulfill
+      // We put request details in a database and provide an invoice for them to fulfill
 
       val requestInvoice = for {
         privateKey <- blindTokens.cache get sesKey
@@ -130,27 +130,25 @@ class Responder { me =>
 
     // TRANSACTIONS
 
-    case req @ POST -> V1 / "txs" =>
+    case req @ POST -> V1 / "txs" / "get" =>
       val txs = db.getTxs(req params "txid")
       Ok apply ok(txs:_*)
 
     // ARBITRARY DATA
 
     case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
-      val Seq(storageKey, data) = extract(req.params, identity, "key", "data")
-      db.putData(storageKey, data)
+      val Seq(key, userData) = extract(req.params, identity, "key", "data")
+      db.putData(key, userData)
       Ok apply ok("done")
     }
 
-    case req @ POST -> V1 / "data" =>
-      db.getData(req.params apply "key") match {
-        case Some(userData) => Ok apply ok(userData)
-        case None => Ok apply error("notfound")
-      }
+    case req @ POST -> V1 / "data" / "get" =>
+      val results = db.getDatas(req params "key")
+      Ok apply ok(results:_*)
 
     // FEERATE AND EXCHANGE RATES
 
-    case POST -> Root / _ / "rates" =>
+    case POST -> Root / _ / "rates" / "get" =>
       val feeEstimates = feeRates.rates.mapValues(_ getOrElse 0)
       val exchanges = exchangeRates.currencies.map(c => c.code -> c.average)
       val processedExchanges = exchanges.toMap.mapValues(_ getOrElse 0)
