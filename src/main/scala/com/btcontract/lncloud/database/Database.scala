@@ -16,7 +16,7 @@ abstract class Database {
 
   // Recording all transactions
   def putTx(txids: StringSeq, hex: String)
-  def getTxs(txid: String): StringSeq
+  def getTxs(txids: StringSeq): StringSeq
 
   // Clear tokens storage and cheking
   def getPendingTokens(seskey: String): Option[BlindData]
@@ -59,8 +59,10 @@ class MongoDatabase extends Database {
   def putClearToken(clear: String) = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
   def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
 
-  // Recording all transactions because clients may need to know which HTLC txs has been spent
-  def getTxs(txid: String): StringSeq = mongo("allTxs").find("txids" $eq txid).map(_ as[String] "hex").toList
+  // Recording all txs
+  def getTxs(txids: StringSeq) =
+    mongo("allTxs").find("txids" $in txids)
+      .map(_ as[String] "hex").toList
 
   def putTx(txids: StringSeq, hex: String) =
     mongo("allTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,

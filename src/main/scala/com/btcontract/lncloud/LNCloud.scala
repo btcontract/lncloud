@@ -131,8 +131,9 @@ class Responder { me =>
     // TRANSACTIONS
 
     case req @ POST -> V1 / "txs" / "get" =>
-      val txs = db.getTxs(req params "txid")
-      Ok apply ok(txs:_*)
+      val rawTxids = hex2Ascii(req params "txids")
+      val txids = toClass[StringSeq](rawTxids) take 10
+      Ok apply ok(db.getTxs(txids):_*)
 
     // ARBITRARY DATA
 
@@ -155,7 +156,7 @@ class Responder { me =>
       val result = feeEstimates :: processedExchanges :: Nil
       Ok apply okSingle(result)
 
-    case GET -> Root / "rates" / "state" =>
+    case GET -> Root / _ / "rates" / "state" =>
       Ok(exchangeRates.displayState mkString "\r\n\r\n")
 
     // NEW VERSION WARNING AND TESTS

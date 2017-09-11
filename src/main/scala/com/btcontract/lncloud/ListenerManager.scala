@@ -52,7 +52,8 @@ class ListenerManager(db: Database) {
         // Lite clients will need this to extract preimages
 
         txid <- block.tx.asScala
-        tx <- Try(bitcoin getRawTransactionHex txid) map Transaction.read
-      } db.putTx(tx.txIn.map(_.outPoint.txid.toString), tx.toString)
+        hex <- Try(bitcoin getRawTransactionHex txid)
+        spendsFrom = Transaction.read(hex).txIn.map(_.outPoint.txid.toString)
+      } db.putTx(spendsFrom, hex)
     }
 }
