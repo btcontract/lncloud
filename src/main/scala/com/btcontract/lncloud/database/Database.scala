@@ -75,10 +75,9 @@ class MongoDatabase extends Database {
   }
 
   // Storing arbitrary data
-  def putData(key: String, data: String) = {
-    val record = DBObject("key" -> key, "data" -> data, "date" -> new Date)
-    mongo("userData").insert(doc = record, WriteConcern.Safe)
-  }
+  def putData(key: String, data: String) =
+    mongo("userData").update("data" $eq data, $set("key" -> key, "data" -> data,
+      "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getDatas(key: String) = {
     val desc = DBObject("date" -> -1)
