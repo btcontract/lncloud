@@ -62,8 +62,8 @@ object ConnectionManager {
       events onDisconnect nodeId
     }
 
-    def send(msg: LightningMessage) = {
-      val bytes = LightningMessageCodecs serialize msg
+    def send(message: LightningMessage) = {
+      val bytes = LightningMessageCodecs serialize message
       handler process Tuple2(TransportHandler.Send, bytes)
     }
 

@@ -1,5 +1,6 @@
 package com.btcontract.lncloud
 
+import com.lightning.wallet.ln._
 import collection.JavaConverters._
 import com.btcontract.lncloud.JsonHttpUtils._
 import org.knowm.xchange.currency.CurrencyPair._
@@ -9,8 +10,6 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
-import com.lightning.wallet.ln.Tools
-import com.lightning.wallet.ln.~
 import scala.util.Try
 
 import org.knowm.xchange.ExchangeFactory
@@ -71,7 +70,7 @@ class ExchangeRates {
 
   def displayState = for {
     averagePrice: AveragePrice <- currencies
-    exchange ~ history <- averagePrice.history
+    exchange \ history <- averagePrice.history
   } yield {
     val humanHistory = history.prices mkString "\r\n-- "
     s"${averagePrice.pair} $exchange \r\n-- $humanHistory"

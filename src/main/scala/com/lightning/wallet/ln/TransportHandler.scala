@@ -23,9 +23,10 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
     handleEncryptedOutgoingData(prefix +: msg)
   }
 
+  def UPDATE(d1: Data) = become(d1, state)
   def doProcess(change: Any): Unit = (data, change, state) match {
     case (HandshakeData(reader1, buffer), bd: BinaryData, HANDSHAKE) =>
-      me stayWith HandshakeData(reader1, buffer ++ bd)
+      me UPDATE HandshakeData(reader1, buffer ++ bd)
       doProcess(Ping)
 
     case (HandshakeData(reader1, buffer), Ping, HANDSHAKE)
@@ -66,10 +67,10 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
     case (cd: CyphertextData, (Send, data: BinaryData), WAITING_CYPHERTEXT) =>
       val (encoder1, ciphertext) = encryptMsg(cd.enc, data)
       handleEncryptedOutgoingData(ciphertext)
-      me stayWith cd.copy(enc = encoder1)
+      me UPDATE cd.copy(enc = encoder1)
 
     case (cd: CyphertextData, bd: BinaryData, WAITING_CYPHERTEXT) =>
-      me stayWith cd.copy(buffer = cd.buffer ++ bd)
+      me UPDATE cd.copy(buffer = cd.buffer ++ bd)
       doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, None, buffer),
@@ -78,7 +79,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
       val (ciphertext, remainder) = buffer splitAt 18
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
       val length = Some apply Protocol.uint16(plaintext, ByteOrder.BIG_ENDIAN)
-      me stayWith CyphertextData(encoder, decoder1, length, remainder)
+      me UPDATE CyphertextData(encoder, decoder1, length, remainder)
       doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, Some(length), buffer),
@@ -86,7 +87,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
 
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
-      me stayWith CyphertextData(encoder, decoder1, length = None, remainder)
+      me UPDATE CyphertextData(encoder, decoder1, length = None, remainder)
       handleDecryptedIncomingData(plaintext)
       doProcess(Ping)
 

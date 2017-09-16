@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.BinaryData
 import crypto.RandomGenerator
 
 
-object ~ {
+object \ {
   // Matching Tuple2 via arrows with much less noise
   def unapply[A, B](t2: (A, B) /* got a tuple */) = Some(t2)
 }
@@ -19,8 +19,8 @@ object Tools {
   val random = new RandomGenerator
 
   def runAnd[T](result: T)(action: Any): T = result
+  def log(message: String): Unit = println(message)
   def errlog(error: Throwable): Unit = error.printStackTrace
-  def log(message: String): Unit = System.out.println("LN", message)
   def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }
 
@@ -56,7 +56,6 @@ case class AddException[T](details: T, code: Int)
 // STATE MACHINE
 
 abstract class StateMachine[T] {
-  def stayWith(d1: T) = become(d1, state)
   def become(freshData: T, freshState: String) =
     wrap { data = freshData } { state = freshState }
 
