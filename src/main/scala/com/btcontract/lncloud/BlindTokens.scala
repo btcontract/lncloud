@@ -24,7 +24,7 @@ class BlindTokens { me =>
 
   // Periodically remove used and outdated requests
   Obs.interval(2.hours).map(_ => System.currentTimeMillis) foreach { now =>
-    for (hex \ item <- cache if item.stamp < now - 2.hours.toMillis) cache remove hex
+    for (hex \ item <- cache if item.stamp < now - 20.minutes.toMillis) cache remove hex
   }
 
   def generateInvoice(price: MilliSatoshi): PaymentRequest = {

@@ -110,7 +110,7 @@ class Responder { me =>
     case req @ POST -> V1 / "router" / "routes" =>
       val routes = Router.finder.findRoutes(req params "from", req params "to").sortBy(_.size)
       val data = routes take 10 map hopsCodec.encode collect { case Successful(bv) => bv.toHex }
-      if (data.isEmpty) Ok apply error("noroutefound") else Ok apply ok(data:_*)
+      Ok apply ok(data:_*)
 
     case req @ POST -> V1 / "router" / "nodes" if req.params("query").isEmpty =>
       // A node may be well connected but not public and thus having no node announcement
