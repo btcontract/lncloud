@@ -1,9 +1,9 @@
 package com.btcontract.lncloud
 
+import scala.concurrent.duration._
 import org.json4s.jackson.JsonMethods._
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import rx.lang.scala.{Scheduler, Observable => Obs}
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
 import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
 import com.btcontract.lncloud.Utils.StringSeq
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -31,12 +31,17 @@ object Utils {
 }
 
 object JsonHttpUtils {
+  def initDelay[T](next: Obs[T], startMillis: Long, timeoutMillis: Long) = {
+    val adjustedTimeout = startMillis + timeoutMillis - System.currentTimeMillis
+    val delayLeft = if (adjustedTimeout < 0) 0 else adjustedTimeout
+    Obs.just(null).delay(delayLeft.millis).flatMap(_ => next)
+  }
+
   def obsOn[T](provider: => T, scheduler: Scheduler): Obs[T] =
     Obs.just(null).subscribeOn(scheduler).map(_ => provider)
 
-  type IntervalPicker = (Throwable, Int) => Duration
-  def pickInc(err: Throwable, next: Int): FiniteDuration = next.seconds
-  def retry[T](obs: Obs[T], pick: IntervalPicker, times: Range): Obs[T] =
+  def pickInc(err: Throwable, next: Int) = next.seconds
+  def retry[T](obs: Obs[T], pick: (Throwable, Int) => Duration, times: Range): Obs[T] =
     obs.retryWhen(_.zipWith(Obs from times)(pick) flatMap Obs.timer)
 }
 

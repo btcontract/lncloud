@@ -2,15 +2,22 @@ package com.lightning.wallet.ln
 
 import TransportHandler._
 import com.lightning.wallet.ln.crypto.Noise._
+
+import com.lightning.wallet.ln.wire.{LightningMessage, LightningMessageCodecs}
+import scala.concurrent.{ExecutionContext, Future}
 import fr.acinq.bitcoin.{BinaryData, Protocol}
+
+import scala.concurrent.ExecutionContextExecutor
 import com.lightning.wallet.ln.Tools.random
+import java.util.concurrent.Executors
 import java.nio.ByteOrder
 
 
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
 abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) extends StateMachine[Data] { me =>
+  implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+  def process(change: Any) = Future(me doProcess change)
 
-  def process(change: Any) = me synchronized doProcess(change)
   def handleDecryptedIncomingData(data: BinaryData): Unit
   def handleEncryptedOutgoingData(data: BinaryData): Unit
   def handleEnterOperationalState: Unit
@@ -62,10 +69,11 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
           }
       }
 
-    // WAITING_CYPHERTEXT length phase
+    // Normal operation phase: messages can be sent and received here
+    case (cd: CyphertextData, msg: LightningMessage, WAITING_CYPHERTEXT) =>
 
-    case (cd: CyphertextData, (Send, data: BinaryData), WAITING_CYPHERTEXT) =>
-      val (encoder1, ciphertext) = encryptMsg(cd.enc, data)
+      val binary = LightningMessageCodecs serialize msg
+      val (encoder1, ciphertext) = encryptMsg(cd.enc, binary)
       handleEncryptedOutgoingData(ciphertext)
       me UPDATE cd.copy(enc = encoder1)
 
@@ -74,7 +82,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
       doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, None, buffer),
-    Ping, WAITING_CYPHERTEXT) if buffer.length >= 18 =>
+      Ping, WAITING_CYPHERTEXT) if buffer.length >= 18 =>
 
       val (ciphertext, remainder) = buffer splitAt 18
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
@@ -83,7 +91,7 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
       doProcess(Ping)
 
     case (CyphertextData(encoder, decoder, Some(length), buffer),
-    Ping, WAITING_CYPHERTEXT) if buffer.length >= length + 16 =>
+      Ping, WAITING_CYPHERTEXT) if buffer.length >= length + 16 =>
 
       val (ciphertext, remainder) = buffer.splitAt(length + 16)
       val (decoder1, plaintext) = decoder.decryptWithAd(BinaryData.empty, ciphertext)
@@ -103,7 +111,6 @@ object TransportHandler {
   val prologue = "lightning" getBytes "UTF-8"
   val prefix = 0.toByte
   val Ping = "Ping"
-  val Send = "Send"
 
   def expectedLength(reader: HandshakeStateReader): Int =
     reader.messages.length match { case 3 | 2 => 50 case _ => 66 }

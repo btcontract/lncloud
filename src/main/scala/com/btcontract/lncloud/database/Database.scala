@@ -33,39 +33,39 @@ abstract class Database {
 }
 
 class MongoDatabase extends Database {
-  val mongo: MongoDB = MongoClient("localhost")("lncloud")
-  val clearTokensMongo: MongoDB = MongoClient("localhost")("clearTokens")
+  val lncloud: MongoDB = MongoClient("localhost")("lncloud")
+  val clearTokens: MongoDB = MongoClient("localhost")("clearTokens")
   val eclair: MongoCollection = MongoClient("localhost")("eclair")("paymentRequest")
 
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
 
   // For signature-based auth users need to save their keys in this collection
-  def keyExists(key: String) = mongo("authKeys").findOne("key" $eq key).isDefined
+  def keyExists(key: String) = lncloud("authKeys").findOne("key" $eq key).isDefined
 
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String) =
-    mongo("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
+    lncloud("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
       "paymentHash" -> data.paymentHash.toString, "tokens" -> data.tokens, "date" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def getPendingTokens(seskey: String) =
-    mongo("blindTokens").findOne("seskey" $eq seskey) map { result =>
+    lncloud("blindTokens").findOne("seskey" $eq seskey) map { result =>
       val tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toList
       BlindData(BinaryData(result get "paymentHash"), new BigInteger(result get "k"), tokens)
     }
 
   // Many collections in total to store clear tokens because we have to keep every token
-  def putClearToken(clear: String) = clearTokensMongo(clear take 1).insert("clearToken" $eq clear)
-  def isClearTokenUsed(clear: String) = clearTokensMongo(clear take 1).findOne("clearToken" $eq clear).isDefined
+  def putClearToken(clear: String) = clearTokens(clear take 1).insert("clearToken" $eq clear)
+  def isClearTokenUsed(clear: String) = clearTokens(clear take 1).findOne("clearToken" $eq clear).isDefined
 
   // Recording all txs
   def getTxs(txids: StringSeq) =
-    mongo("allTxs").find("txids" $in txids)
+    lncloud("allTxs").find("txids" $in txids)
       .map(_ as[String] "hex").toList
 
   def putTx(txids: StringSeq, hex: String) =
-    mongo("allTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
+    lncloud("allTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
       "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   // Checking incoming LN payment status
@@ -76,12 +76,12 @@ class MongoDatabase extends Database {
 
   // Storing arbitrary data
   def putData(key: String, data: String) =
-    mongo("userData").update("data" $eq data, $set("key" -> key, "data" -> data,
+    lncloud("userData").update("data" $eq data, $set("key" -> key, "data" -> data,
       "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getDatas(key: String) = {
     val desc = DBObject("date" -> -1)
-    val allResults = mongo("userData").find("key" $eq key)
+    val allResults = lncloud("userData").find("key" $eq key)
     allResults.sort(desc).take(5).map(_ as[String] "data").toList
   }
 }

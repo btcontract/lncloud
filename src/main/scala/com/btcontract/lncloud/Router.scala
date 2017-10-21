@@ -3,11 +3,7 @@ package com.btcontract.lncloud
 import com.lightning.wallet.ln._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
-import fr.acinq.bitcoin.{BinaryData, Script}
-import rx.lang.scala.{Observable => Obs}
-
-import com.googlecode.concurrenttrees.radix.node.concrete.DefaultCharArrayNodeFactory
-import com.lightning.wallet.ln.wire.LightningMessageCodecs.PaymentRoute
+import com.googlecode.concurrenttrees.radix.node.concrete._
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
@@ -19,16 +15,22 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
 import scala.util.Try
 
+import fr.acinq.bitcoin.{BinaryData, Script}
+import rx.lang.scala.{Observable => Obs}
+
 
 object Router { me =>
-  type ShortChannelIds = Set[Long]
-  type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIds]
-  var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 7)
+  type NodeIdSet = Set[PublicKey]
+  type ShortChannelIdSet = Set[Long]
+  type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIdSet]
+  type CachedPaths = CachedAllDirectedPaths[PublicKey, ChanDirection]
+  var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 6)
   val black = mutable.Set.empty[PublicKey]
   val maps = new Mappings
 
   case class Node2Channels(mapping: NodeChannelsMap) {
-    lazy val seq = mapping.toSeq.sortWith(_._2.size > _._2.size)
+    // For now we will just be proposing a most connected nodes first to the users
+    lazy val seq = mapping.toSeq.sortWith { case (_ \ v1, _ \ v2) => v1.size > v2.size }
 
     def plusShortChannelId(info: ChanInfo) = {
       mapping(info.ca.nodeId1) += info.ca.shortChannelId
@@ -45,22 +47,40 @@ object Router { me =>
   }
 
   case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate], maxPathLength: Int) {
-    def outdatedChannels: Iterable[ChannelUpdate] = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7)
-    def augmented(dir: ChanDirection, upd: ChannelUpdate): GraphFinder = GraphFinder(updates.updated(dir, upd), maxPathLength)
-    def findRoutes(from: PublicKey, to: PublicKey): Seq[PaymentRoute] = Try apply findPaths(from, to) getOrElse Nil
-    private lazy val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
-    private lazy val chanDirectionClass = classOf[ChanDirection]
+    def outdatedChannels = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 14)
+    def augmented(dir: ChanDirection, upd: ChannelUpdate) = GraphFinder(updates.updated(dir, upd), maxPathLength)
+    private lazy val cachedGraph = refinedGraph(Set.empty, Set.empty)
+    private val chanDirectionClass = classOf[ChanDirection]
 
-    private lazy val graph = updates.keys match { case keys =>
-      for (direction <- keys) Seq(direction.from, direction.to) foreach directedGraph.addVertex
-      for (direction <- keys) directedGraph.addEdge(direction.from, direction.to, direction)
-      new CachedAllDirectedPaths[PublicKey, ChanDirection](directedGraph)
-    }
+    def safeFindPaths(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet, from: PublicKey, to: PublicKey) =
+      Try apply doFindPaths(withoutNodes, withoutChannels, from, to) getOrElse Nil
 
-    private def findPaths(from: PublicKey, to: PublicKey): Seq[PaymentRoute] =
-      for (foundPath <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
-        for (dir <- foundPath.getEdgeList.asScala.toVector) yield
+    def doFindPaths(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet, from: PublicKey, to: PublicKey) =
+      // Empty channels and nodes means this is a first path request so we can use a cache optimization here
+      if (withoutNodes.isEmpty && withoutChannels.isEmpty) findPaths(cachedGraph, from, to)
+      else findPaths(refinedGraph(withoutNodes, withoutChannels), from, to)
+
+    private def findPaths(graph: CachedPaths, from: PublicKey, to: PublicKey) =
+      for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
+        for (dir <- path.getEdgeList.asScala.toVector) yield
           Hop(dir.from, dir.to, updates apply dir)
+
+    private def refinedGraph(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
+      val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
+
+      for {
+        direction <- updates.keys
+        if !withoutChannels.contains(direction.channelId)
+        if !withoutNodes.contains(direction.from)
+        if !withoutNodes.contains(direction.to)
+      } {
+        Seq(direction.from, direction.to) foreach directedGraph.addVertex
+        directedGraph.addEdge(direction.from, direction.to, direction)
+      }
+
+      // Paths without specified routes
+      new CachedPaths(directedGraph)
+    }
   }
 
   class Mappings {

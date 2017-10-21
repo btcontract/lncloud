@@ -15,37 +15,37 @@ import scala.concurrent.Future
 
 
 object ConnectionManager {
+  val pair = KeyPair(nodePrivateKey.publicKey, nodePrivateKey.toBin)
+  val ourInit = Init(LNParams.globalFeatures, LNParams.localFeatures)
   val connections = mutable.Map.empty[PublicKey, Worker]
   val listeners = mutable.Set.empty[ConnectionListener]
 
   protected[this] val events = new ConnectionListener {
-    override def onDisconnect(id: PublicKey) = for (lst <- listeners) lst onDisconnect id
-    override def onTerminalError(id: PublicKey) = for (lst <- listeners) lst onTerminalError id
+    override def onDisconnect(id: PublicKey) = for (lst <- listeners) lst.onDisconnect(id)
+    override def onTerminalError(id: PublicKey) = for (lst <- listeners) lst.onTerminalError(id)
+    override def onMessage(message: LightningMessage) = for (lst <- listeners) lst.onMessage(message)
     override def onOperational(id: PublicKey, their: Init) = for (lst <- listeners) lst.onOperational(id, their)
-    override def onMessage(lnMessage: LightningMessage) = for (lst <- listeners) lst onMessage lnMessage
   }
 
   def requestConnection(announce: NodeAnnouncement) = connections get announce.nodeId match {
-    case Some(work) if !work.process.isCompleted && work.savedInit == null => Tools log "Awaiting for their Init"
-    case Some(work) if !work.process.isCompleted => events.onOperational(announce.nodeId, work.savedInit)
+    case Some(work) if !work.work.isCompleted && work.savedInit == null => Tools log "Awaiting for their Init"
+    case Some(work) if !work.work.isCompleted => events.onOperational(announce.nodeId, work.savedInit)
     case _ => connections(announce.nodeId) = new Worker(announce.nodeId, announce.addresses.head)
   }
 
-  class Worker(nodeId: PublicKey, location: InetSocketAddress) { me =>
-    val pair: KeyPair = KeyPair(nodePrivateKey.publicKey, nodePrivateKey.toBin)
-
+  class Worker(nodeId: PublicKey, location: InetSocketAddress) {
     val handler: TransportHandler = new TransportHandler(pair, nodeId) {
       def handleDecryptedIncomingData(data: BinaryData) = intercept(LightningMessageCodecs deserialize data)
       def handleEncryptedOutgoingData(data: BinaryData) = try socket.getOutputStream write data catch none
-      def handleEnterOperationalState = me send Init(LNParams.globalFeatures, LNParams.localFeatures)
       def handleError(err: Throwable) = events.onTerminalError(nodeId)
+      def handleEnterOperationalState = process(ourInit)
     }
 
     var savedInit: Init = _
     val BUFFER_SIZE: Int = 1024
     val socket: Socket = new Socket
 
-    val process = Future {
+    val work = Future {
       val buffer = new Bytes(BUFFER_SIZE)
       socket.connect(location, 7500)
       handler.init
@@ -57,18 +57,12 @@ object ConnectionManager {
       }
     }
 
-    process onComplete { _ =>
-      Tools log s"Socket disconnected"
+    work onComplete { _ =>
+      Tools log s"Disconnected"
       events onDisconnect nodeId
     }
 
-    def send(message: LightningMessage) = {
-      val bytes = LightningMessageCodecs serialize message
-      handler process Tuple2(TransportHandler.Send, bytes)
-    }
-
     def intercept(message: LightningMessage) = message match {
-      case Ping(length, _) if length > 0 => me send Pong("00" * length)
       case their: Init if Features areSupported their.localFeatures =>
         events.onOperational(nodeId, their)
         savedInit = their
@@ -82,9 +76,11 @@ object ConnectionManager {
         Tools log s"Got remote Error: $decoded"
         events.onTerminalError(nodeId)
 
-      case _ =>
-        // Send to channels
-        events.onMessage(message)
+      case Ping(len, _) if len > 0 =>
+        handler process Pong("00" * len)
+
+      case forward =>
+        events.onMessage(forward)
     }
   }
 }

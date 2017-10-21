@@ -1,23 +1,23 @@
 package com.lightning.wallet.helper
 
-import rx.lang.scala.{Observable => Obs}
-import com.lightning.wallet.ln.Tools.none
 
-
-abstract class ThrottledWork[T] {
-  private var lastInput: Option[String] = None
+abstract class ThrottledWork[T, V] {
+  import rx.lang.scala.{Observable => Obs}
+  private var lastWork: Option[T] = None
   private var isWorking: Boolean = false
-  def work(input: String): Obs[T]
-  def process(result: T): Unit
 
-  private def doWork(input: String) = work(input)
-    .doAfterTerminate { lastInput foreach onNewQuery }
+  def work(input: T): Obs[V]
+  def process(result: V): Unit
+  def error(err: Throwable): Unit
+
+  private def doWork(input: T) = work(input)
+    .doAfterTerminate { lastWork foreach addWork }
     .doOnTerminate { isWorking = false }
     .doOnSubscribe { isWorking = true }
-    .doOnSubscribe { lastInput = None }
-    .subscribe(process, none)
+    .doOnSubscribe { lastWork = None }
+    .subscribe(process, error)
 
-  def onNewQuery(input: String): Unit =
-    if (isWorking) lastInput = Some(input)
-    else doWork(input)
+  def addWork(data: T): Unit =
+    if (isWorking) lastWork = Some(data)
+    else doWork(data)
 }

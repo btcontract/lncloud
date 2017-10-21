@@ -8,17 +8,13 @@ import fr.acinq.eclair.UInt64
 
 
 trait LightningMessage
-trait SetupMessage extends LightningMessage
 trait RoutingMessage extends LightningMessage
 trait ChannelMessage extends LightningMessage
 
-trait HasHtlcId extends ChannelMessage { def id: Long }
-trait FailHtlc extends HasHtlcId { def channelId: BinaryData }
-
 case class Error(channelId: BinaryData, data: BinaryData) extends LightningMessage
-case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends SetupMessage
-case class Ping(pongLength: Int, data: BinaryData) extends SetupMessage
-case class Pong(data: BinaryData) extends SetupMessage
+case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends LightningMessage
+case class Ping(pongLength: Int, data: BinaryData) extends LightningMessage
+case class Pong(data: BinaryData) extends LightningMessage
 
 case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long) extends ChannelMessage
@@ -30,37 +26,34 @@ case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData,
                        revocationBasepoint: Point, paymentBasepoint: Point, delayedPaymentBasepoint: Point,
                        firstPerCommitmentPoint: Point, channelFlags: Byte) extends ChannelMessage
 
-case class AcceptChannel(temporaryChannelId: BinaryData,
-                         dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64,
-                         channelReserveSatoshis: Long, htlcMinimumMsat: Long, minimumDepth: Long, toSelfDelay: Int,
-                         maxAcceptedHtlcs: Int, fundingPubkey: PublicKey, revocationBasepoint: Point, paymentBasepoint: Point,
-                         delayedPaymentBasepoint: Point, firstPerCommitmentPoint: Point) extends ChannelMessage
+case class AcceptChannel(temporaryChannelId: BinaryData, dustLimitSatoshis: Long,
+                         maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
+                         minimumDepth: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int, fundingPubkey: PublicKey,
+                         revocationBasepoint: Point, paymentBasepoint: Point, delayedPaymentBasepoint: Point,
+                         firstPerCommitmentPoint: Point) extends ChannelMessage
 
-case class FundingCreated(temporaryChannelId: BinaryData,
-                          fundingTxid: BinaryData, fundingOutputIndex: Int,
-                          signature: BinaryData) extends ChannelMessage
+case class FundingCreated(temporaryChannelId: BinaryData, fundingTxid: BinaryData,
+                          fundingOutputIndex: Int, signature: BinaryData) extends ChannelMessage
 
 case class FundingSigned(channelId: BinaryData, signature: BinaryData) extends ChannelMessage
 case class FundingLocked(channelId: BinaryData, nextPerCommitmentPoint: Point) extends ChannelMessage
 case class ClosingSigned(channelId: BinaryData, feeSatoshis: Long, signature: BinaryData) extends ChannelMessage
 case class Shutdown(channelId: BinaryData, scriptPubKey: BinaryData) extends ChannelMessage
 
-
+sealed trait HasHtlcId extends ChannelMessage { def id: Long }
 case class UpdateAddHtlc(channelId: BinaryData, id: Long, amountMsat: Long, paymentHash: BinaryData,
                          expiry: Long, onionRoutingPacket: BinaryData) extends HasHtlcId
 
-case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends FailHtlc
-case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends FailHtlc
+case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends HasHtlcId
+case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends HasHtlcId
 case class UpdateFulfillHtlc(channelId: BinaryData, id: Long, paymentPreimage: BinaryData) extends HasHtlcId {
 
   val paymentHash = fr.acinq.bitcoin.Crypto sha256 paymentPreimage.data
 }
 
-
+case class UpdateFee(channelId: BinaryData, feeratePerKw: Long) extends ChannelMessage
 case class CommitSig(channelId: BinaryData, signature: BinaryData, htlcSignatures: List[BinaryData] = Nil) extends ChannelMessage
 case class RevokeAndAck(channelId: BinaryData, perCommitmentSecret: Scalar, nextPerCommitmentPoint: Point) extends ChannelMessage
-case class UpdateFee(channelId: BinaryData, feeratePerKw: Long) extends ChannelMessage
-
 case class AnnouncementSignatures(channelId: BinaryData, shortChannelId: Long, nodeSignature: BinaryData,
                                   bitcoinSignature: BinaryData) extends RoutingMessage
 
@@ -84,7 +77,3 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
 
   val lastSeen = System.currentTimeMillis
 }
-
-// Internal: receiving lists of lists of Hop's from a server
-case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class PerHopPayload(channel_id: Long, amt_to_forward: Long, outgoing_cltv_value: Int)

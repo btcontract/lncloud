@@ -3,22 +3,20 @@ package com.lightning.wallet.ln.wire
 import java.net._
 import scodec.codecs._
 
+import com.lightning.wallet.ln.crypto.Sphinx
+import fr.acinq.eclair.UInt64
+import java.math.BigInteger
+
+import com.lightning.wallet.ln.{ExtraHop, Hop, LightningException, PerHopPayload}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec, Err}
 
-import com.lightning.wallet.ln.LightningException
-import com.lightning.wallet.ln.crypto.Sphinx
-import fr.acinq.eclair.UInt64
-import java.math.BigInteger
-
 
 object LightningMessageCodecs { me =>
-  type InetSocketAddressList = List[InetSocketAddress]
   type BitVectorAttempt = Attempt[BitVector]
-  type PaymentRoute = Vector[Hop]
-
+  type InetSocketAddressList = List[InetSocketAddress]
   type AnnounceChansNum = (NodeAnnouncement, Int)
   type AddressPort = (InetAddress, Int)
   type RGB = (Byte, Byte, Byte)
@@ -320,20 +318,28 @@ object LightningMessageCodecs { me =>
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = nodeAnnouncement.as[NodeAnnouncement]
   val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
 
-  private val hop =
-    (publicKey withContext "nodeId") ::
-      (publicKey withContext "nextNodeId") ::
-      (channelUpdateCodec withContext "lastUpdate")
-
-  val perHopPayload =
+  private val perHopPayload =
     (constant(ByteVector fromByte 0) withContext "realm") ::
       (uint64 withContext "channel_id") ::
       (uint64 withContext "amt_to_forward") ::
       (int32 withContext "outgoing_cltv_value") ::
       (ignore(8 * 12) withContext "unused_with_v0_version_on_header")
 
-  val hopsCodec: Codec[PaymentRoute] = vectorOfN(valueCodec = hop.as[Hop], countCodec = uint16)
+
+  private val extraHop =
+    (publicKey withContext "nodeId") ::
+      (int64 withContext "shortChannelId") ::
+      (uint32 withContext "fee") ::
+      (uint16 withContext "cltvExpiryDelta")
+
+  private val hop =
+    (publicKey withContext "nodeId") ::
+      (publicKey withContext "nextNodeId") ::
+      (channelUpdateCodec withContext "lastUpdate")
+
   val perHopPayloadCodec: Codec[PerHopPayload] = perHopPayload.as[PerHopPayload]
+  val extraHopCodec: Codec[ExtraHop] = extraHop.as[ExtraHop]
+  val hopCodec: Codec[Hop] = hop.as[Hop]
 
   val lightningMessageCodec =
     discriminated[LightningMessage].by(uint16)
