@@ -53,12 +53,8 @@ object Router { me =>
     private val chanDirectionClass = classOf[ChanDirection]
 
     def safeFindPaths(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet, from: PublicKey, to: PublicKey) =
-      Try apply doFindPaths(withoutNodes, withoutChannels, from, to) getOrElse Nil
-
-    def doFindPaths(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet, from: PublicKey, to: PublicKey) =
-      // Empty channels and nodes means this is a first path request so we can use a cache optimization here
-      if (withoutNodes.isEmpty && withoutChannels.isEmpty) findPaths(cachedGraph, from, to)
-      else findPaths(refinedGraph(withoutNodes, withoutChannels), from, to)
+      if (withoutNodes.isEmpty && withoutChannels.isEmpty) Try apply findPaths(cachedGraph, from, to) getOrElse Nil
+      else Try apply findPaths(refinedGraph(withoutNodes, withoutChannels), from, to) getOrElse Nil
 
     private def findPaths(graph: CachedPaths, from: PublicKey, to: PublicKey) =
       for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
@@ -69,7 +65,7 @@ object Router { me =>
       val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
 
       for {
-        direction <- updates.keys
+        direction <- scala.util.Random.shuffle(updates.keys)
         if !withoutChannels.contains(direction.channelId)
         if !withoutNodes.contains(direction.from)
         if !withoutNodes.contains(direction.to)
@@ -156,21 +152,8 @@ object Router { me =>
       Tools log s"Unhandled $otherwise"
   }
 
-  private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
-    // May fail because scripts don't match, may be blacklisted or added/updated
-    val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
-    require(Script.write(fundingOutScript) == BinaryData(info.key.hex), s"Incorrect script in $info")
-
-    maps isBadChannel info match {
-      case None => maps addChanInfo info
-      case Some(compromised: ChanInfo) =>
-        val toRemove = List(compromised.ca.nodeId1, compromised.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
-        complexRemove(toRemove.flatMap(maps.nodeId2Chans.mapping).map(maps.chanId2Info):_*)
-        toRemove foreach black.add
-    }
-  }
-
-  def complexRemove(infos: ChanInfo*) = me synchronized {
+  type ChanInfos = Iterable[ChanInfo]
+  def complexRemove(infos: ChanInfos) = me synchronized {
     for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
@@ -179,7 +162,19 @@ object Router { me =>
     Tools log s"Removed channels: $infos"
   }
 
+  private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
+    // May fail because scripts don't match, may be blacklisted or added/updated
+    val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
+    require(Script.write(fundingOutScript) == BinaryData(info.key.hex), s"Incorrect script in $info")
+
+    maps isBadChannel info map { compromised =>
+      val toRemove = List(compromised.ca.nodeId1, compromised.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
+      complexRemove(toRemove.flatMap(maps.nodeId2Chans.mapping) map maps.chanId2Info)
+      for (blackKey <- toRemove) yield black add blackKey
+    } getOrElse maps.addChanInfo(info)
+  }
+
   // Channels may disappear silently without closing transaction on a blockchain so we must remove them too
   private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
-  Obs.interval(2.hours).foreach(_ => complexRemove(outdatedInfos.toSeq:_*), errLog)
+  Obs.interval(2.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
 }

@@ -36,12 +36,12 @@ class ListenerManager(db: Database) {
       input <- transaction.txIn
       chanInfo <- Router.maps.txId2Info get input.outPoint.txid
       if chanInfo.ca.outputIndex == input.outPoint.index
-    } Router.complexRemove(chanInfo)
+    } Router complexRemove Seq(chanInfo)
 
     override def onNewBlock(block: Block) = {
       val spent = Router.maps.txId2Info.values filter Blockchain.isSpent
       if (spent.isEmpty) Tools log s"No spent channels at ${block.height}"
-      else Router.complexRemove(spent.toSeq:_*)
+      else Router complexRemove spent
     }
   }
 
