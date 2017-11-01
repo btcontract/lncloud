@@ -1,8 +1,8 @@
-package com.btcontract.lncloud.crypto
+package com.lightning.olympus.crypto
 
 import org.bitcoinj.core.ECKey.CURVE.{getG, getN}
-import com.btcontract.lncloud.Utils.random
 import com.lightning.wallet.ln.Tools.Bytes
+import com.lightning.olympus.Utils.random
 import org.spongycastle.math.ec.ECPoint
 import org.bitcoinj.core.ECKey
 import java.math.BigInteger

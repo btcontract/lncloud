@@ -1,6 +1,7 @@
-package com.btcontract.lncloud
+package com.lightning.olympus
 
 import com.lightning.wallet.ln._
+import com.lightning.olympus.Utils._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.googlecode.concurrenttrees.radix.node.concrete._
@@ -8,7 +9,6 @@ import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
-import com.btcontract.lncloud.Utils.errLog
 import scala.language.implicitConversions
 import com.lightning.wallet.ln.Tools.wrap
 import fr.acinq.bitcoin.Crypto.PublicKey

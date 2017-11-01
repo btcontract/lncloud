@@ -1,24 +1,24 @@
-package com.btcontract.lncloud
+package com.lightning.olympus
 
 import com.lightning.wallet.ln._
-import collection.JavaConverters._
-import com.btcontract.lncloud.JsonHttpUtils._
+import scala.collection.JavaConverters._
+import com.lightning.olympus.JsonHttpUtils._
 import org.knowm.xchange.currency.CurrencyPair._
 
-import org.knowm.xchange.currency.CurrencyPair
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
+import org.knowm.xchange.ExchangeFactory
 import scala.util.Try
 
-import org.knowm.xchange.ExchangeFactory
 import org.knowm.xchange.bitfinex.v1.BitfinexExchange
 import org.knowm.xchange.bitstamp.BitstampExchange
 import org.knowm.xchange.btcchina.BTCChinaExchange
 import org.knowm.xchange.paymium.PaymiumExchange
 import org.knowm.xchange.kraken.KrakenExchange
 import org.knowm.xchange.okcoin.OkCoinExchange
+import org.knowm.xchange.currency.CurrencyPair
 import org.knowm.xchange.btc38.Btc38Exchange
 import org.knowm.xchange.chbtc.ChbtcExchange
 import org.knowm.xchange.bter.BTERExchange

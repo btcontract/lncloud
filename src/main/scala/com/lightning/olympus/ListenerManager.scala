@@ -1,13 +1,15 @@
-package com.btcontract.lncloud
+package com.lightning.olympus
 
-import collection.JavaConverters._
-import rx.lang.scala.{Observable => Obs}
-import java.net.{InetAddress, InetSocketAddress}
-import com.btcontract.lncloud.Utils.{bitcoin, values}
-import com.lightning.wallet.ln.{ConnectionListener, ConnectionManager, Tools}
+import com.lightning.olympus.Utils._
+import scala.collection.JavaConverters._
+
 import com.lightning.wallet.ln.wire.{Init, LightningMessage, NodeAnnouncement}
+import com.lightning.wallet.ln.{ConnectionListener, ConnectionManager, Tools}
+import java.net.{InetAddress, InetSocketAddress}
+import rx.lang.scala.{Observable => Obs}
+
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
-import com.btcontract.lncloud.database.Database
+import com.lightning.olympus.database.Database
 import scala.concurrent.duration.DurationInt
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.BinaryData

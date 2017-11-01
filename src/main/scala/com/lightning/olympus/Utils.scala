@@ -1,14 +1,15 @@
-package com.btcontract.lncloud
+package com.lightning.olympus
 
 import scala.concurrent.duration._
+import com.lightning.olympus.Utils._
 import org.json4s.jackson.JsonMethods._
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+
 import rx.lang.scala.{Scheduler, Observable => Obs}
-import wf.bitcoin.javabitcoindrpcclient.BitcoinJSONRPCClient
-import com.btcontract.lncloud.Utils.StringSeq
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
+import wf.bitcoin.javabitcoindrpcclient
 import com.lightning.wallet.ln.Tools
-import language.implicitConversions
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
 
@@ -18,7 +19,7 @@ object Utils {
   type StringSeq = Seq[String]
 
   implicit val formats = org.json4s.DefaultFormats
-  lazy val bitcoin = new BitcoinJSONRPCClient(values.btcApi)
+  lazy val bitcoin = new javabitcoindrpcclient.BitcoinJSONRPCClient(values.btcApi)
   val hex2Ascii: String => String = raw => new String(HEX decode raw, "UTF-8")
   val random = new com.lightning.wallet.ln.crypto.RandomGenerator
 

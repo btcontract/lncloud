@@ -15,7 +15,7 @@
  * (b) the terms of the Eclipse Public License v1.0 as published by
  * the Eclipse Foundation.
  */
-package com.btcontract.lncloud;
+package com.lightning.olympus;
 
 import java.util.*;
 import org.jgrapht.*;

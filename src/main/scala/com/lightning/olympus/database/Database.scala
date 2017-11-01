@@ -1,9 +1,9 @@
-package com.btcontract.lncloud.database
+package com.lightning.olympus.database
 
-import com.btcontract.lncloud._
 import com.mongodb.casbah.Imports._
-import com.btcontract.lncloud.Utils.StringSeq
+import com.lightning.olympus.Utils.StringSeq
 import com.mongodb.casbah.MongoCollection
+import com.lightning.olympus.BlindData
 import language.implicitConversions
 import fr.acinq.bitcoin.BinaryData
 import java.math.BigInteger

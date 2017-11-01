@@ -1,11 +1,10 @@
-package com.btcontract.lncloud
+package com.lightning.olympus
 
+import com.lightning.olympus.Utils._
 import scala.collection.JavaConverters._
-import com.btcontract.lncloud.JsonHttpUtils._
-
+import com.lightning.olympus.JsonHttpUtils._
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
-import com.btcontract.lncloud.Utils.bitcoin
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
 import scala.collection.mutable
