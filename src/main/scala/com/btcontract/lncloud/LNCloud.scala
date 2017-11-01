@@ -2,7 +2,6 @@ package com.btcontract.lncloud
 
 import org.http4s.dsl._
 import com.lightning.wallet.ln._
-
 import collection.JavaConverters._
 import com.btcontract.lncloud.Utils._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
@@ -10,6 +9,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import com.lightning.wallet.ln.{LNParams, PaymentRequest}
 import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
+
 import com.btcontract.lncloud.Router.ShortChannelIdSet
 import com.btcontract.lncloud.Utils.string2PublicKey
 import org.http4s.server.middleware.UrlFormLifter
@@ -17,12 +17,9 @@ import org.http4s.server.blaze.BlazeBuilder
 import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
 import org.bitcoinj.core.ECKey
-
 import scalaz.concurrent.Task
 import database.MongoDatabase
 import java.math.BigInteger
-
-import com.lightning.wallet.ln.PaymentHop.PublicPaymentRoute
 
 
 object LNCloud extends ServerApp {

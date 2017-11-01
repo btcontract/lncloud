@@ -59,13 +59,13 @@ object Router { me =>
     private def findPaths(graph: CachedPaths, from: PublicKey, to: PublicKey) =
       for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
         for (dir <- path.getEdgeList.asScala.toVector) yield
-          Hop(dir.from, dir.to, updates apply dir)
+          Hop(dir.from, updates apply dir)
 
     private def refinedGraph(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
       val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
 
       for {
-        direction <- scala.util.Random.shuffle(updates.keys)
+        direction <- updates.keys
         if !withoutChannels.contains(direction.channelId)
         if !withoutNodes.contains(direction.from)
         if !withoutNodes.contains(direction.to)
@@ -167,7 +167,7 @@ object Router { me =>
     val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
     require(Script.write(fundingOutScript) == BinaryData(info.key.hex), s"Incorrect script in $info")
 
-    maps isBadChannel info map { compromised =>
+    maps.isBadChannel(info) map { compromised =>
       val toRemove = List(compromised.ca.nodeId1, compromised.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
       complexRemove(toRemove.flatMap(maps.nodeId2Chans.mapping) map maps.chanId2Info)
       for (blackKey <- toRemove) yield black add blackKey

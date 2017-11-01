@@ -1,18 +1,19 @@
 package com.lightning.wallet.ln.crypto
 
+import com.lightning.wallet.ln.crypto.ShaChain._
 import com.lightning.wallet.ln.LightningException
 import com.lightning.wallet.ln.Tools.Bytes
 import org.bitcoinj.core.Sha256Hash
-import ShaChain.Index
 
 
-case class ShaHashesWithIndex(hashes: Map[Index, Bytes], lastIndex: Option[Long] = None)
+case class ShaHashesWithIndex(hashes: IndexHashMap, lastIndex: Option[Long] = None)
 case class Joint(parent: Option[Joint], value: Bytes, height: Int)
 
 object ShaChain { me =>
   type Index = Vector[Boolean]
-  val largestTxIndex = 0xffffffffffffL // For per-commitment secrets
+  type IndexHashMap = Map[Index, Bytes]
   val largestIndex = 0xffffffffffffffffL // For revocation preimages
+  val largestTxIndex = 0xffffffffffffL // For per-commitment secrets
 
   // Each bool represents a move down the tree
   def flip(node: Joint): Bytes = flip(node.value, 63 - node.height)
@@ -26,10 +27,10 @@ object ShaChain { me =>
   // Hashes are supposed to be received in reverse order so
   // we have parent :+ true which we should be able to recompute
   // since a left node's hash is the same as it's parent node's hash
-  def doAddHash(hashes: Map[Index, Bytes], hash: Bytes, index: Index): Map[Index, Bytes] =
+  def doAddHash(hashes: IndexHashMap, hash: Bytes, index: Index): IndexHashMap =
     if (index.last) hashes.updated(index, hash) else index dropRight 1 match { case index1 =>
       val check = deriveChild(node = Joint(parent = None, hash, index1.length), right = true).value
-      require(getHash(hashes, index1 :+ true).forall(_ sameElements check), "Can not recompute")
+      require(getHash(hashes)(index1 :+ true).forall(_ sameElements check), "Can not recompute")
       doAddHash(hashes - (index1 :+ false) - (index1 :+ true), hash, index1)
     }
 
@@ -38,7 +39,7 @@ object ShaChain { me =>
     ShaHashesWithIndex(doAddHash(shwi.hashes, hash, me moves index), Some apply index)
   }
 
-  def getHash(hashes: Map[Index, Bytes], index: Index) =
+  def getHash(hashes: IndexHashMap)(index: Index) =
     hashes.keys collectFirst { case idx if index startsWith idx =>
       val startingNode = Joint(None, hashes(idx), idx.length)
       derive(startingNode, index drop idx.length).value

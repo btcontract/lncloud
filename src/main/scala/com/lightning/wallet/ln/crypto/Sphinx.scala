@@ -64,12 +64,10 @@ object Sphinx { me =>
   val PacketLength = 1 + 33 + MacLength + DataLength
 
   val LAST_ADDRESS = zeroes(PayloadLength)
-  val LAST_PACKET = Packet(Array(Version), zeroes(33),
-    me zeroes DataLength, me zeroes MacLength)
-
-  def zeroes(length: Int): Bytes = Array.fill[Byte](length)(0)
-  def xor(a: Bytes, b: Bytes): Bytes = a zip b map { case (x, y) => x.^(y).&(0xFF).toByte }
+  val LAST_PACKET = Packet(Array(Version), zeroes(33), me zeroes DataLength, me zeroes MacLength)
   def mac(key: Bytes, message: Bytes): Bytes = Digests.hmacSha256(key, message) take MacLength
+  def xor(a: Bytes, b: Bytes): Bytes = a zip b map { case (x, y) => x.^(y).&(0xFF).toByte }
+  def zeroes(length: Int): Bytes = Array.fill[Byte](length)(0)
 
   def generateKey(keyType: Bytes, secret: Bytes): Bytes = Digests.hmacSha256(keyType, secret)
   def generateKey(keyType: String, secret: Bytes): Bytes = generateKey(keyType getBytes "UTF-8", secret)

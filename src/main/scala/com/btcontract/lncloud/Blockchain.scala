@@ -1,11 +1,6 @@
 package com.btcontract.lncloud
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
-import com.btcontract.lncloud.Utils.{bitcoin, errLog, values}
-import rx.lang.scala.{Subscription, Observable => Obs}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
-import zeromq.{SocketRef, SocketType, ZeroMQ}
-
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
@@ -13,20 +8,26 @@ import com.lightning.wallet.ln.Tools.none
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.util.Try
 
+import com.btcontract.lncloud.Utils.{bitcoin, errLog, values}
+import rx.lang.scala.{Subscription, Observable => Obs}
+import fr.acinq.bitcoin.{Transaction, BinaryData}
+import zeromq.{SocketRef, SocketType, ZeroMQ}
 
+
+case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
 case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
 case class ChanDirection(channelId: Long, from: PublicKey, to: PublicKey)
 
 trait BlockchainListener {
   def onNewBlock(block: Block): Unit = none
-  def onNewTx(tx: Transaction): Unit = none
+  def onNewTx(tx: TransactionWithRaw): Unit = none
 }
 
 object Blockchain { me =>
   var listeners = Set.empty[BlockchainListener]
   mkObserver("rawtx").subscribeOn(IOScheduler.apply)
-    .map(Transaction read _).retryWhen(_ delay 10.second)
-    .subscribe(tx => listeners.foreach(_ onNewTx tx), errLog)
+    .map(TransactionWithRaw).retryWhen(_ delay 10.second)
+    .subscribe(twr => listeners.foreach(_ onNewTx twr), errLog)
 
   private val realtime = mkObserver("hashblock")
   Obs.interval(20.minute).map(_ => bitcoin.getBestBlockHash).merge(realtime)
@@ -41,6 +42,7 @@ object Blockchain { me =>
   }
 
   def isSpent(chanInfo: ChanInfo): Boolean = Try {
+    // Absent output tx means it has been spent already
     bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex)
   }.isFailure
 

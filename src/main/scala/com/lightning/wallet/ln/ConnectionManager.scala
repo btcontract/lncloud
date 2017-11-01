@@ -37,7 +37,7 @@ object ConnectionManager {
     val handler: TransportHandler = new TransportHandler(pair, nodeId) {
       def handleDecryptedIncomingData(data: BinaryData) = intercept(LightningMessageCodecs deserialize data)
       def handleEncryptedOutgoingData(data: BinaryData) = try socket.getOutputStream write data catch none
-      def handleError(err: Throwable) = events.onTerminalError(nodeId)
+      def handleError(err: Throwable) = events onTerminalError nodeId
       def handleEnterOperationalState = process(ourInit)
     }
 
@@ -67,20 +67,14 @@ object ConnectionManager {
         events.onOperational(nodeId, their)
         savedInit = their
 
-      case their: Init =>
-        Tools log s"Wrong features $their"
-        events.onTerminalError(nodeId)
-
       case error: Error =>
         val decoded = new String(error.data.toArray)
         Tools log s"Got remote Error: $decoded"
-        events.onTerminalError(nodeId)
+        events onTerminalError nodeId
 
-      case Ping(len, _) if len > 0 =>
-        handler process Pong("00" * len)
-
-      case forward =>
-        events.onMessage(forward)
+      case unsupportedFeaturesInit: Init => events onTerminalError nodeId
+      case Ping(len, _) if len > 0 => handler process Pong("00" * len)
+      case theirMessage => events onMessage theirMessage
     }
   }
 }

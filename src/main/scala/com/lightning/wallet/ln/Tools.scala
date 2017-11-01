@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.BinaryData
 import crypto.RandomGenerator
 
 
-object SetEx {
+object ## {
   // Matching sets as algebraic data structures
   def unapplySeq[T](s: Set[T] /* got a set */) = Some(s.toSeq)
 }
@@ -19,7 +19,9 @@ object \ {
 object Tools {
   type Bytes = Array[Byte]
   val random = new RandomGenerator
+  def runAnd[T](result: T)(action: Any): T = result
   def log(message: String): Unit = println("LN", message)
+  def errlog(error: Throwable): Unit = error.printStackTrace
   def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }
 
@@ -29,6 +31,14 @@ object Tools {
     val outOrd = id.&(0xFFFF).toInt
     (blockNumber, txOrd, outOrd)
   }
+
+  def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long =
+    blockHeight.&(0xFFFFFFL).<<(40) | txIndex.&(0xFFFFFFL).<<(16) | outputIndex.&(0xFFFFL)
+
+  def toLongId(fundingHash: BinaryData, fundingOutputIndex: Int): BinaryData =
+    if (fundingOutputIndex >= 65536 | fundingHash.size != 32) throw new LightningException
+    else fundingHash.take(30) :+ fundingHash.data(30).^(fundingOutputIndex >> 8).toByte :+
+      fundingHash.data(31).^(fundingOutputIndex).toByte
 }
 
 object Features {

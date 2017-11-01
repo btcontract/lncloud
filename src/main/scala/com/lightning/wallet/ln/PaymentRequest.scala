@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Protocol._
 import fr.acinq.eclair.crypto.BitStream._
 import com.lightning.wallet.ln.PaymentRequest._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import com.lightning.wallet.ln.PaymentHop.ExtraPaymentRoute
+import com.lightning.wallet.ln.PaymentInfo.ExtraPaymentRoute
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
 import java.math.BigInteger
@@ -38,7 +38,6 @@ case class DescriptionHashTag(hash: BinaryData) extends Tag {
 case class RoutingInfoTag(route: ExtraPaymentRoute) extends Tag {
   require(route.nonEmpty, "Routing info tag has to contain one or more routes")
   def toInt5s: Int5Seq = encode(Bech32 eight2five route.flatMap(_.pack), 'r')
-  def firstNodeId = route.head.nodeId
 }
 
 object RoutingInfoTag {
@@ -56,8 +55,13 @@ object RoutingInfoTag {
 }
 
 case class ExpiryTag(seconds: Long) extends Tag {
-  override def toInt5s: Int5Seq = Seq(Bech32 map 'x', 0.toByte,
-    2.toByte, (seconds / 32).toByte, (seconds % 32).toByte)
+  def toInt5s = Bech32.map('x') +: (writeSize(ints.size) ++ ints)
+  lazy val ints = writeUnsignedLong(seconds)
+}
+
+case class MinFinalCltvExpiryTag(expiryDelta: Long) extends Tag {
+  def toInt5s: Int5Seq = Bech32.map('c') +: (writeSize(ints.size) ++ ints)
+  lazy val ints = writeUnsignedLong(expiryDelta)
 }
 
 case class FallbackAddressTag(version: Byte, hash: BinaryData) extends Tag {
@@ -88,7 +92,8 @@ object FallbackAddressTag {
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long,
                           nodeId: PublicKey, tags: Vector[Tag], signature: BinaryData) {
 
-  lazy val paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
+  lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta.toInt } getOrElse 9
+  lazy val paymentHash = tags.collectFirst { case paymentHashTag: PaymentHashTag => paymentHashTag.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
   lazy val finalSum = amount.get
 
@@ -135,12 +140,14 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 object PaymentRequest {
   type Int5Seq = Seq[Int5]
 
-  def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey,
-            description: String, fallbackAddress: Option[String], expirySeconds: Long): PaymentRequest = {
+  def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
+            privateKey: PrivateKey, description: String, fallbackAddress: Option[String],
+            expirySeconds: Long, extra: ExtraPaymentRoute): PaymentRequest = {
 
-    val tags = PaymentHashTag(paymentHash) :: DescriptionTag(description) :: ExpiryTag(expirySeconds) :: Nil
+    val paymentHashTag = PaymentHashTag(paymentHash)
+    val tags = Vector(DescriptionTag(description), ExpiryTag(expirySeconds), paymentHashTag)
     PaymentRequest(getPrefix(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey,
-      tags.toVector, BinaryData.empty) sign privateKey
+      if (extra.isEmpty) tags else RoutingInfoTag(extra) +: tags, BinaryData.empty) sign privateKey
   }
 
   def getPrefix(chain: BinaryData) = chain match {
@@ -178,8 +185,8 @@ object PaymentRequest {
 
   object Timestamp {
     def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
-    def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc else
-      encode(timestamp / 32, (timestamp % 32).toByte +: acc)
+    def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
+      else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {
@@ -226,9 +233,14 @@ object PaymentRequest {
           RoutingInfoTag(path)
 
         case xTag if xTag == Bech32.map('x') =>
-          require(len == 2, s"Invalid length for expiry tag")
-          val expiry = 32  * input(3) + input(4)
+          val ints: Int5Seq = input.slice(3, len + 3)
+          val expiry = readUnsignedLong(len, ints)
           ExpiryTag(expiry)
+
+        case cTag if cTag == Bech32.map('c') =>
+          val ints: Int5Seq = input.slice(3, len + 3)
+          val expiry = readUnsignedLong(len, ints)
+          MinFinalCltvExpiryTag(expiry)
       }
     }
   }
@@ -254,9 +266,26 @@ object PaymentRequest {
 
   def toInt5s(stream: BitStream, acc: Int5Seq = Nil): Int5Seq =
     if (stream.bitCount == 0) acc else {
-      val (stream1, value) = read5(stream)
+      val stream1 \ value = read5(stream)
       toInt5s(stream1, acc :+ value)
     }
+
+  def writeSize(size: Long): Int5Seq = {
+    val outputData = writeUnsignedLong(size)
+    require(outputData.length <= 2)
+
+    outputData.length match {
+      case 0 => Seq(0.toByte, 0.toByte)
+      case 1 => 0.toByte +: outputData
+      case _ => outputData
+    }
+  }
+
+  def writeUnsignedLong(value: Long, acc: Int5Seq = Nil): Int5Seq =
+    if (value == 0) acc else writeUnsignedLong(value / 32, (value % 32).toByte +: acc)
+
+  def readUnsignedLong(length: Int, ints: Int5Seq): Long =
+    ints.take(length).foldLeft(0L) { case acc \ i => acc * 32 + i }
 
   def read(input: String): PaymentRequest = {
     def loop(data: Int5Seq, tags: Seq[Int5Seq] = Nil): Seq[Int5Seq] =

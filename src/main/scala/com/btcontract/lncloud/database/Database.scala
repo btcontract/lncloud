@@ -58,11 +58,7 @@ class MongoDatabase extends Database {
   // Many collections in total to store clear tokens because we have to keep every token
   def putClearToken(clear: String) = clearTokens(clear take 1).insert("clearToken" $eq clear)
   def isClearTokenUsed(clear: String) = clearTokens(clear take 1).findOne("clearToken" $eq clear).isDefined
-
-  // Recording all txs
-  def getTxs(txids: StringSeq) =
-    lncloud("allTxs").find("txids" $in txids)
-      .map(_ as[String] "hex").toList
+  def getTxs(txids: StringSeq) = lncloud("allTxs").find("txids" $in txids).map(_ as[String] "hex").toList
 
   def putTx(txids: StringSeq, hex: String) =
     lncloud("allTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
