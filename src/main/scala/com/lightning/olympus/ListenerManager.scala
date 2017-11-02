@@ -1,18 +1,20 @@
 package com.lightning.olympus
 
 import com.lightning.olympus.Utils._
-import scala.collection.JavaConverters._
 
+import scala.collection.JavaConverters._
 import com.lightning.wallet.ln.wire.{Init, LightningMessage, NodeAnnouncement}
 import com.lightning.wallet.ln.{ConnectionListener, ConnectionManager, Tools}
 import java.net.{InetAddress, InetSocketAddress}
-import rx.lang.scala.{Observable => Obs}
 
+import rx.lang.scala.{Observable => Obs}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.olympus.database.Database
+
 import scala.concurrent.duration.DurationInt
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Transaction}
+
 import scala.util.Try
 
 
@@ -61,5 +63,20 @@ class ListenerManager(db: Database) {
         hexTry = Try(bitcoin getRawTransactionHex txid)
         twr <- hexTry map BinaryData.apply map TransactionWithRaw
       } onNewTx(twr)
+    }
+
+  Blockchain.listeners +=
+    new BlockchainListener {
+      override def onNewBlock(block: Block) = for {
+        // We broadcast all txs with cleared CLTV timeout
+        // whose parents have at least one confirmation
+        // CSV timeout will be rejected by blockchain
+        // tx will be automatically removed in a week
+
+        tx <- db getScheduled block.height
+        parents = tx.txIn.map(_.outPoint.txid.toString)
+        if parents forall Blockchain.isParentDeepEnough
+        hex = Transaction.write(tx).toString
+      } Try(bitcoin sendRawTransaction hex)
     }
 }

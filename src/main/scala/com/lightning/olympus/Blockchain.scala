@@ -2,6 +2,7 @@ package com.lightning.olympus
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
+import com.lightning.wallet.ln.Scripts.cltvBlocks
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
@@ -9,7 +10,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.util.Try
 
 import rx.lang.scala.{Subscription, Observable => Obs}
-import fr.acinq.bitcoin.{Transaction, BinaryData}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
 import zeromq.{SocketRef, SocketType, ZeroMQ}
 import Utils.{bitcoin, errLog, values}
 
@@ -41,10 +42,15 @@ object Blockchain { me =>
     for (block <- blocks) for (lst <- listeners) lst onNewBlock block
   }
 
-  def isSpent(chanInfo: ChanInfo): Boolean = Try {
+  def isSpent(chanInfo: ChanInfo) = Try {
     // Absent output tx means it has been spent already
     bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex)
   }.isFailure
+
+  def isParentDeepEnough(txid: String) = Try {
+    // Wait for parent depth before spending a child
+    bitcoin.getRawTransaction(txid).confirmations > 1
+  } getOrElse false
 
   def getInfo(ca: ChannelAnnouncement) = Try {
     val txid = bitcoin.getBlock(ca.blockHeight).tx.get(ca.txIndex)

@@ -1,4 +1,4 @@
-name := "lncloud"
+name := "olympus"
 
 version := "1.0"
 
