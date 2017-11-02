@@ -2,7 +2,6 @@ package com.lightning.olympus
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
-import com.lightning.wallet.ln.Scripts.cltvBlocks
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none

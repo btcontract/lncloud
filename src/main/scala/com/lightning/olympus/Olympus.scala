@@ -3,12 +3,12 @@ package com.lightning.olympus
 import org.http4s.dsl._
 import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
-
 import scala.collection.JavaConverters._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Transaction}
 import org.http4s.server.{Server, ServerApp}
 import org.http4s.{HttpService, Response}
+
 import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
@@ -16,7 +16,6 @@ import org.http4s.server.blaze.BlazeBuilder
 import fr.acinq.bitcoin.Crypto.PublicKey
 import org.json4s.jackson.Serialization
 import org.bitcoinj.core.ECKey
-
 import scalaz.concurrent.Task
 import java.math.BigInteger
 
@@ -132,7 +131,7 @@ class Responder { me =>
       Ok apply ok(db.getTxs(txids take 20):_*)
 
     case req @ POST -> V1 / "txs" / "schedule" => check.verify(req.params) {
-      val txs = req.params andThen hex2Ascii andThen toClass[StringSeq] apply "txs"
+      val txs = req.params andThen hex2Ascii andThen toClass[StringSeq] apply BODY
       for (raw <- txs) db.putScheduled(Transaction read raw)
       Ok apply ok("done")
     }

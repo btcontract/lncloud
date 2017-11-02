@@ -1,20 +1,18 @@
 package com.lightning.olympus
 
 import com.lightning.olympus.Utils._
-
 import scala.collection.JavaConverters._
+
 import com.lightning.wallet.ln.wire.{Init, LightningMessage, NodeAnnouncement}
 import com.lightning.wallet.ln.{ConnectionListener, ConnectionManager, Tools}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
 import java.net.{InetAddress, InetSocketAddress}
-
 import rx.lang.scala.{Observable => Obs}
+
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.olympus.database.Database
-
 import scala.concurrent.duration.DurationInt
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Transaction}
-
 import scala.util.Try
 
 
