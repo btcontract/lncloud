@@ -24,7 +24,7 @@ object Olympus extends ServerApp {
   type ProgramArguments = List[String]
   def server(args: ProgramArguments): Task[Server] = {
     values = Vals(new BigInteger("33337641954423495759821968886025053266790003625264088739786982511471995762588"),
-      MilliSatoshi(7000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+      MilliSatoshi(500000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
       eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735, rewindRange = 144 * 7,
       eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
       checkByToken = true)
@@ -145,7 +145,7 @@ class Responder { me =>
     }
 
     case req @ POST -> V1 / "data" / "get" =>
-      val results = db.getDatas(req params "key")
+      val results = db.getData(req params "key")
       Ok apply ok(results:_*)
 
     // FEERATE AND EXCHANGE RATES
@@ -164,7 +164,8 @@ class Responder { me =>
 
     case req @ POST -> Root / _ / "check" => check.verify(req.params) {
       // This is a test where we simply check if a user supplied data is ok
-      Ok apply ok(req.params apply BODY)
+      println(req params BODY)
+      Ok apply ok("done")
     }
 
     case POST -> Root / "v2" / _ =>
@@ -175,8 +176,10 @@ class Responder { me =>
   def ok(data: Any*): String = Serialization write "ok" +: data
   def error(data: Any*): String = Serialization write "error" +: data
 
-  // Ckecking if incoming data can be accepted either by signature or disposable blind token
-  trait DataChecker { def verify(params: HttpParams)(next: => TaskResponse): TaskResponse }
+  trait DataChecker {
+    // Incoming data may be accepted either by signature or blind token
+    def verify(params: HttpParams)(next: => TaskResponse): TaskResponse
+  }
 
   class BlindTokenChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {

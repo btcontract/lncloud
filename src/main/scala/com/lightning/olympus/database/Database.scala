@@ -34,7 +34,7 @@ abstract class Database {
 
   // Storing arbitrary data
   def putData(key: String, data: String)
-  def getDatas(key: String): List[String]
+  def getData(key: String): List[String]
 }
 
 class MongoDatabase extends Database {
@@ -90,9 +90,9 @@ class MongoDatabase extends Database {
     lncloud("userData").update("data" $eq data, $set("key" -> key, "data" -> data,
       "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
-  def getDatas(key: String) = {
+  def getData(key: String) = {
     val desc = DBObject("date" -> -1)
     val allResults = lncloud("userData").find("key" $eq key)
-    allResults.sort(desc).take(5).map(_ as[String] "data").toList
+    allResults.sort(desc).take(1).map(_ as[String] "data").toList
   }
 }
