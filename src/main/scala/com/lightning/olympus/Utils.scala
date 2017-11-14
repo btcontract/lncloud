@@ -52,7 +52,7 @@ object JsonHttpUtils {
 case class CacheItem[T](data: T, stamp: Long)
 case class BlindData(paymentHash: BinaryData, k: BigInteger, tokens: StringSeq)
 case class Vals(privKey: String, price: MilliSatoshi, quantity: Int, btcApi: String,
-                zmqApi: String, eclairApi: String, eclairIp: String, eclairPort: Int,
+                zmqApi: String, eclairApi: String, eclairSockIp: String, eclairSockPort: Int,
                 eclairNodeId: String, rewindRange: Int, checkByToken: Boolean) {
 
   lazy val bigIntegerPrivKey = new BigInteger(privKey)

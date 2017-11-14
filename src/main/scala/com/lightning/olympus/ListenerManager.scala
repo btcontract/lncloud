@@ -19,7 +19,7 @@ import scala.util.Try
 class ListenerManager(db: Database) {
   def connect = ConnectionManager requestConnection announce
   val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing source",
-    new InetSocketAddress(InetAddress getByName values.eclairIp, values.eclairPort) :: Nil)
+    new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
     override def onMessage(msg: LightningMessage) = Router receive msg
