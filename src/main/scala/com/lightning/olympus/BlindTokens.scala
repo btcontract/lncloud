@@ -21,7 +21,7 @@ import Utils.values
 
 class BlindTokens { me =>
   type SesKeyCacheItem = CacheItem[BigInteger]
-  val signer = new ECBlindSign(values.privKey.bigInteger)
+  val signer = new ECBlindSign(values.bigIntegerPrivKey)
   val cache = new ConcurrentHashMap[String, SesKeyCacheItem].asScala
 
   // Periodically remove used and outdated requests

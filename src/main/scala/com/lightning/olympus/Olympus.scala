@@ -22,12 +22,19 @@ import java.math.BigInteger
 
 object Olympus extends ServerApp {
   type ProgramArguments = List[String]
-  def server(args: ProgramArguments): Task[Server] = {
-    values = Vals(new BigInteger("33337641954423495759821968886025053266790003625264088739786982511471995762588"),
-      MilliSatoshi(500000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-      eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735, rewindRange = 144 * 7,
-      eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
-      checkByToken = true)
+  def server(args: ProgramArguments) = {
+
+    args match {
+      case List("testrun") =>
+        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
+          MilliSatoshi(500000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+          eclairApi = "http://127.0.0.1:8080", eclairIp = "127.0.0.1", eclairPort = 9735, rewindRange = 144 * 7,
+          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
+          checkByToken = true)
+
+      case List("production", rawVals) =>
+        values = toClass[Vals](rawVals)
+    }
 
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
@@ -164,7 +171,6 @@ class Responder { me =>
 
     case req @ POST -> Root / _ / "check" => check.verify(req.params) {
       // This is a test where we simply check if a user supplied data is ok
-      println(req params BODY)
       Ok apply ok("done")
     }
 
