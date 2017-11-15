@@ -1,9 +1,9 @@
 # olympus
-Maintenance server for thin LN clients
+Maintenance server for Lightning Wallet
 
 ### Installation manual for Ubuntu 16.04
 
-1. Install Java following steps described at https://www.digitalocean.com/community/tutorials/how-to-install-java-with-apt-get-on-ubuntu-16-04
+1. Install Java by following steps described at https://www.digitalocean.com/community/tutorials/how-to-install-java-with-apt-get-on-ubuntu-16-04
 
 2. Install Bitcoin Core e.g.  
 `sudo apt-get update`  
@@ -28,7 +28,7 @@ zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawblock=tcp://127.0.0.1:29000
 ```
 
-4. Install and run a MongoDB following steps described at https://docs.mongodb.com/manual/tutorial/install-mongodb-on-ubuntu/
+4. Install and run a MongoDB by following steps described at https://docs.mongodb.com/manual/tutorial/install-mongodb-on-ubuntu/
 
 5. Open MongoDB console and issue the following commands:
 ```
@@ -41,7 +41,7 @@ $ mongo
 > db.scheduledTxs.createIndex( { "txid": 1 }, { expireAfterSeconds: 3600 * 24 * 14 } )
 ```
 
-6. Get Eclair fat JAR file, either by downloading it directly from a repository or by compiling from source e.g.  
+6. Get Eclair fat JAR file, either by downloading it directly from a repository or by compiling from source:  
 `git clone https://github.com/btcontract/olympus.git`  
 `cd eclair`  
 `mvn package`  
@@ -76,7 +76,7 @@ eclair {
 
 8. Run Ecliar instance by issuing `java -Declair.datadir=eclairdata/ -jar eclair-node.jar`
 
-9. Get Olympus JAR file, either by downloading it directly from a repository or by compiling from source e.g.  
+9. Get Olympus fat JAR file, either by downloading it directly from a repository or by compiling from source:  
 `git clone https://github.com/ACINQ/eclair.git`  
 `cd olympus`  
 `sbt`  
