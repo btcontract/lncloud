@@ -32,13 +32,13 @@ abstract class Database {
   // Checking incoming LN payment status
   def isPaymentFulfilled(hash: BinaryData): Boolean
 
-  // Storing arbitrary data
-  def putData(key: String, data: String)
+  // Storing arbitrary data in Olympus database
+  def putData(key: String, prefix: String, data: String)
   def getData(key: String): List[String]
 }
 
 class MongoDatabase extends Database {
-  val lncloud: MongoDB = MongoClient("localhost")("lncloud")
+  val olympus: MongoDB = MongoClient("localhost")("olympus")
   val clearTokens: MongoDB = MongoClient("localhost")("clearTokens")
   val eclair: MongoCollection = MongoClient("localhost")("eclair")("paymentRequest")
 
@@ -46,16 +46,16 @@ class MongoDatabase extends Database {
   implicit def obj2String(source: Object): String = source.toString
 
   // For signature-based auth users need to save their keys in this collection
-  def keyExists(key: String) = lncloud("authKeys").findOne("key" $eq key).isDefined
+  def keyExists(key: String) = olympus("authKeys").findOne("key" $eq key).isDefined
 
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String) =
-    lncloud("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
-      "paymentHash" -> data.paymentHash.toString, "tokens" -> data.tokens, "date" -> new Date),
+    olympus("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
+      "paymentHash" -> data.paymentHash.toString, "tokens" -> data.tokens, "createdAt" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def getPendingTokens(seskey: String) =
-    lncloud("blindTokens").findOne("seskey" $eq seskey) map { result =>
+    olympus("blindTokens").findOne("seskey" $eq seskey) map { result =>
       val tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toList
       BlindData(BinaryData(result get "paymentHash"), new BigInteger(result get "k"), tokens)
     }
@@ -63,19 +63,19 @@ class MongoDatabase extends Database {
   // Many collections in total to store clear tokens because we have to keep every token
   def putClearToken(clear: String) = clearTokens(clear take 1).insert("clearToken" $eq clear)
   def isClearTokenUsed(clear: String) = clearTokens(clear take 1).findOne("clearToken" $eq clear).isDefined
-  def getTxs(txids: StringSeq) = lncloud("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toList
+  def getTxs(txids: StringSeq) = olympus("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toList
 
   def putTx(txids: StringSeq, hex: String) =
-    lncloud("spentTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
-      "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+    olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
+      "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def putScheduled(tx: Transaction) =
-    lncloud("schduledTxs").update("txid" $eq tx.txid.toString, $set("txid" -> tx.txid.toString,
-      "tx" -> Transaction.write(tx).toString, "cltv" -> cltvBlocks(tx), "date" -> new Date),
+    olympus("scheduledTxs").update("txid" $eq tx.txid.toString, $set("txid" -> tx.txid.toString,
+      "tx" -> Transaction.write(tx).toString, "cltv" -> cltvBlocks(tx), "createdAt" -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def getScheduled(depth: Int) = {
-    val res = lncloud("schduledTxs").find("cltv" $lt depth).map(_ as[String] "tx")
+    val res = olympus("scheduledTxs").find("cltv" $lt depth).map(_ as[String] "tx")
     for (raw <- res.toList) yield Transaction read BinaryData(raw)
   }
 
@@ -86,13 +86,13 @@ class MongoDatabase extends Database {
   }
 
   // Storing arbitrary data
-  def putData(key: String, data: String) =
-    lncloud("userData").update("data" $eq data, $set("key" -> key, "data" -> data,
-      "date" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+  def putData(key: String, prefix: String, data: String) =
+    olympus("userData").update("prefix" $eq prefix, $set("key" -> key, "prefix" -> prefix,
+      "data" -> data, "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getData(key: String) = {
     val desc = DBObject("date" -> -1)
-    val allResults = lncloud("userData").find("key" $eq key)
+    val allResults = olympus("userData").find("key" $eq key)
     allResults.sort(desc).take(1).map(_ as[String] "data").toList
   }
 }

@@ -30,10 +30,11 @@ object Router { me =>
 
   case class Node2Channels(mapping: NodeChannelsMap) {
     lazy val seq = mapping.toSeq.sortWith { case (_ \ v1, _ \ v2) =>
-      // Just be propose a most connected nodes first to the users
+      // Just propose all the most connected nodes first to the users
       // But also allow less connected nodes to pop out sometimes
-      val popOutChance = random.nextDouble <= 0.1D && v2.size > 2
-      if (popOutChance) v1.size < v2.size else v1.size > v2.size
+      //val popOutChance = random.nextDouble <= 0.1D && v2.size > 5
+      //if (popOutChance) v1.size < v2.size else
+      v1.size > v2.size
     }
 
     def plusShortChannelId(info: ChanInfo) = {

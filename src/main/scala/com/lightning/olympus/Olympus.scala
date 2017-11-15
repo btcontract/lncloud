@@ -28,9 +28,9 @@ object Olympus extends ServerApp {
     args match {
       case List("testrun") =>
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          MilliSatoshi(500000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://127.0.0.1:8080", eclairSockIp = "127.0.0.1", eclairSockPort = 9735, rewindRange = 144 * 7,
-          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
+          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+          eclairApi = "http://127.0.0.1:8084", eclairSockIp = "127.0.0.1", eclairSockPort = 9094, rewindRange = 144 * 7,
+          eclairNodeId = "02547f6a63c05cdbb4899c1a3bb7acc2d05883159d3e4b92a15f033ae308eea094",
           checkByToken = true)
 
       case List("production", rawVals) =>
@@ -147,8 +147,8 @@ class Responder { me =>
     // ARBITRARY DATA
 
     case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
-      val Seq(key, userData) = extract(req.params, identity, "key", BODY)
-      db.putData(key, userData)
+      val Seq(key, userDataHex) = extract(req.params, identity, "key", BODY)
+      db.putData(key, prefix = userDataHex take 64, userDataHex)
       Ok apply ok("done")
     }
 
