@@ -37,7 +37,7 @@ $ mongo
 > db.spentTxs.createIndex( { "hex": 1 }, { unique: true } )
 > db.spentTxs.createIndex( { "txids": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
 > db.userData.createIndex( { "key": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
-> db.userData.createIndex( { "hash": 1 }, { unique: true } )
+> db.userData.createIndex( { "prefix": 1 }, { unique: true } )
 > db.scheduledTxs.createIndex( { "txid": 1 }, { expireAfterSeconds: 3600 * 24 * 14 } )
 ```
 
