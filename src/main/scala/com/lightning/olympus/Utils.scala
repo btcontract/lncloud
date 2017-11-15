@@ -21,7 +21,6 @@ object Utils {
   implicit val formats = org.json4s.DefaultFormats
   lazy val bitcoin = new javabitcoindrpcclient.BitcoinJSONRPCClient(values.btcApi)
   val hex2Ascii: String => String = raw => new String(HEX decode raw, "UTF-8")
-  val random = new com.lightning.wallet.ln.crypto.RandomGenerator
 
   implicit def string2PublicKey(raw: String): PublicKey = PublicKey(BinaryData apply raw)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)

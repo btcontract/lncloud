@@ -10,11 +10,11 @@ import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
 import scala.language.implicitConversions
-import com.lightning.wallet.ln.Tools.wrap
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
 import scala.util.Try
 
+import com.lightning.wallet.ln.Tools.{wrap, random}
 import fr.acinq.bitcoin.{BinaryData, Script}
 import rx.lang.scala.{Observable => Obs}
 
@@ -29,8 +29,12 @@ object Router { me =>
   val maps = new Mappings
 
   case class Node2Channels(mapping: NodeChannelsMap) {
-    // For now we will just be proposing a most connected nodes first to the users
-    lazy val seq = mapping.toSeq.sortWith { case (_ \ v1, _ \ v2) => v1.size > v2.size }
+    lazy val seq = mapping.toSeq.sortWith { case (_ \ v1, _ \ v2) =>
+      // Just be propose a most connected nodes first to the users
+      // But also allow less connected nodes to pop out sometimes
+      val popOutChance = random.nextDouble <= 0.1D && v2.size > 2
+      if (popOutChance) v1.size < v2.size else v1.size > v2.size
+    }
 
     def plusShortChannelId(info: ChanInfo) = {
       mapping(info.ca.nodeId1) += info.ca.shortChannelId

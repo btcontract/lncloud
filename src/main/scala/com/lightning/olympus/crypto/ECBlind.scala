@@ -1,8 +1,7 @@
 package com.lightning.olympus.crypto
 
 import org.bitcoinj.core.ECKey.CURVE.{getG, getN}
-import com.lightning.wallet.ln.Tools.Bytes
-import com.lightning.olympus.Utils.random
+import com.lightning.wallet.ln.Tools.{Bytes, random}
 import org.spongycastle.math.ec.ECPoint
 import org.bitcoinj.core.ECKey
 import java.math.BigInteger

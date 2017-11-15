@@ -15,7 +15,7 @@ abstract class Database {
   // For signature-based auth
   def keyExists(key: String): Boolean
 
-  // Recording all transactions
+  // Recording on-chain transactions
   def putTx(txids: StringSeq, hex: String)
   def getTxs(txids: StringSeq): StringSeq
 
