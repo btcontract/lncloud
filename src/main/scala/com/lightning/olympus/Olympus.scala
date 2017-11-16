@@ -127,7 +127,7 @@ class Responder { me =>
 
       // Json4s serializes tuples as maps while we need lists so we explicitly fix that here
       val encoded = announces.take(24).map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
-      val sizes = announces.take(24).map(announce => Router.maps.nodeId2Chans.mapping(announce.nodeId).size)
+      val sizes = announces.take(24).map(announce => Router.maps.nodeId2Chans.nodeSize(announce.nodeId).size)
       val fixed = encoded zip sizes map { case enc \ size => enc :: size :: Nil }
       Ok apply ok(fixed.toList:_*)
 

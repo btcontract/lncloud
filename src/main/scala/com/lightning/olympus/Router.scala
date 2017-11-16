@@ -28,25 +28,23 @@ object Router { me =>
   val black = mutable.Set.empty[PublicKey]
   val maps = new Mappings
 
-  case class Node2Channels(mapping: NodeChannelsMap) {
-    lazy val seq = mapping.toSeq.sortWith { case (_ \ v1, _ \ v2) =>
-      // Just propose all the most connected nodes first to the users
-      // But also allow less connected nodes to pop out sometimes
-      //val popOutChance = random.nextDouble <= 0.1D && v2.size > 5
-      //if (popOutChance) v1.size < v2.size else
-      v1.size > v2.size
-    }
+  case class Node2Channels(nodeSize: NodeChannelsMap) {
+    lazy val seq = nodeSize.toSeq.map { case core @ (_, chanIds) =>
+      // Relatively well connected nodes have a 0.1 chance to pop up
+      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 20
+      if (popOutChance) (core, chanIds.size * 40) else (core, chanIds.size)
+    }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChannelId(info: ChanInfo) = {
-      mapping(info.ca.nodeId1) += info.ca.shortChannelId
-      mapping(info.ca.nodeId2) += info.ca.shortChannelId
-      Node2Channels(mapping)
+      nodeSize(info.ca.nodeId1) += info.ca.shortChannelId
+      nodeSize(info.ca.nodeId2) += info.ca.shortChannelId
+      Node2Channels(nodeSize)
     }
 
     def minusShortChannelId(info: ChanInfo) = {
-      mapping(info.ca.nodeId1) -= info.ca.shortChannelId
-      mapping(info.ca.nodeId2) -= info.ca.shortChannelId
-      val mapping1 = mapping.filter(_._2.nonEmpty)
+      nodeSize(info.ca.nodeId1) -= info.ca.shortChannelId
+      nodeSize(info.ca.nodeId2) -= info.ca.shortChannelId
+      val mapping1 = nodeSize.filter(_._2.nonEmpty)
       Node2Channels(mapping1)
     }
   }
@@ -131,7 +129,7 @@ object Router { me =>
 
     case node: NodeAnnouncement if black.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if maps.nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
-    case node: NodeAnnouncement if !maps.nodeId2Chans.mapping.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
+    case node: NodeAnnouncement if !maps.nodeId2Chans.nodeSize.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
     case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
     case node: NodeAnnouncement => wrap(maps addNode node)(maps rmNode node) // Might be an update
@@ -162,7 +160,7 @@ object Router { me =>
     for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
-    maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.mapping(_).isEmpty).values foreach maps.rmNode
+    maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.nodeSize(_).isEmpty).values foreach maps.rmNode
     finder = GraphFinder(finder.updates.filter(maps.chanId2Info contains _._1.channelId), finder.maxPathLength)
     Tools log s"Removed channels: $infos"
   }
@@ -174,12 +172,12 @@ object Router { me =>
 
     maps.isBadChannel(info) map { compromised =>
       val toRemove = List(compromised.ca.nodeId1, compromised.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
-      complexRemove(toRemove.flatMap(maps.nodeId2Chans.mapping) map maps.chanId2Info)
+      complexRemove(toRemove.flatMap(maps.nodeId2Chans.nodeSize) map maps.chanId2Info)
       for (blackKey <- toRemove) yield black add blackKey
     } getOrElse maps.addChanInfo(info)
   }
 
-  // Channels may disappear silently without closing transaction on a blockchain so we must remove them too
-  private def outdatedInfos: Iterable[ChanInfo] = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
+  // Channels may disappear without a closing on-chain transaction so we must remove them too
+  private def outdatedInfos = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
   Obs.interval(2.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
 }
