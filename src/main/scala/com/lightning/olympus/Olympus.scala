@@ -31,7 +31,7 @@ object Olympus extends ServerApp {
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
           eclairApi = "http://127.0.0.1:8084", eclairSockIp = "127.0.0.1", eclairSockPort = 9094, rewindRange = 144 * 7,
           eclairNodeId = "02547f6a63c05cdbb4899c1a3bb7acc2d05883159d3e4b92a15f033ae308eea094",
-          checkByToken = true)
+          ip = "127.0.0.1", checkByToken = true)
 
       case List("production", rawVals) =>
         values = toClass[Vals](rawVals)
@@ -40,7 +40,7 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    BlazeBuilder.bindHttp(9001).mountService(postLift).start
+    BlazeBuilder.bindHttp(9001, values.ip).mountService(postLift).start
   }
 }
 
