@@ -95,17 +95,5 @@ eclair {
 
 10. Run Olympus instance by issuing:
 ```
-java -jar olympus-assembly-1.0.jar production {
-	"privKey":"00000000000000000000000000000000000000000000000000000000000000000000000000000",
-	"price":{"amount":0},
-	"quantity":0,
-	"btcApi":"http://foo:bar@127.0.0.1:18332",
-	"zmqApi":"tcp://127.0.0.1:29000",
-	"eclairApi":"http://127.0.0.1:8086",
-	"eclairSockIp":"127.0.0.1",
-	"eclairSockPort":9096,
-	"eclairNodeId":"0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
-	"rewindRange":1008,
-	"checkByToken":false
-}
+java -jar olympus-assembly-1.0.jar production "{\"privKey\":\"00000000000000000000000000000000000000000000000000000000000000000000000000000\",\"price\":{\"amount\":0},\"quantity\":0,\"btcApi\":\"http://foo:bar@127.0.0.1:18333\",\"zmqApi\":\"tcp://127.0.0.1:29003\",\"eclairApi\":\"http://127.0.0.1:8086\",\"eclairSockIp\":\"127.0.0.1\",\"eclairSockPort\":9096,\"eclairNodeId\":\"03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375\",\"rewindRange\":1008,\"checkByToken\":true}"
 ```
