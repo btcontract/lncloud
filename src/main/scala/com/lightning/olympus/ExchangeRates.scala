@@ -14,14 +14,10 @@ import scala.util.Try
 
 import org.knowm.xchange.bitfinex.v1.BitfinexExchange
 import org.knowm.xchange.bitstamp.BitstampExchange
-import org.knowm.xchange.btcchina.BTCChinaExchange
 import org.knowm.xchange.paymium.PaymiumExchange
 import org.knowm.xchange.kraken.KrakenExchange
 import org.knowm.xchange.okcoin.OkCoinExchange
 import org.knowm.xchange.currency.CurrencyPair
-import org.knowm.xchange.btc38.Btc38Exchange
-import org.knowm.xchange.chbtc.ChbtcExchange
-import org.knowm.xchange.bter.BTERExchange
 import org.knowm.xchange.gdax.GDAXExchange
 
 
@@ -33,7 +29,7 @@ class AveragePrice(val pair: CurrencyPair, val code: String) {
   def update: Unit = for (exchangeName <- exchanges)
     history.getOrElseUpdate(exchangeName, new PriceHistory) add Try {
       val exchangeInstance = ExchangeFactory.INSTANCE createExchange exchangeName
-      exchangeInstance.getPollingMarketDataService.getTicker(pair).getLast: BigDecimal
+      exchangeInstance.getMarketDataService.getTicker(pair).getLast: BigDecimal
     }
 
   def average: PriceTry = Try {
@@ -62,10 +58,8 @@ class ExchangeRates {
   }
 
   val cny = new AveragePrice(BTC_CNY, "yuan") {
-    override val exchanges: List[String] = classOf[BTCChinaExchange].getName ::
-      classOf[OkCoinExchange].getName :: classOf[ChbtcExchange].getName ::
-      classOf[Btc38Exchange].getName :: classOf[BTERExchange].getName ::
-      Nil
+    override val exchanges: List[String] =
+      classOf[OkCoinExchange].getName :: Nil
   }
 
   def displayState = for {
