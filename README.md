@@ -5,7 +5,7 @@ Maintenance server for Lightning Wallet
 
 1. Install Java by following steps described at https://www.digitalocean.com/community/tutorials/how-to-install-java-with-apt-get-on-ubuntu-16-04
 
-2. Install Bitcoin Core e.g.  
+2. Install Bitcoin Core:
 `sudo apt-get update`  
 `sudo apt-get install bitcoind`
 
@@ -42,7 +42,7 @@ $ mongo
 ```
 
 6. Get Eclair fat JAR file, either by downloading it directly from a repository or by compiling from source:  
-`git clone https://github.com/btcontract/olympus.git`  
+`git clone https://github.com/ACINQ/eclair.git`  
 `cd eclair`  
 `mvn package`  
 
@@ -77,7 +77,7 @@ eclair {
 8. Run Ecliar instance by issuing `java -Declair.datadir=eclairdata/ -jar eclair-node.jar`
 
 9. Get Olympus fat JAR file, either by downloading it directly from a repository or by compiling from source:  
-`git clone https://github.com/ACINQ/eclair.git`  
+`git clone https://github.com/btcontract/olympus.git`  
 `cd olympus`  
 `sbt`  
 `assembly`  
@@ -85,9 +85,9 @@ eclair {
 10. Run Olympus instance by issuing:
 ```
 java -jar olympus-assembly-1.0.jar production {
-	"privKey":"33337641954423495759821968886025053266790003625264088739786982511471995762588", // not important for private Olympus instance
-	"price":{"amount":2000000}, // not important for private Olympus instance
-	"quantity":50, // not important for private Olympus instance
+	"privKey":"00000000000000000000000000000000000000000000000000000000000000000000000000000",
+	"price":{"amount":0},
+	"quantity":0,
 	"btcApi":"http://foo:bar@127.0.0.1:18332",
 	"zmqApi":"tcp://127.0.0.1:29000",
 	"eclairApi":"http://127.0.0.1:8086",
