@@ -33,12 +33,23 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 5. Open MongoDB console and issue the following commands:
 ```
 $ mongo
+
 > use olympus
-> db.spentTxs.createIndex( { "hex": 1 }, { unique: true } )
-> db.spentTxs.createIndex( { "txids": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
-> db.userData.createIndex( { "key": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
-> db.userData.createIndex( { "prefix": 1 }, { unique: true } )
-> db.scheduledTxs.createIndex( { "txid": 1 }, { expireAfterSeconds: 3600 * 24 * 14 } )
+> db.spentTxs.createIndex( { "hex": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.spentTxs.createIndex( { "txids": 1 } )
+
+> db.scheduledTxs.createIndex( { "txid": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 14 } )
+> db.scheduledTxs.createIndex( { "cltv": 1 } )
+
+> db.userData.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.userData.createIndex( { "key": 1 } )
+
+> use blindSignatures
+> db.blindTokens.createIndex( { "seskey": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 1 } )
+> "0123456789abcdefABCDEF".split('').forEach(function(v) { db["clearTokens" + v].createIndex( { "token": 1 }, { unique: true } ) })
+
+> use eclair
+> db.paymentRequest.createIndex( { "hash": 1 }, { unique: true } )
 ```
 
 6. Get Eclair fat JAR file, either by downloading it directly from a repository or by compiling from source:  

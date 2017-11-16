@@ -39,7 +39,7 @@ abstract class Database {
 
 class MongoDatabase extends Database {
   val olympus: MongoDB = MongoClient("localhost")("olympus")
-  val clearTokens: MongoDB = MongoClient("localhost")("clearTokens")
+  val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
   val eclair: MongoCollection = MongoClient("localhost")("eclair")("paymentRequest")
 
   implicit def obj2Long(source: Object): Long = source.toString.toLong
@@ -48,26 +48,13 @@ class MongoDatabase extends Database {
   // For signature-based auth users need to save their keys in this collection
   def keyExists(key: String) = olympus("authKeys").findOne("key" $eq key).isDefined
 
-  // Blind tokens management, k is sesPrivKey
-  def putPendingTokens(data: BlindData, seskey: String) =
-    olympus("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey, "k" -> data.k.toString,
-      "paymentHash" -> data.paymentHash.toString, "tokens" -> data.tokens, "createdAt" -> new Date),
-      upsert = true, multi = false, WriteConcern.Safe)
-
-  def getPendingTokens(seskey: String) =
-    olympus("blindTokens").findOne("seskey" $eq seskey) map { result =>
-      val tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toList
-      BlindData(BinaryData(result get "paymentHash"), new BigInteger(result get "k"), tokens)
-    }
-
-  // Many collections in total to store clear tokens because we have to keep every token
-  def putClearToken(clear: String) = clearTokens(clear take 1).insert("clearToken" $eq clear)
-  def isClearTokenUsed(clear: String) = clearTokens(clear take 1).findOne("clearToken" $eq clear).isDefined
-  def getTxs(txids: StringSeq) = olympus("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toList
-
   def putTx(txids: StringSeq, hex: String) =
     olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
       "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+
+  def getTxs(txids: StringSeq) =
+    olympus("spentTxs").find("txids" $in txids)
+      .map(_ as[String] "hex").toList
 
   def putScheduled(tx: Transaction) =
     olympus("scheduledTxs").update("txid" $eq tx.txid.toString, $set("txid" -> tx.txid.toString,
@@ -79,20 +66,36 @@ class MongoDatabase extends Database {
     for (raw <- res.toList) yield Transaction read BinaryData(raw)
   }
 
-  // Checking incoming LN payment status
-  def isPaymentFulfilled(hash: BinaryData) = {
-    val result = eclair.findOne("hash" $eq hash.toString)
-    result.map(_ as[Boolean] "isFulfilled") exists identity
-  }
-
   // Storing arbitrary data
   def putData(key: String, prefix: String, data: String) =
     olympus("userData").update("prefix" $eq prefix, $set("key" -> key, "prefix" -> prefix,
       "data" -> data, "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getData(key: String) = {
-    val desc = DBObject("date" -> -1)
     val allResults = olympus("userData").find("key" $eq key)
-    allResults.sort(desc).take(1).map(_ as[String] "data").toList
+    val firstOne = allResults sort DBObject("date" -> -1) take 1
+    firstOne.map(_ as[String] "data").toList
+  }
+
+  // Blind tokens management, k is sesPrivKey
+  def putPendingTokens(data: BlindData, seskey: String) =
+    blindSignatures("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey,
+      "k" -> data.k.toString, "paymentHash" -> data.paymentHash.toString, "tokens" -> data.tokens,
+      "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+
+  def getPendingTokens(seskey: String) =
+    blindSignatures("blindTokens").findOne("seskey" $eq seskey) map { result =>
+      val tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toList
+      BlindData(BinaryData(result get "paymentHash"), new BigInteger(result get "k"), tokens)
+    }
+
+  // Many collections in total to store clear tokens because we have to keep every token
+  def putClearToken(clear: String) = blindSignatures(s"clearTokens${clear take 1}").insert("token" $eq clear)
+  def isClearTokenUsed(clear: String) = blindSignatures(s"clearTokens${clear take 1}").findOne("token" $eq clear).isDefined
+
+  // Checking incoming LN payment status
+  def isPaymentFulfilled(hash: BinaryData) = {
+    val result = eclair.findOne("hash" $eq hash.toString)
+    result.map(_ as[Boolean] "isFulfilled") exists identity
   }
 }
