@@ -3,15 +3,16 @@ package com.lightning.olympus
 import scala.concurrent.duration._
 import com.lightning.olympus.Utils._
 import org.json4s.jackson.JsonMethods._
-
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import wf.bitcoin.javabitcoindrpcclient
 import com.lightning.wallet.ln.Tools
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
+import java.net.InetAddress
 
 
 object Utils {
@@ -54,6 +55,7 @@ case class Vals(privKey: String, price: MilliSatoshi, quantity: Int, btcApi: Str
                 zmqApi: String, eclairApi: String, eclairSockIp: String, eclairSockPort: Int,
                 eclairNodeId: String, rewindRange: Int, ip: String, checkByToken: Boolean) {
 
+  lazy val allowedIp = InetAddress.getByName(ip)
   lazy val bigIntegerPrivKey = new BigInteger(privKey)
   lazy val eclairNodePubKey = PublicKey(eclairNodeId)
 }
