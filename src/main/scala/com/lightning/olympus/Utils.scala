@@ -55,7 +55,6 @@ case class Vals(privKey: String, price: MilliSatoshi, quantity: Int, btcApi: Str
                 zmqApi: String, eclairApi: String, eclairSockIp: String, eclairSockPort: Int,
                 eclairNodeId: String, rewindRange: Int, ip: String, checkByToken: Boolean) {
 
-  lazy val allowedIp = InetAddress.getByName(ip)
   lazy val bigIntegerPrivKey = new BigInteger(privKey)
   lazy val eclairNodePubKey = PublicKey(eclairNodeId)
 }

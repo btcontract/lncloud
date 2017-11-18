@@ -29,8 +29,8 @@ object Olympus extends ServerApp {
       case List("testrun") =>
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://127.0.0.1:8080", eclairSockIp = "127.0.0.1", eclairSockPort = 9735, rewindRange = 144 * 7,
-          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3",
+          eclairApi = "http://213.133.99.89:8086", eclairSockIp = "213.133.99.89", eclairSockPort = 9096, rewindRange = 144 * 7,
+          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375",
           ip = "127.0.0.1", checkByToken = true)
 
       case List("production", rawVals) =>
@@ -126,8 +126,8 @@ class Responder { me =>
         else Router.maps.nodeId2Chans.seq take 48 flatMap { case key \ _ => Router.maps.nodeId2Announce get key }
 
       // Json4s serializes tuples as maps while we need lists so we explicitly fix that here
-      val encoded = announces.take(24).map(announce => nodeAnnouncementCodec.encode(announce).require.toHex)
-      val sizes = announces.take(24).map(announce => Router.maps.nodeId2Chans.nodeMap(announce.nodeId).size)
+      val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
+      val sizes = announces.take(24).map(ann => Router.maps.nodeId2Chans.nodeMap(ann.nodeId).size)
       val fixed = encoded zip sizes map { case enc \ size => enc :: size :: Nil }
       Ok apply ok(fixed.toList:_*)
 
@@ -136,7 +136,8 @@ class Responder { me =>
     case req @ POST -> V1 / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
       val txids = req.params andThen hex2Ascii andThen toClass[StringSeq] apply "txids"
-      Ok apply ok(db.getTxs(txids take 20):_*)
+      val spendTxs = db.getTxs(txids take 20)
+      Ok apply ok(spendTxs:_*)
 
     case req @ POST -> V1 / "txs" / "schedule" => check.verify(req.params) {
       val txs = req.params andThen hex2Ascii andThen toClass[StringSeq] apply BODY

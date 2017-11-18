@@ -67,7 +67,7 @@ class ListenerManager(db: Database) {
     new BlockchainListener {
       override def onNewBlock(block: Block) = for {
         // We broadcast all txs with cleared CLTV timeout
-        // whose parents have at least one confirmation
+        // whose parents have at least two confirmations
         // CSV timeout will be rejected by blockchain
         // tx will be automatically removed in a week
 
