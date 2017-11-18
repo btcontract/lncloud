@@ -112,14 +112,10 @@ class Responder { me =>
       Ok apply error("fromblacklisted")
 
     case req @ POST -> V1 / "router" / "routes" =>
-//      val Seq(noNodes, noChannels, from, to) = extract(req.params, identity, "nodes", "channels", "from", "to")
-//      val withoutNodeIds = toClass[StringSeq](hex2Ascii apply noNodes).toSet take 100 map string2PublicKey
-//      val withoutShortChannelIds = toClass[ShortChannelIdSet](hex2Ascii apply noChannels) take 100
-//      val paths = Router.finder.safeFindPaths(withoutNodeIds, withoutShortChannelIds, from, to)
-
-      val Seq(from, to) = extract(req.params, identity, "from", "to")
-      val paths = Router.finder.safeFindPaths(Set.empty, Set.empty, from, to)
-
+      val Seq(nodes, channels, from, to) = extract(req.params, identity, "nodes", "channels", "from", "to")
+      val withoutNodeIds = toClass[StringSeq](hex2Ascii apply nodes).toSet take 100 map string2PublicKey
+      val withoutShortChannelIds = toClass[ShortChannelIdSet](hex2Ascii apply channels) take 100
+      val paths = Router.finder.safeFindPaths(withoutNodeIds, withoutShortChannelIds, from, to)
       val encoded = for (hops <- paths) yield hops.map(hopCodec.encode(_).require.toHex)
       Ok apply ok(encoded:_*)
 
