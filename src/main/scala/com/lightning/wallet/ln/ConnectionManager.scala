@@ -57,8 +57,8 @@ object ConnectionManager {
       }
     }
 
-    work onComplete { _ =>
-      Tools log s"Disconnected"
+    work onComplete { err =>
+      Tools log s"Disconnected: $err"
       events onDisconnect nodeId
     }
 
@@ -72,9 +72,9 @@ object ConnectionManager {
         Tools log s"Got remote Error: $decoded"
         events onTerminalError nodeId
 
-      case unsupportedFeaturesInit: Init => events onTerminalError nodeId
+      case _: Init => events onTerminalError nodeId
       case Ping(len, _) if len > 0 => handler process Pong("00" * len)
-      case theirMessage => events onMessage theirMessage
+      case theirLNMessage => events onMessage theirLNMessage
     }
   }
 }

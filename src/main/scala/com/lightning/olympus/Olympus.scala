@@ -136,7 +136,7 @@ class Responder { me =>
     case req @ POST -> V1 / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
       val txids = req.params andThen hex2Ascii andThen toClass[StringSeq] apply "txids"
-      val spendTxs = db.getTxs(txids take 20)
+      val spendTxs = db.getTxs(txids take 24)
       Ok apply ok(spendTxs:_*)
 
     case req @ POST -> V1 / "txs" / "schedule" => check.verify(req.params) {

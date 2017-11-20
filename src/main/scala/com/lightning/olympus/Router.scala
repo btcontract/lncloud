@@ -56,8 +56,8 @@ object Router { me =>
     private val chanDirectionClass = classOf[ChanDirection]
 
     def safeFindPaths(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet, from: PublicKey, to: PublicKey) =
-      if (withoutNodes.isEmpty && withoutChannels.isEmpty) Try apply findPaths(cachedGraph, from, to) getOrElse Nil
-      else Try apply findPaths(refinedGraph(withoutNodes, withoutChannels), from, to) getOrElse Nil
+      if (withoutNodes.isEmpty && withoutChannels.isEmpty) Try(findPaths(cachedGraph, from, to) take 7) getOrElse Nil
+      else Try(findPaths(refinedGraph(withoutNodes, withoutChannels), from, to) take 7) getOrElse Nil
 
     private def findPaths(graph: CachedPaths, from: PublicKey, to: PublicKey) =
       for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
@@ -151,7 +151,7 @@ object Router { me =>
       else finder = finder.augmented(chanDirection, cu)
     } catch errLog
 
-    case otherwise =>
+    case _ =>
   }
 
   type ChanInfos = Iterable[ChanInfo]
