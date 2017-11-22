@@ -23,7 +23,7 @@ object Router { me =>
   type NodeIdSet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
   type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIdSet]
-  type CachedPaths = CachedAllDirectedPaths[PublicKey, ChanDirection]
+  type CachedPathGraph = CachedAllDirectedPaths[PublicKey, ChanDirection]
   var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 6)
   val black = mutable.Set.empty[PublicKey]
   val maps = new Mappings
@@ -52,19 +52,21 @@ object Router { me =>
   case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate], maxPathLength: Int) {
     def outdatedChannels = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7)
     def augmented(dir: ChanDirection, upd: ChannelUpdate) = GraphFinder(updates.updated(dir, upd), maxPathLength)
-    private lazy val cachedGraph = refinedGraph(Set.empty, Set.empty)
+    private lazy val cached: CachedPathGraph = refined(Set.empty, Set.empty)
     private val chanDirectionClass = classOf[ChanDirection]
 
-    def safeFindPaths(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet, from: PublicKey, to: PublicKey) =
-      if (withoutNodes.isEmpty && withoutChannels.isEmpty) Try(findPaths(cachedGraph, from, to) take 7) getOrElse Nil
-      else Try(findPaths(refinedGraph(withoutNodes, withoutChannels), from, to) take 7) getOrElse Nil
+    def safeFindPaths(ns: NodeIdSet, cs: ShortChannelIdSet, from: PublicKey, to: PublicKey) = Try {
+      // First we check if we can use a cached graph to improve performance, then we return the most economic paths
+      val res = if (ns.isEmpty && cs.isEmpty) findPaths(cached, from, to) else findPaths(refined(ns, cs), from, to)
+      res sortBy { hops: Vector[Hop] => hops.map(_.lastUpdate.score).sum } take 8
+    } getOrElse Nil
 
-    private def findPaths(graph: CachedPaths, from: PublicKey, to: PublicKey) =
+    private def findPaths(graph: CachedPathGraph, from: PublicKey, to: PublicKey) =
       for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
-        for (dir <- path.getEdgeList.asScala.toVector) yield
-          Hop(dir.from, updates apply dir)
+        for (direction <- path.getEdgeList.asScala.toVector) yield
+          Hop(direction.from, updates apply direction)
 
-    private def refinedGraph(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
+    private def refined(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
       val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
 
       for {
@@ -73,12 +75,14 @@ object Router { me =>
         if !withoutNodes.contains(direction.from)
         if !withoutNodes.contains(direction.to)
       } {
-        Seq(direction.from, direction.to) foreach directedGraph.addVertex
-        directedGraph.addEdge(direction.from, direction.to, direction)
+        directedGraph.addVertex(direction.from)
+        directedGraph.addVertex(direction.to)
+        directedGraph.addEdge(direction.from,
+          direction.to, direction)
       }
 
       // Paths without specified routes
-      new CachedPaths(directedGraph)
+      new CachedPathGraph(directedGraph)
     }
   }
 
