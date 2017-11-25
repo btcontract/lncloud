@@ -2,18 +2,17 @@ package com.lightning.olympus
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
-
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
 import fr.acinq.bitcoin.Crypto.PublicKey
-
+import com.lightning.wallet.ln.Tools
 import scala.util.Try
+
 import rx.lang.scala.{Subscription, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import zeromq.{SocketRef, SocketType, ZeroMQ}
 import Utils.{bitcoin, errLog, values}
-import com.lightning.wallet.ln.Tools
 
 
 case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
