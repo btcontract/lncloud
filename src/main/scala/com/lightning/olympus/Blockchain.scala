@@ -2,16 +2,18 @@ package com.lightning.olympus
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
 import com.lightning.wallet.ln.wire.ChannelAnnouncement
+
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
 import fr.acinq.bitcoin.Crypto.PublicKey
-import scala.util.Try
 
+import scala.util.Try
 import rx.lang.scala.{Subscription, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import zeromq.{SocketRef, SocketType, ZeroMQ}
 import Utils.{bitcoin, errLog, values}
+import com.lightning.wallet.ln.Tools
 
 
 case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
@@ -35,10 +37,12 @@ object Blockchain { me =>
     .retryWhen(_ delay 10.second).subscribe(block => listeners.foreach(_ onNewBlock block), errLog)
 
   def rescanBlocks = {
+    Tools log "Rescanning blocks..."
     val currentPoint = bitcoin.getBlockCount
     val pastPoint = currentPoint - values.rewindRange
     val blocks = pastPoint to currentPoint map bitcoin.getBlock
     for (block <- blocks) for (lst <- listeners) lst onNewBlock block
+    Tools log "Done rescanning blocks..."
   }
 
   def isSpent(chanInfo: ChanInfo) = Try {

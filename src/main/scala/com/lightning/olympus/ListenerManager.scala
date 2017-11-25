@@ -55,11 +55,11 @@ class ListenerManager(db: Database) {
 
       override def onNewBlock(block: Block) = for {
         // We need to save which txids this one spends from
-        // Lite clients will need this to extract preimages
+        // since clients will need this to extract preimages
 
         txid <- block.tx.asScala
-        hexTry = Try(bitcoin getRawTransactionHex txid)
-        twr <- hexTry map BinaryData.apply map TransactionWithRaw
+        hex <- Try(bitcoin getRawTransactionHex txid)
+        twr = TransactionWithRaw apply BinaryData(hex)
       } onNewTx(twr)
     }
 
