@@ -11,8 +11,8 @@ import scala.util.Try
 
 import rx.lang.scala.{Subscription, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
-import zeromq.{SocketRef, SocketType, ZeroMQ}
 import Utils.{bitcoin, errLog, values}
+import zeromq.{SocketType, ZeroMQ}
 
 
 case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
@@ -60,11 +60,11 @@ object Blockchain { me =>
     ChanInfo(txid, output.scriptPubKey, ca)
   }
 
-  private def mkObserver(topic: String) = Obs[BinaryData] { obs =>
-    val subSocket: SocketRef = ZeroMQ.socket(SocketType.Sub)
+  def mkObserver(zmqTopic: String) = Obs[BinaryData] { obs =>
+    val subSocket = ZeroMQ.socket(socketType = SocketType.Sub)
     subSocket.connect(address = values.zmqApi)
     subSocket.recvAll(obs onNext _(1).toArray)
-    subSocket.subscribe(topic = topic)
+    subSocket.subscribe(topic = zmqTopic)
     Subscription(subSocket.close)
   }
 }
