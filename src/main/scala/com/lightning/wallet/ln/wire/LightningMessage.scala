@@ -1,9 +1,9 @@
 package com.lightning.wallet.ln.wire
 
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import com.lightning.wallet.ln.Tools.fromShortId
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.UInt64
 
 
@@ -16,21 +16,23 @@ case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends L
 case class Ping(pongLength: Int, data: BinaryData) extends LightningMessage
 case class Pong(data: BinaryData) extends LightningMessage
 
-case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long, nextRemoteRevocationNumber: Long
-                              /* TODO: enable, yourLastPerCommitmentSecret: Scalar, myCurrentPerCommitmentPoint: Point */) extends ChannelMessage
+case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long, nextRemoteRevocationNumber: Long,
+                              yourLastPerCommitmentSecret: Option[Scalar], myCurrentPerCommitmentPoint: Option[Point]
+                             ) extends ChannelMessage
 
-case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData,
-                       fundingSatoshis: Long, pushMsat: Long, dustLimitSatoshis: Long,
-                       maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
-                       feeratePerKw: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int, fundingPubkey: PublicKey,
-                       revocationBasepoint: Point, paymentBasepoint: Point, delayedPaymentBasepoint: Point,
-                       firstPerCommitmentPoint: Point, channelFlags: Byte) extends ChannelMessage
+case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long,
+                       dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
+                       feeratePerKw: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int, fundingPubkey: PublicKey, revocationBasepoint: Point,
+                       paymentBasepoint: Point, delayedPaymentBasepoint: Point, htlcBasepoint: Point, firstPerCommitmentPoint: Point,
+                       channelFlags: Byte) extends ChannelMessage
 
-case class AcceptChannel(temporaryChannelId: BinaryData, dustLimitSatoshis: Long,
-                         maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
-                         minimumDepth: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int, fundingPubkey: PublicKey,
-                         revocationBasepoint: Point, paymentBasepoint: Point, delayedPaymentBasepoint: Point,
-                         firstPerCommitmentPoint: Point) extends ChannelMessage
+case class AcceptChannel(temporaryChannelId: BinaryData, dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64,
+                         channelReserveSatoshis: Long, htlcMinimumMsat: Long, minimumDepth: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int,
+                         fundingPubkey: PublicKey, revocationBasepoint: Point, paymentBasepoint: Point, delayedPaymentBasepoint: Point,
+                         htlcBasepoint: Point, firstPerCommitmentPoint: Point) extends ChannelMessage {
+
+  lazy val dustLimitSat = Satoshi(dustLimitSatoshis)
+}
 
 case class FundingCreated(temporaryChannelId: BinaryData, fundingTxid: BinaryData,
                           fundingOutputIndex: Int, signature: BinaryData) extends ChannelMessage
@@ -42,7 +44,10 @@ case class Shutdown(channelId: BinaryData, scriptPubKey: BinaryData) extends Cha
 
 sealed trait HasHtlcId extends ChannelMessage { def id: Long }
 case class UpdateAddHtlc(channelId: BinaryData, id: Long, amountMsat: Long, paymentHash: BinaryData,
-                         expiry: Long, onionRoutingPacket: BinaryData) extends HasHtlcId
+                         expiry: Long, onionRoutingPacket: BinaryData) extends HasHtlcId {
+
+  val amount = MilliSatoshi(amountMsat)
+}
 
 case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends HasHtlcId
 case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends HasHtlcId
@@ -77,5 +82,4 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
 
   // A path consistes of channel updates, when returning paths to user we order them by cumulative score
   lazy val score = math.log(cltvExpiryDelta) * math.log(feeBaseMsat) * math.log(feeProportionalMillionths)
-  val lastSeen = System.currentTimeMillis
 }

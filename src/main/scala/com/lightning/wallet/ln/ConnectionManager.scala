@@ -57,8 +57,8 @@ object ConnectionManager {
       }
     }
 
-    work onComplete { err =>
-      Tools log s"Disconnected: $err"
+    work onComplete { _ =>
+      Tools log s"Disconnected"
       events onDisconnect nodeId
     }
 
@@ -68,13 +68,15 @@ object ConnectionManager {
         savedInit = their
 
       case error: Error =>
+        // For now we treat any Error as connection level one
+        // since a user may only have one open channel per node
         val decoded = new String(error.data.toArray)
         Tools log s"Got remote Error: $decoded"
         events onTerminalError nodeId
 
-      case _: Init => events onTerminalError nodeId
+      case unsupportedFeaturesInit: Init => events onTerminalError nodeId
       case Ping(len, _) if len > 0 => handler process Pong("00" * len)
-      case theirLNMessage => events onMessage theirLNMessage
+      case theirMessage => events onMessage theirMessage
     }
   }
 }

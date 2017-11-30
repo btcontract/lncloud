@@ -95,7 +95,7 @@ class Responder { me =>
 
       val blindSignatures = for {
         blindData <- db.getPendingTokens(req params "seskey")
-        if db.isPaymentFulfilled(hash = blindData.paymentHash)
+        if db isPaymentFulfilled blindData.paymentHash
       } yield {
         val bigInts = for (blindToken <- blindData.tokens) yield new BigInteger(blindToken)
         bigInts.map(bigInt => blindTokens.signer.blindSign(bigInt, blindData.k).toString)

@@ -10,7 +10,6 @@ import com.lightning.wallet.ln.PaymentInfo.ExtraPaymentRoute
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
 import java.math.BigInteger
-import scala.util.Try
 
 
 // Tags should be outside of PaymentRequest
@@ -64,37 +63,17 @@ case class MinFinalCltvExpiryTag(expiryDelta: Long) extends Tag {
   lazy val ints = writeUnsignedLong(expiryDelta)
 }
 
-case class FallbackAddressTag(version: Byte, hash: BinaryData) extends Tag {
-  def toInt5s: Int5Seq = encode(version +: Bech32.eight2five(hash), 'f')
-}
-
-object FallbackAddressTag {
-  def apply(address: String): FallbackAddressTag = {
-    // A Bitcoin fallack address MUST always be present
-    val try32 = Try apply fromBech32Address(address)
-    val try58 = Try apply fromBase58Address(address)
-    try32.orElse(try58).get
-  }
-
-  def fromBase58Address(address: String) = Base58Check decode address match {
-    case (Base58.Prefix.PubkeyAddressTestnet, hash) => FallbackAddressTag(17, hash)
-    case (Base58.Prefix.ScriptAddressTestnet, hash) => FallbackAddressTag(18, hash)
-    case (Base58.Prefix.PubkeyAddress, hash) => FallbackAddressTag(17, hash)
-    case (Base58.Prefix.ScriptAddress, hash) => FallbackAddressTag(18, hash)
-  }
-
-  def fromBech32Address(address: String): FallbackAddressTag = {
-    val (prefix: Int5, hash) = Bech32 decodeWitnessAddress address
-    FallbackAddressTag(prefix, hash)
-  }
+case class UnknownTag(tag: Int5, int5s: Int5Seq) extends Tag {
+  def toInt5s: Int5Seq = tag +: (writeSize(int5s.size) ++ int5s)
 }
 
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long,
                           nodeId: PublicKey, tags: Vector[Tag], signature: BinaryData) {
 
-  lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta.toInt } getOrElse 9
+  lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta.toInt }
   lazy val paymentHash = tags.collectFirst { case paymentHashTag: PaymentHashTag => paymentHashTag.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
+  // Amount MUST be present if this is an outgoing payment
   lazy val finalSum = amount.get
 
   def isFresh: Boolean = {
@@ -106,15 +85,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case DescriptionHashTag(hash) => Left(hash)
     case DescriptionTag(text) => Right(text)
   }.get
-
-  def fallbackAddress: Option[String] = tags.collectFirst {
-    case FallbackAddressTag(17, hash) if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, hash)
-    case FallbackAddressTag(18, hash) if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
-    case FallbackAddressTag(17, hash) if prefix == "lntb" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, hash)
-    case FallbackAddressTag(18, hash) if prefix == "lntb" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
-    case FallbackAddressTag(version, hash) if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, hash)
-    case FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
-  }
 
   def stream: BitStream = {
     val stream = BitStream.empty
@@ -223,10 +193,6 @@ object PaymentRequest {
           val hash = Bech32 five2eight input.slice(3, len + 3)
           DescriptionHashTag(hash)
 
-        case fTag if fTag == Bech32.map('f') =>
-          val prog = Bech32 five2eight input.slice(4, len - 1 + 4)
-          FallbackAddressTag(version = input(3), prog)
-
         case rTag if rTag == Bech32.map('r') =>
           val data = Bech32 five2eight input.slice(3, len + 3)
           val path = RoutingInfoTag parseAll data
@@ -241,6 +207,10 @@ object PaymentRequest {
           val ints: Int5Seq = input.slice(3, len + 3)
           val expiry = readUnsignedLong(len, ints)
           MinFinalCltvExpiryTag(expiry)
+
+        case _ =>
+          val unknown = input.slice(3, len + 3)
+          UnknownTag(input.head, unknown)
       }
     }
   }

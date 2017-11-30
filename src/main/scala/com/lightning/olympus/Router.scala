@@ -50,7 +50,7 @@ object Router { me =>
   }
 
   case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate], maxPathLength: Int) {
-    def outdatedChannels = updates.values.filter(_.lastSeen < System.currentTimeMillis - 86400 * 1000 * 7)
+    def outdatedChannels = updates.values.filter(_.timestamp < System.currentTimeMillis / 1000 - 604800)
     def augmented(dir: ChanDirection, upd: ChannelUpdate) = GraphFinder(updates.updated(dir, upd), maxPathLength)
     private lazy val cached: CachedPathGraph = refined(Set.empty, Set.empty)
     private val chanDirectionClass = classOf[ChanDirection]

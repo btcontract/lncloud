@@ -156,9 +156,9 @@ object LightningMessageCodecs { me =>
   val channelReestablish =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "nextLocalCommitmentNumber") ::
-      (uint64 withContext "nextRemoteRevocationNumber") /* TODO: enable ::
-      (scalar withContext "yourLastPerCommitmentSecret") ::
-      (point withContext "myCurrentPerCommitmentPoint") */
+      (uint64 withContext "nextRemoteRevocationNumber") ::
+      (optional(bool, scalar) withContext "yourLastPerCommitmentSecret") ::
+      (optional(bool, point) withContext "myCurrentPerCommitmentPoint")
 
   private val openChannel =
     (binarydata(32) withContext "chainHash") ::
@@ -176,6 +176,7 @@ object LightningMessageCodecs { me =>
       (point withContext "revocationBasepoint") ::
       (point withContext "paymentBasepoint") ::
       (point withContext "delayedPaymentBasepoint") ::
+      (point withContext "htlcBasepoint") ::
       (point withContext "firstPerCommitmentPoint") ::
       (byte withContext "channelFlags")
 
@@ -192,6 +193,7 @@ object LightningMessageCodecs { me =>
       (point withContext "revocationBasepoint") ::
       (point withContext "paymentBasepoint") ::
       (point withContext "delayedPaymentBasepoint") ::
+      (point withContext "htlcBasepoint") ::
       (point withContext "firstPerCommitmentPoint")
 
   val acceptChannelCodec: Codec[AcceptChannel] =

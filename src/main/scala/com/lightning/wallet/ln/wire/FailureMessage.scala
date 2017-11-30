@@ -25,12 +25,10 @@ case object TemporaryNodeFailure extends Node
 case object PermanentNodeFailure extends Perm with Node
 case object RequiredNodeFeatureMissing extends Perm with Node
 
-
 sealed trait BadOnion extends FailureMessage { def onionHash: BinaryData }
 case class InvalidOnionVersion(onionHash: BinaryData) extends BadOnion with Perm
 case class InvalidOnionHmac(onionHash: BinaryData) extends BadOnion with Perm
 case class InvalidOnionKey(onionHash: BinaryData) extends BadOnion with Perm
-
 
 sealed trait Update extends FailureMessage { def update: ChannelUpdate }
 case class AmountBelowMinimum(amountMsat: Long, update: ChannelUpdate) extends Update
@@ -39,7 +37,6 @@ case class FeeInsufficient(amountMsat: Long, update: ChannelUpdate) extends Upda
 case class IncorrectCltvExpiry(expiry: Long, update: ChannelUpdate) extends Update
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update
-
 
 object FailureMessageCodecs {
   private val sha256Codec: Codec[BinaryData] =

@@ -95,6 +95,6 @@ object Announcements { me =>
       ann.alias, ann.features, ann.addresses), ann.signature, PublicKey apply ann.nodeId)
 
   def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean =
-    verifySignature(channelUpdateWitnessEncode(ann.chainHash,ann.shortChannelId, ann.timestamp, ann.flags,
+    verifySignature(channelUpdateWitnessEncode(ann.chainHash, ann.shortChannelId, ann.timestamp, ann.flags,
       ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths), ann.signature, nodeId)
 }

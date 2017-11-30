@@ -15,10 +15,8 @@ object AES {
       aesCipher
     }
 
-  def encCypher(key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.ENCRYPT_MODE)
-  def decCypher(key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.DECRYPT_MODE)
-  def enc(data: Bytes, key: Bytes, initVector: Bytes) = encCypher(key, initVector) doFinal data
-  def dec(data: Bytes, key: Bytes, initVector: Bytes) = decCypher(key, initVector) doFinal data
+  def enc(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.ENCRYPT_MODE) doFinal data
+  def dec(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.DECRYPT_MODE) doFinal data
   def unpack(raw: Bytes): (Bytes, Bytes) = (raw.slice(1, 1 + ivLength), raw drop 1 + ivLength)
   def pack(iv: Bytes, cipher: Bytes): Bytes = aconcat(Array(version), iv, cipher)
   private[this] val version = 1.toByte
@@ -34,9 +32,10 @@ object AES {
     pack(initVec, cipherbytes)
   }
 
-  def decode(packed: Bytes, key: Bytes): BinaryData = {
+  def decode(key: Bytes)(packed: Bytes): String = {
     // Takes packed format with has version number and iv
     val (initVec, cipherbytes) = unpack(packed)
-    dec(cipherbytes, key, initVec)
+    val raw = dec(cipherbytes, key, initVec)
+    new String(raw, "UTF-8")
   }
 }
