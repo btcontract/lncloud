@@ -1,6 +1,7 @@
 package com.lightning.olympus
 
 import com.lightning.wallet.ln._
+import com.softwaremill.quicklens._
 import com.lightning.olympus.Utils._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
@@ -32,7 +33,7 @@ object Router { me =>
     lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
       // Relatively well connected nodes have a 0.1 chance to pop up
       val popOutChance = random.nextDouble < 0.1D && chanIds.size > 10
-      if (popOutChance) (core, chanIds.size * 40) else (core, chanIds.size)
+      if (popOutChance) (core, chanIds.size * 50) else (core, chanIds.size)
     }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChannelId(info: ChanInfo) = {
@@ -143,6 +144,7 @@ object Router { me =>
 
     case cu: ChannelUpdate => try {
       val info = maps chanId2Info cu.shortChannelId
+      val isEnabled = Announcements isEnabled cu.flags
       val chanDirection = Announcements isNode1 cu.flags match {
         case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
@@ -151,8 +153,11 @@ object Router { me =>
       require(!black.contains(info.ca.nodeId1) & !black.contains(info.ca.nodeId2), s"Ignoring $cu")
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
       require(Announcements.checkSig(cu, chanDirection.from), s"Ignoring invalid signatures for $cu")
-      if (finder.updates contains chanDirection) finder.updates(chanDirection) = cu
-      else finder = finder.augmented(chanDirection, cu)
+
+      // Removing and adding an update should trigger a cached graph recalculation
+      if (!isEnabled) finder = finder.copy(updates = finder.updates - chanDirection)
+      else if (finder.updates contains chanDirection) finder.updates(chanDirection) = cu
+      else finder = finder.modify(_.updates) setTo finder.updates.updated(chanDirection, cu)
     } catch errLog
 
     case _ =>
@@ -182,5 +187,5 @@ object Router { me =>
 
   // Channels may disappear without a closing on-chain transaction so we must remove them too
   private def outdatedInfos = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
-  Obs.interval(2.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
+  Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
 }
