@@ -12,6 +12,7 @@ import com.lightning.wallet.ln.Tools.none
 import org.knowm.xchange.ExchangeFactory
 import scala.util.Try
 
+import org.knowm.xchange.bitcoinaverage.BitcoinAverageExchange
 import org.knowm.xchange.bitfinex.v1.BitfinexExchange
 import org.knowm.xchange.bitstamp.BitstampExchange
 import org.knowm.xchange.paymium.PaymiumExchange
@@ -48,27 +49,27 @@ class ExchangeRates {
   val usd = new AveragePrice(BTC_USD, "dollar") {
     override val exchanges: List[String] = classOf[BitstampExchange].getName ::
       classOf[BitfinexExchange].getName :: classOf[KrakenExchange].getName ::
+      classOf[BitcoinAverageExchange].getName ::
       classOf[GDAXExchange].getName :: Nil
   }
 
   val eur = new AveragePrice(BTC_EUR, "euro") {
     override val exchanges: List[String] = classOf[PaymiumExchange].getName ::
       classOf[KrakenExchange].getName :: classOf[BitstampExchange].getName ::
+      classOf[BitcoinAverageExchange].getName ::
       classOf[GDAXExchange].getName :: Nil
   }
 
   val cny = new AveragePrice(BTC_CNY, "yuan") {
-    override val exchanges: List[String] =
-      classOf[OkCoinExchange].getName :: Nil
+    override val exchanges: List[String] = classOf[OkCoinExchange].getName ::
+      classOf[BitcoinAverageExchange].getName :: Nil
   }
 
   def displayState = for {
-    averagePrice: AveragePrice <- currencies
-    exchange \ history <- averagePrice.history
-  } yield {
-    val humanHistory = history.prices mkString "\r\n-- "
-    s"${averagePrice.pair} $exchange \r\n-- $humanHistory"
-  }
+    average: AveragePrice <- currencies
+    exchange \ history <- average.history
+    humanHistory = history.prices mkString "\r\n-- "
+  } yield s"${average.pair} $exchange \r\n-- $humanHistory"
 
   val currencies = List(usd, eur, cny)
   retry(obsOn(currencies.foreach(_.update), IOScheduler.apply), pickInc, 1 to 3)

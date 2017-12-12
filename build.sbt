@@ -33,13 +33,16 @@ libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.0.1"
 libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.0.1"
 
 // Exchanges
-libraryDependencies += "org.knowm.xchange" % "xchange-core" % "4.3.0"
-libraryDependencies += "org.knowm.xchange" % "xchange-gdax" % "4.3.0"
-libraryDependencies += "org.knowm.xchange" % "xchange-kraken" % "4.3.0"
-libraryDependencies += "org.knowm.xchange" % "xchange-bitfinex" % "4.3.0"
-libraryDependencies += "org.knowm.xchange" % "xchange-paymium" % "4.3.0"
-libraryDependencies += "org.knowm.xchange" % "xchange-bitstamp" % "4.3.0"
-libraryDependencies += "org.knowm.xchange" % "xchange-okcoin" % "4.3.0"
+libraryDependencies += "org.knowm.xchange" % "xchange-core" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-gdax" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-kraken" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-bitfinex" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-paymium" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-bitstamp" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-okcoin" % "4.3.1"
+
+libraryDependencies += "org.knowm.xchange" % "xchange-gatecoin" % "4.3.1"
+libraryDependencies += "org.knowm.xchange" % "xchange-bitcoinaverage" % "4.3.1"
 
 mergeStrategy in assembly := {
   case n if n.startsWith("META-INF") => MergeStrategy.discard
