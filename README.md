@@ -6,8 +6,10 @@ Maintenance server for Lightning Wallet
 1. Install Java by following steps described at https://www.digitalocean.com/community/tutorials/how-to-install-java-with-apt-get-on-ubuntu-16-04
 
 2. Install Bitcoin Core:
-`sudo apt-get update`  
-`sudo apt-get install bitcoind`
+```
+sudo apt-get update  
+sudo apt-get install bitcoind
+```
 
 3. Bitcoin config file should contain the following lines: 
 ```
@@ -53,9 +55,11 @@ $ mongo
 ```
 
 6. Get Eclair fat JAR file, either by downloading it directly from a repository or by compiling from source:  
-`git clone https://github.com/ACINQ/eclair.git`  
-`cd eclair`  
-`mvn package`  
+```
+git clone https://github.com/ACINQ/eclair.git  
+cd eclair  
+mvn package  
+```
 
 7. Create an `eclairdata` directory and put an `eclair.conf` file there with the following lines:
 ```
@@ -87,11 +91,13 @@ eclair {
 
 8. Run Ecliar instance by issuing `java -Declair.datadir=eclairdata/ -jar eclair-node.jar`
 
-9. Get Olympus fat JAR file, either by downloading it directly from a repository or by compiling from source:  
-`git clone https://github.com/btcontract/olympus.git`  
-`cd olympus`  
-`sbt`  
-`assembly`  
+9. Get Olympus fat JAR file, either by downloading it directly from a repository or by compiling from source: 
+```
+git clone https://github.com/btcontract/olympus.git  
+cd olympus  
+sbt  
+assembly  
+```
 
 10. Run Olympus instance by issuing:
 ```
