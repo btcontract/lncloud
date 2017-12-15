@@ -19,6 +19,7 @@ import org.knowm.xchange.paymium.PaymiumExchange
 import org.knowm.xchange.kraken.KrakenExchange
 import org.knowm.xchange.okcoin.OkCoinExchange
 import org.knowm.xchange.currency.CurrencyPair
+import org.knowm.xchange.quoine.QuoineExchange
 import org.knowm.xchange.gdax.GDAXExchange
 
 
@@ -47,22 +48,25 @@ class AveragePrice(val pair: CurrencyPair, val code: String) {
 
 class ExchangeRates {
   val usd = new AveragePrice(BTC_USD, "dollar") {
-    override val exchanges: List[String] = classOf[BitstampExchange].getName ::
+    override val exchanges = classOf[BitstampExchange].getName ::
       classOf[BitfinexExchange].getName :: classOf[KrakenExchange].getName ::
-      classOf[BitcoinAverageExchange].getName ::
-      classOf[GDAXExchange].getName :: Nil
+      classOf[BitcoinAverageExchange].getName :: classOf[GDAXExchange].getName :: Nil
   }
 
   val eur = new AveragePrice(BTC_EUR, "euro") {
-    override val exchanges: List[String] = classOf[PaymiumExchange].getName ::
+    override val exchanges = classOf[PaymiumExchange].getName ::
       classOf[KrakenExchange].getName :: classOf[BitstampExchange].getName ::
-      classOf[BitcoinAverageExchange].getName ::
-      classOf[GDAXExchange].getName :: Nil
+      classOf[BitcoinAverageExchange].getName :: classOf[GDAXExchange].getName :: Nil
   }
 
   val cny = new AveragePrice(BTC_CNY, "yuan") {
-    override val exchanges: List[String] = classOf[OkCoinExchange].getName ::
+    override val exchanges = classOf[OkCoinExchange].getName ::
       classOf[BitcoinAverageExchange].getName :: Nil
+  }
+
+  val jpy = new AveragePrice(BTC_JPY, "yen") {
+    override val exchanges = classOf[BitfinexExchange].getName :: classOf[KrakenExchange].getName ::
+      classOf[BitcoinAverageExchange].getName :: classOf[QuoineExchange].getName :: Nil
   }
 
   def displayState = for {
@@ -71,7 +75,7 @@ class ExchangeRates {
     humanHistory = history.prices mkString "\r\n-- "
   } yield s"${average.pair} $exchange \r\n-- $humanHistory"
 
-  val currencies = List(usd, eur, cny)
+  val currencies = List(usd, eur, jpy, cny)
   retry(obsOn(currencies.foreach(_.update), IOScheduler.apply), pickInc, 1 to 3)
     .repeatWhen(_ delay 30.minutes).doOnNext(_ => Tools log "Exchange rates updated")
     .subscribe(none)

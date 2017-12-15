@@ -33,7 +33,7 @@ import org.jgrapht.graph.*;
  */
 public class CachedAllDirectedPaths<V, E>
 {
-    private final DirectedGraph<V, E> graph;
+    private final Graph<V, E> graph;
     private final Map<Set<V>, Map<E, Integer>> cache;
 
     /**
@@ -41,7 +41,7 @@ public class CachedAllDirectedPaths<V, E>
      *
      * @param graph the input graph
      */
-    public CachedAllDirectedPaths(DirectedGraph<V, E> graph)
+    public CachedAllDirectedPaths(Graph<V, E> graph)
     {
         if (graph == null) {
             throw new IllegalArgumentException("Graph cannot be null!");

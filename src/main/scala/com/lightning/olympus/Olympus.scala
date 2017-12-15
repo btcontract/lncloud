@@ -96,10 +96,7 @@ class Responder { me =>
       val blindSignatures = for {
         blindData <- db.getPendingTokens(req params "seskey")
         if db isPaymentFulfilled blindData.paymentHash
-      } yield {
-        val bigInts = for (blindToken <- blindData.tokens) yield new BigInteger(blindToken)
-        bigInts.map(bigInt => blindTokens.signer.blindSign(bigInt, blindData.k).toString)
-      }
+      } yield blindTokens sign blindData
 
       blindSignatures match {
         case Some(sigs) => Ok apply ok(sigs:_*)
@@ -115,7 +112,7 @@ class Responder { me =>
     case req @ POST -> V1 / "router" / "routes" =>
       val Seq(nodes, channels, from, to) = extract(req.params, identity, "nodes", "channels", "from", "to")
       val withoutNodeIds = toClass[StringSeq](hex2Ascii apply nodes).toSet take 100 map string2PublicKey
-      val withoutShortChannelIds = toClass[ShortChannelIdSet](hex2Ascii apply channels) take 100
+      val withoutShortChannelIds = toClass[ShortChannelIdSet](hex2Ascii apply channels).take(100)
       val paths = Router.finder.safeFindPaths(withoutNodeIds, withoutShortChannelIds, from, to)
       val encoded = for (hops <- paths) yield hops.map(hopCodec.encode(_).require.toHex)
       Ok apply ok(encoded:_*)

@@ -29,8 +29,8 @@ libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.10.3"
 libraryDependencies += "org.bitcoinj" % "bitcoinj-core" % "0.14.5"
 libraryDependencies += "fr.acinq" % "bitcoin-lib_2.11" % "0.9.13"
 libraryDependencies += "io.reactivex" % "rxscala_2.11" % "0.26.5"
-libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.0.1"
-libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.0.1"
+libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.1.0"
+libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.1.0"
 
 // Exchanges
 libraryDependencies += "org.knowm.xchange" % "xchange-core" % "4.3.1"
@@ -41,6 +41,7 @@ libraryDependencies += "org.knowm.xchange" % "xchange-paymium" % "4.3.1"
 libraryDependencies += "org.knowm.xchange" % "xchange-bitstamp" % "4.3.1"
 libraryDependencies += "org.knowm.xchange" % "xchange-okcoin" % "4.3.1"
 
+libraryDependencies += "org.knowm.xchange" % "xchange-quoine" % "4.3.1"
 libraryDependencies += "org.knowm.xchange" % "xchange-gatecoin" % "4.3.1"
 libraryDependencies += "org.knowm.xchange" % "xchange-bitcoinaverage" % "4.3.1"
 
