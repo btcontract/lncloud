@@ -51,7 +51,7 @@ object Router { me =>
   }
 
   case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate], maxPathLength: Int) {
-    def outdatedChannels = updates.values.filter(_.timestamp < System.currentTimeMillis / 1000 - 604800)
+    // This class is intended to be fully replaced each time an update is disabled, outdated or added
     private lazy val cached: CachedPathGraph = refined(Set.empty, Set.empty)
     private val chanDirectionClass = classOf[ChanDirection]
 
@@ -184,7 +184,13 @@ object Router { me =>
     } getOrElse maps.addChanInfo(info)
   }
 
-  // Channels may disappear without a closing on-chain transaction so we must remove them too
-  private def outdatedInfos = finder.outdatedChannels.map(maps chanId2Info _.shortChannelId)
-  Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
+  // Channels may disappear without a closing on-chain transaction so we must disable them if that happens
+  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 3600 * 24 * 7
+
+  Obs.interval(12.hours).foreach(_ => {
+    // Do not call complexRemove since an update may arrive later
+    // solution for now is to just remove an outdated update itself from graph
+    val notOutdated = finder.updates.filterNot { case _ \ cu => me isOutdated cu }
+    finder = finder.copy(updates = notOutdated)
+  }, errLog)
 }
