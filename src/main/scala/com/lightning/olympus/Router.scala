@@ -32,8 +32,8 @@ object Router { me =>
   case class Node2Channels(nodeMap: NodeChannelsMap) {
     lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
       // Relatively well connected nodes have a 0.1 chance to pop up
-      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 10
-      if (popOutChance) (core, chanIds.size * 50) else (core, chanIds.size)
+      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 20
+      if (popOutChance) (core, chanIds.size * 40) else (core, chanIds.size)
     }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChannelId(info: ChanInfo) = {
@@ -153,7 +153,7 @@ object Router { me =>
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
       require(Announcements.checkSig(cu, chanDirection.from), s"Ignoring invalid signatures for $cu")
 
-      // Removing and adding an update should trigger a cached graph recalculation
+      // Removing and adding an update should replace a finder
       if (!isEnabled) finder = finder.copy(updates = finder.updates - chanDirection)
       else if (finder.updates contains chanDirection) finder.updates(chanDirection) = cu
       else finder = finder.modify(_.updates) setTo finder.updates.updated(chanDirection, cu)
