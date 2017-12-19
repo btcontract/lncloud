@@ -69,17 +69,19 @@ object Router { me =>
     private def refined(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
       val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
 
-      for {
-        direction <- updates.keys
-        if !withoutChannels.contains(direction.channelId)
-        if !withoutNodes.contains(direction.from)
-        if !withoutNodes.contains(direction.to)
-      } {
+      def insert(direction: ChanDirection) = {
         directedGraph.addVertex(direction.from)
         directedGraph.addVertex(direction.to)
         directedGraph.addEdge(direction.from,
           direction.to, direction)
       }
+
+      for {
+        direction <- updates.keys
+        if !withoutChannels.contains(direction.channelId)
+        if !withoutNodes.contains(direction.from)
+        if !withoutNodes.contains(direction.to)
+      } insert(direction)
 
       // Paths without specified routes
       new CachedPathGraph(directedGraph)
