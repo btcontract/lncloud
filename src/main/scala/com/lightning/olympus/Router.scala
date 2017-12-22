@@ -142,6 +142,7 @@ object Router { me =>
 
     case cu: ChannelUpdate if cu.flags.data.size != 2 => Tools log s"Ignoring invalid flags length ${cu.flags.data.size}"
     case cu: ChannelUpdate if !maps.chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
+    case cu: ChannelUpdate if isOutdated(cu) => Tools log s"Ignoring outdated update $cu"
 
     case cu: ChannelUpdate => try {
       val info = maps chanId2Info cu.shortChannelId
@@ -187,7 +188,7 @@ object Router { me =>
   }
 
   // Channels may disappear without a closing on-chain transaction so we must disable them if that happens
-  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 3600 * 24 * 7
+  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 3600 * 24 * 3
 
   Obs.interval(12.hours).foreach(_ => {
     // Do not call complexRemove since an update may arrive later
