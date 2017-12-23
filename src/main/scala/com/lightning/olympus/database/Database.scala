@@ -4,7 +4,6 @@ import com.mongodb.casbah.Imports._
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import com.lightning.wallet.ln.Scripts.cltvBlocks
 import com.lightning.olympus.Utils.StringSeq
-import com.mongodb.casbah.MongoCollection
 import com.lightning.olympus.BlindData
 import language.implicitConversions
 import java.math.BigInteger

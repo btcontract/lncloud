@@ -12,7 +12,6 @@ import wf.bitcoin.javabitcoindrpcclient
 import com.lightning.wallet.ln.Tools
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
-import java.net.InetAddress
 
 
 object Utils {

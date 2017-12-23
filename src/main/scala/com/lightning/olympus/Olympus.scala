@@ -171,6 +171,7 @@ class Responder { me =>
 
     case req @ POST -> Root / _ / "check" => check.verify(req.params) {
       // This is a test where we simply check if a user supplied data is ok
+      println(req.params)
       Ok apply ok("done")
     }
 
@@ -202,10 +203,10 @@ class Responder { me =>
 
   class SignatureChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(data, sig, key) = extract(params, BinaryData.apply, BODY, "sig", "key")
-      lazy val sigOk = Crypto.verifySignature(Crypto sha256 data, sig, PublicKey apply key)
+      val Seq(data, sig, pubkey) = extract(params, BinaryData.apply, BODY, "sig", "pubkey")
+      lazy val sigOk = Crypto.verifySignature(Crypto sha256 data, sig, PublicKey apply pubkey)
 
-      val userPubKeyIsPresent = db keyExists key.toString
+      val userPubKeyIsPresent = db keyExists pubkey.toString
       if (params(BODY).length > 250000) Ok apply error("bodytoolarge")
       else if (!userPubKeyIsPresent) Ok apply error("keynotfound")
       else if (!sigOk) Ok apply error("siginvalid")
