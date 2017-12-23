@@ -4,15 +4,15 @@ import com.lightning.wallet.ln._
 import collection.JavaConverters._
 import com.lightning.olympus.Utils._
 import org.json4s.jackson.JsonMethods._
-import rx.lang.scala.{Observable => Obs}
 
+import rx.lang.scala.{Observable => Obs}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import com.github.kevinsawicki.http.HttpRequest
 import com.lightning.olympus.crypto.ECBlindSign
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
 import org.json4s.jackson.Serialization
 import org.spongycastle.math.ec.ECPoint
-import fr.acinq.bitcoin.MilliSatoshi
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
 import java.math.BigInteger
@@ -36,5 +36,12 @@ class BlindTokens { me =>
     val request = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
     val raw = parse(request.send(Serialization write params).body) \ "result"
     PaymentRequest read raw.values.toString
+  }
+
+  def isFulfilled(hash: BinaryData): Boolean = {
+    val params = Map("params" -> List(hash.toString), "method" -> "checkpayment")
+    val request = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
+    val raw = parse(request.send(Serialization write params).body) \ "result"
+    raw.extract[Boolean]
   }
 }

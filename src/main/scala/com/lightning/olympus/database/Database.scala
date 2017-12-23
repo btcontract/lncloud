@@ -29,9 +29,6 @@ abstract class Database {
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
 
-  // Checking incoming LN payment status
-  def isPaymentFulfilled(hash: BinaryData): Boolean
-
   // Storing arbitrary data in Olympus database
   def putData(key: String, prefix: String, data: String)
   def getData(key: String): List[String]
@@ -40,7 +37,6 @@ abstract class Database {
 class MongoDatabase extends Database {
   val olympus: MongoDB = MongoClient("localhost")("olympus")
   val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
-  val eclair: MongoCollection = MongoClient("localhost")("eclair")("paymentRequest")
 
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
@@ -92,10 +88,4 @@ class MongoDatabase extends Database {
   // Many collections in total to store clear tokens because we have to keep every token
   def putClearToken(clear: String) = blindSignatures(s"clearTokens${clear take 1}").insert("token" $eq clear)
   def isClearTokenUsed(clear: String) = blindSignatures(s"clearTokens${clear take 1}").findOne("token" $eq clear).isDefined
-
-  // Checking incoming LN payment status
-  def isPaymentFulfilled(hash: BinaryData) = {
-    val result = eclair.findOne("hash" $eq hash.toString)
-    result.map(_ as[Boolean] "isFulfilled") exists identity
-  }
 }
