@@ -11,14 +11,13 @@ trait LightningMessage
 trait RoutingMessage extends LightningMessage
 trait ChannelMessage extends LightningMessage
 
-case class Error(channelId: BinaryData, data: BinaryData) extends LightningMessage
+case class Error(channelId: BinaryData, data: BinaryData) extends LightningMessage {
+  def explanation = s"Remote error, channelId: $channelId, " + new String(data.toArray)
+}
+
 case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends LightningMessage
 case class Ping(pongLength: Int, data: BinaryData) extends LightningMessage
 case class Pong(data: BinaryData) extends LightningMessage
-
-case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long, nextRemoteRevocationNumber: Long,
-                              yourLastPerCommitmentSecret: Option[Scalar], myCurrentPerCommitmentPoint: Option[Point]
-                             ) extends ChannelMessage
 
 case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long,
                        dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,

@@ -16,12 +16,12 @@ import java.nio.ByteOrder
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket
 abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) extends StateMachine[Data] { me =>
   implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
-  def process(change: Any) = Future(me doProcess change)
+  def process(change: Any) = Future(me doProcess change) onFailure handleError
 
+  def handleError: PartialFunction[Throwable, Unit]
   def handleDecryptedIncomingData(data: BinaryData): Unit
   def handleEncryptedOutgoingData(data: BinaryData): Unit
   def handleEnterOperationalState: Unit
-  def handleError(err: Throwable): Unit
 
   def init: Unit = {
     val writer = makeWriter(keyPair, remotePubKey)

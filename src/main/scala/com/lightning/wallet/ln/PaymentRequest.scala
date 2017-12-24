@@ -2,11 +2,13 @@ package com.lightning.wallet.ln
 
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Bech32._
+import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin.Protocol._
 import fr.acinq.eclair.crypto.BitStream._
 import com.lightning.wallet.ln.PaymentRequest._
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import com.lightning.wallet.ln.PaymentInfo.ExtraPaymentRoute
+import com.lightning.wallet.ln.crypto.MultiStreamUtils._
+import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
+import com.lightning.wallet.ln.wire.ChannelUpdate
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
 import java.math.BigInteger
@@ -34,22 +36,30 @@ case class DescriptionHashTag(hash: BinaryData) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32 eight2five hash, 'h')
 }
 
-case class RoutingInfoTag(route: ExtraPaymentRoute) extends Tag {
-  require(route.nonEmpty, "Routing info tag has to contain one or more routes")
-  def toInt5s: Int5Seq = encode(Bech32 eight2five route.flatMap(_.pack), 'r')
+case class Hop(nodeId: PublicKey, lastUpdate: ChannelUpdate)
+case class RoutingInfoTag(route: PaymentRoute) extends Tag {
+  def toInt5s: Int5Seq = encode(Bech32.eight2five(route flatMap pack), 'r')
+  def pack(hop: Hop) = aconcat(hop.nodeId.toBin.data.toArray, writeUInt64(hop.lastUpdate.shortChannelId, BIG_ENDIAN),
+    writeUInt32(hop.lastUpdate.feeBaseMsat, BIG_ENDIAN), writeUInt32(hop.lastUpdate.feeProportionalMillionths, BIG_ENDIAN),
+    writeUInt16(hop.lastUpdate.cltvExpiryDelta, BIG_ENDIAN).data.toArray)
 }
 
 object RoutingInfoTag {
   def parse(data: Int5Seq) = {
     val pubkey = data.slice(0, 33)
-    val shortId = uint64(data.slice(33, 33 + 8), BIG_ENDIAN)
-    val fee = uint64(data.slice(33 + 8, 33 + 8 + 8), BIG_ENDIAN)
-    val cltv = uint16(data.slice(33 + 8 + 8, chunkLength), BIG_ENDIAN)
-    ExtraHop(PublicKey(pubkey), shortId, fee, cltv)
+    val shortChannelId = uint64(data.slice(33, 33 + 8), BIG_ENDIAN)
+    val feeBaseMsat = uint32(data.slice(33 + 8, 33 + 8 + 4), BIG_ENDIAN)
+    val cltvExpiryDelta = uint16(data.slice(33 + 8 + 4 + 4, chunkLength), BIG_ENDIAN)
+    val feeProportionalMillionths = uint32(data.slice(33 + 8 + 4, 33 + 8 + 4 + 4), BIG_ENDIAN)
+    val cu = ChannelUpdate(BinaryData("00"), BinaryData("00"), shortChannelId, System.currentTimeMillis / 1000L,
+      flags = BinaryData("0000"), cltvExpiryDelta, htlcMinimumMsat = 0L, feeBaseMsat, feeProportionalMillionths)
+
+    Hop(PublicKey(pubkey), cu)
   }
 
-  val chunkLength = 33 + 8 + 8 + 2
-  def parseAll(data: Int5Seq): ExtraPaymentRoute =
+  type PaymentRoute = Vector[Hop]
+  val chunkLength = 33 + 8 + 4 + 4 + 2
+  def parseAll(data: Int5Seq): PaymentRoute =
     data.grouped(chunkLength).map(parse).toVector
 }
 
@@ -70,8 +80,8 @@ case class UnknownTag(tag: Int5, int5s: Int5Seq) extends Tag {
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long,
                           nodeId: PublicKey, tags: Vector[Tag], signature: BinaryData) {
 
-  lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta.toInt }
-  lazy val paymentHash = tags.collectFirst { case paymentHashTag: PaymentHashTag => paymentHashTag.hash }.get
+  lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta }
+  lazy val paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
   // Amount MUST be present if this is an outgoing payment
   lazy val finalSum = amount.get
@@ -87,9 +97,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }.get
 
   def stream: BitStream = {
-    val stream = BitStream.empty
     val int5s = Timestamp.encode(timestamp) ++ tags.flatMap(_.toInt5s)
-    val stream1 = int5s.foldLeft(stream)(PaymentRequest.write5)
+    val stream1 = int5s.foldLeft(BitStream.empty)(PaymentRequest.write5)
     stream1
   }
 
@@ -112,9 +121,10 @@ object PaymentRequest {
 
   def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
             privateKey: PrivateKey, description: String, fallbackAddress: Option[String],
-            expirySeconds: Long, extra: ExtraPaymentRoute): PaymentRequest = {
+            extra: PaymentRoute): PaymentRequest = {
 
     val paymentHashTag = PaymentHashTag(paymentHash)
+    val expirySeconds = if (amount.isDefined) 3600 * 6 else 3600 * 24 * 365 * 5
     val tags = Vector(DescriptionTag(description), ExpiryTag(expirySeconds), paymentHashTag)
     PaymentRequest(getPrefix(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey,
       if (extra.isEmpty) tags else RoutingInfoTag(extra) +: tags, BinaryData.empty) sign privateKey

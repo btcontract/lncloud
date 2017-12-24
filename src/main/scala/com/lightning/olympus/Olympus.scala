@@ -171,7 +171,6 @@ class Responder { me =>
 
     case req @ POST -> Root / _ / "check" => check.verify(req.params) {
       // This is a test where we simply check if a user supplied data is ok
-      println(req.params)
       Ok apply ok("done")
     }
 

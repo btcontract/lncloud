@@ -1,12 +1,11 @@
 package com.lightning.wallet.ln
 
 import com.lightning.wallet.ln.wire._
+import com.lightning.wallet.ln.Features._
 import java.net.{InetSocketAddress, Socket}
 import com.lightning.wallet.ln.Tools.{Bytes, none}
-
 import scala.concurrent.ExecutionContext.Implicits.global
 import com.lightning.wallet.ln.LNParams.nodePrivateKey
-import com.lightning.wallet.ln.Features.binData2BitSet
 import com.lightning.wallet.ln.crypto.Noise.KeyPair
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.BinaryData
@@ -37,7 +36,7 @@ object ConnectionManager {
     val handler: TransportHandler = new TransportHandler(pair, nodeId) {
       def handleDecryptedIncomingData(data: BinaryData) = intercept(LightningMessageCodecs deserialize data)
       def handleEncryptedOutgoingData(data: BinaryData) = try socket.getOutputStream write data catch none
-      def handleError(err: Throwable) = events onTerminalError nodeId
+      def handleError = { case _ => events onTerminalError nodeId }
       def handleEnterOperationalState = process(ourInit)
     }
 
@@ -63,20 +62,22 @@ object ConnectionManager {
     }
 
     def intercept(message: LightningMessage) = message match {
-      case their: Init if Features areSupported their.localFeatures =>
+      // Some messages need a special handling so we intercept them
+      case their: Init if dataLossProtect(their.localFeatures) =>
         events.onOperational(nodeId, their)
         savedInit = their
 
-      case error: Error =>
-        // For now we treat any Error as connection level one
-        // since a user may only have one open channel per node
-        val decoded = new String(error.data.toArray)
-        Tools log s"Got remote Error: $decoded"
+      case _: Init =>
+        // Incompatible features
         events onTerminalError nodeId
+        connections -= nodeId
 
-      case unsupportedFeaturesInit: Init => events onTerminalError nodeId
-      case Ping(len, _) if len > 0 => handler process Pong("00" * len)
-      case theirMessage => events onMessage theirMessage
+      case ping: Ping if ping.pongLength > 0 =>
+        handler process Pong("00" * ping.pongLength)
+
+      case theirMessage =>
+        // Forward to all channels
+        events onMessage theirMessage
     }
   }
 }

@@ -57,7 +57,8 @@ object Sphinx { me =>
     | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
     +----------------+----------------------------------+-----------------+----------------------+-----+
     with failure message length + pad length = 256
-   */
+  */
+
   val MaxErrorPayloadLength = 256
   val ErrorPacketLength = MacLength + MaxErrorPayloadLength + 2 + 2
   val DataLength = (PayloadLength + MacLength) * MaxHops
@@ -191,23 +192,18 @@ object Sphinx { me =>
     xor(packet, stream)
   }
 
-  def parseErrorPacket(sharedSecrets: Vector[BytesAndKey],
-                       packet: Bytes): Option[ErrorPacket] =
+  // May throw if shared secrets is empty
+  def parseErrorPacket(secrets: Vector[BytesAndKey],
+                       packet: Bytes): ErrorPacket = {
 
-    sharedSecrets match {
-      case (secret, pubkey) +: tail =>
-        val packet1 = forwardErrorPacket(packet, secret)
-        val (providedMac, payload) = packet1 splitAt MacLength
-        val macCheck = mac(Sphinx.generateKey("um", secret), payload)
-        val macOk = providedMac sameElements macCheck
+    val (secret, pubkey) = secrets.head
+    val packet1 = forwardErrorPacket(packet, secret)
+    val (providedMac, payload) = packet1 splitAt MacLength
+    val macCheck = mac(generateKey("um", secret), payload)
 
-        if (!macOk) parseErrorPacket(tail, packet1) else {
-          val failureMessage = extractFailureMessage(packet1)
-          val errPack = ErrorPacket(pubkey, failureMessage)
-          Some(errPack)
-        }
-
-      // End of secrets
-      case _ => None
-    }
+    if (providedMac sameElements macCheck) {
+      val failureMessage = extractFailureMessage(packet1)
+      ErrorPacket(originNode = pubkey, failureMessage)
+    } else parseErrorPacket(secrets.tail, packet1)
+  }
 }

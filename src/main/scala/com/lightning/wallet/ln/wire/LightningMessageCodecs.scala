@@ -7,7 +7,7 @@ import com.lightning.wallet.ln.crypto.Sphinx
 import fr.acinq.eclair.UInt64
 import java.math.BigInteger
 
-import com.lightning.wallet.ln.{Hop, LightningException, PerHopPayload}
+import com.lightning.wallet.ln.{Hop, LightningException}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
@@ -152,13 +152,6 @@ object LightningMessageCodecs { me =>
 
   private val pong =
     varsizebinarydata withContext "data"
-
-  val channelReestablish =
-    (binarydata(32) withContext "channelId") ::
-      (uint64 withContext "nextLocalCommitmentNumber") ::
-      (uint64 withContext "nextRemoteRevocationNumber") ::
-      (optional(bool, scalar) withContext "yourLastPerCommitmentSecret") ::
-      (optional(bool, point) withContext "myCurrentPerCommitmentPoint")
 
   private val openChannel =
     (binarydata(32) withContext "chainHash") ::
@@ -327,14 +320,13 @@ object LightningMessageCodecs { me =>
     (constant(ByteVector fromByte 0) withContext "realm") ::
       (uint64 withContext "shortChannelId") ::
       (uint64 withContext "amtToForward") ::
-      (int32 withContext "outgoingCltv") ::
+      (uint32 withContext "outgoingCltv") ::
       (ignore(8 * 12) withContext "unusedWithV0VersionOnHeader")
 
   private val hop =
     (publicKey withContext "nodeId") ::
       (channelUpdateCodec withContext "lastUpdate")
 
-  val perHopPayloadCodec: Codec[PerHopPayload] = perHopPayload.as[PerHopPayload]
   val hopCodec: Codec[Hop] = hop.as[Hop]
 
   val lightningMessageCodec =
@@ -357,7 +349,6 @@ object LightningMessageCodecs { me =>
       .typecase(cr = revokeAndAck.as[RevokeAndAck], tag = 133)
       .typecase(cr = updateFee.as[UpdateFee], tag = 134)
       .typecase(cr = updateFailMalformedHtlc.as[UpdateFailMalformedHtlc], tag = 135)
-      .typecase(cr = channelReestablish.as[ChannelReestablish], tag = 136)
       .typecase(cr = channelAnnouncement.as[ChannelAnnouncement], tag = 256)
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
       .typecase(cr = channelUpdateCodec, tag = 258)
