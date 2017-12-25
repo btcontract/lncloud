@@ -37,7 +37,7 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 $ mongo
 
 > use olympus
-> db.spentTxs.createIndex( { "hex": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
 > db.spentTxs.createIndex( { "txids": 1 } )
 
 > db.scheduledTxs.createIndex( { "txid": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 14 } )
@@ -98,5 +98,5 @@ assembly
 
 10. Run Olympus instance by issuing:
 ```
-java -jar olympus-assembly-1.0.jar production "{\"privKey\":\"00000000000000000000000000000000000000000000000000000000000000000000000000000\",\"price\":{\"amount\":0},\"quantity\":0,\"btcApi\":\"http://foo:bar@127.0.0.1:18332\",\"zmqApi\":\"tcp://127.0.0.1:29000\",\"eclairApi\":\"http://127.0.0.1:8086\",\"eclairSockIp\":\"127.0.0.1\",\"eclairSockPort\":9096,\"eclairNodeId\":\"03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375\",\"rewindRange\":1008,\"checkByToken\":false}"
+java -jar olympus-assembly-1.0.jar production "{\"privKey\":\"00000000000000000000000000000000000000000000000000000000000000000000000000000\",\"price\":{\"amount\":0},\"quantity\":0,\"btcApi\":\"http://foo:bar@127.0.0.1:18332\",\"zmqApi\":\"tcp://127.0.0.1:29000\",\"eclairApi\":\"http://127.0.0.1:8080\",\"eclairSockIp\":\"127.0.0.1\",\"eclairSockPort\":9735,\"eclairNodeId\":\"03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375\",\"rewindRange\":1008,\"ip\":\"<your server ip>\",\"checkByToken\":false}"
 ```
