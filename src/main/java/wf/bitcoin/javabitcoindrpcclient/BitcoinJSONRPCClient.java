@@ -1790,6 +1790,11 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   @Override
+  public double getEstimateSmartFee(int nBlocks) throws BitcoinRpcException {
+    return mapDouble(((Map) query("estimatesmartfee", nBlocks)), "feerate");
+  }
+
+  @Override
   public double getEstimatePriority(int nBlocks) throws BitcoinRpcException {
     return ((Number) query("estimatepriority", nBlocks)).doubleValue();
   }
@@ -1802,7 +1807,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public void reconsiderBlock(String hash) throws BitcoinRpcException {
     query("reconsiderblock", hash);
-
   }
 
   private class PeerInfoWrapper extends MapWrapper implements PeerInfoResult, Serializable {
