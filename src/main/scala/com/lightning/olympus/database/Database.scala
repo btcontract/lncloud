@@ -15,7 +15,7 @@ abstract class Database {
   def keyExists(key: String): Boolean
 
   // Recording on-chain transactions
-  def putTx(txids: StringSeq, hex: String)
+  def putTx(txids: StringSeq, prefix: String, hex: String)
   def getTxs(txids: StringSeq): StringSeq
 
   // Scheduling txs to spend
@@ -43,9 +43,9 @@ class MongoDatabase extends Database {
   // For signature-based auth users need to save their keys in this collection
   def keyExists(key: String) = olympus("authKeys").findOne("key" $eq key).isDefined
 
-  def putTx(txids: StringSeq, hex: String) =
-    olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids, "hex" -> hex,
-      "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+  def putTx(txids: StringSeq, prefix: String, hex: String) =
+    olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids, "prefix" -> prefix,
+      "hex" -> hex, "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getTxs(txids: StringSeq) =
     olympus("spentTxs").find("txids" $in txids)

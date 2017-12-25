@@ -50,14 +50,14 @@ class ListenerManager(db: Database) {
     new BlockchainListener {
       override def onNewTx(twr: TransactionWithRaw) = {
         val inputs = twr.tx.txIn.map(_.outPoint.txid.toString)
-        db.putTx(inputs, twr.raw.toString)
+        db.putTx(inputs, twr.tx.txid.toString, twr.raw.toString)
       }
 
       override def onNewBlock(block: Block) = for {
         // We need to save which txids this one spends from
         // since clients will need this to extract preimages
 
-        txid <- block.tx.asScala
+        txid <- block.tx.asScala.par
         hex <- Try(bitcoin getRawTransactionHex txid)
         twr = TransactionWithRaw apply BinaryData(hex)
       } onNewTx(twr)
