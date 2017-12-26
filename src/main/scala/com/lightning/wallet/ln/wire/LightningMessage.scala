@@ -79,6 +79,6 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
                          flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage {
 
-  // A path consistes of channel updates, when returning paths to user we order them by cumulative score
-  lazy val score = math.log(cltvExpiryDelta) * math.log(feeBaseMsat) * math.log(feeProportionalMillionths)
+  // When returning paths to user we order them by cumulative score
+  lazy val score = cltvExpiryDelta * 10 + feeBaseMsat + feeProportionalMillionths
 }

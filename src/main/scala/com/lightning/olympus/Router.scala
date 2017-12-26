@@ -25,7 +25,7 @@ object Router { me =>
   type ShortChannelIdSet = Set[Long]
   type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIdSet]
   type CachedPathGraph = CachedAllDirectedPaths[PublicKey, ChanDirection]
-  var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 6)
+  var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 8)
   val black = mutable.Set.empty[PublicKey]
   val maps = new Mappings
 
