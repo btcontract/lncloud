@@ -58,7 +58,7 @@ object Router { me =>
     def safeFindPaths(ns: NodeIdSet, cs: ShortChannelIdSet, from: PublicKey, to: PublicKey) = Try {
       // First we check if we can use a cached graph to improve performance, then we return the most economic paths
       val res = if (ns.isEmpty && cs.isEmpty) findPaths(cached, from, to) else findPaths(refined(ns, cs), from, to)
-      res sortBy { hops: Vector[Hop] => hops.map(_.lastUpdate.score).sum } take 10
+      res sortBy { hops: Vector[Hop] => hops.map(_.lastUpdate.score).sum } take 8
     } getOrElse Nil
 
     private def findPaths(graph: CachedPathGraph, from: PublicKey, to: PublicKey) =

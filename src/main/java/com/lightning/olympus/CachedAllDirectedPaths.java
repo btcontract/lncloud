@@ -40,15 +40,12 @@ public class CachedAllDirectedPaths<V, E>
      * Create a new instance
      *
      * @param graph the input graph
+     * @throws IllegalArgumentException if the graph is not directed
      */
     public CachedAllDirectedPaths(Graph<V, E> graph)
     {
-        if (graph == null) {
-            throw new IllegalArgumentException("Graph cannot be null!");
-        }
-
+        this.graph = GraphTests.requireDirected(graph);
         this.cache = new HashMap<>();
-        this.graph = graph;
     }
 
     /**
@@ -212,6 +209,7 @@ public class CachedAllDirectedPaths<V, E>
          */
         List<GraphPath<V, E>> completePaths = new ArrayList<>();
         Deque<List<E>> incompletePaths = new LinkedList<>();
+        long limit = 10000;
 
         // Input sanity checking
         if (maxPathLength != null) {
@@ -226,7 +224,7 @@ public class CachedAllDirectedPaths<V, E>
         // Bootstrap the search with the source vertices
         for (V source : sourceVertices) {
             if (targetVertices.contains(source)) {
-                completePaths.add(new GraphWalk<>(graph, source, source, new ArrayList<>(), 0));
+                completePaths.add(GraphWalk.singletonWalk(graph, source, 0d));
             }
 
             for (E edge : graph.outgoingEdgesOf(source)) {
@@ -279,7 +277,13 @@ public class CachedAllDirectedPaths<V, E>
                         assert targetVertices.contains(completePath.getEndVertex());
                         assert (maxPathLength == null)
                                 || (completePath.getWeight() <= maxPathLength);
-                        completePaths.add(completePath);
+
+                        if (limit > 0)
+                            completePaths.add(completePath);
+                        else
+                            return completePaths;
+
+                        limit--;
                     }
 
                     // If this path is short enough, consider further
