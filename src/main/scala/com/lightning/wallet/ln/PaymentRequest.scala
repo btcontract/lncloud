@@ -8,7 +8,6 @@ import fr.acinq.eclair.crypto.BitStream._
 import com.lightning.wallet.ln.PaymentRequest._
 import com.lightning.wallet.ln.crypto.MultiStreamUtils._
 import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
-import com.lightning.wallet.ln.wire.ChannelUpdate
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
 import java.math.BigInteger
@@ -36,25 +35,29 @@ case class DescriptionHashTag(hash: BinaryData) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32 eight2five hash, 'h')
 }
 
-case class Hop(nodeId: PublicKey, lastUpdate: ChannelUpdate)
+case class Hop(nodeId: PublicKey, shortChannelId: Long,
+               cltvExpiryDelta: Int, htlcMinimumMsat: Long,
+               feeBaseMsat: Long, feeProportionalMillionths: Long) {
+
+  // When returning paths to user we order them by cumulative score, the lower the better
+  lazy val score = cltvExpiryDelta * 10 + feeBaseMsat + feeProportionalMillionths * 100
+}
+
 case class RoutingInfoTag(route: PaymentRoute) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32.eight2five(route flatMap pack), 'r')
-  def pack(hop: Hop) = aconcat(hop.nodeId.toBin.data.toArray, writeUInt64(hop.lastUpdate.shortChannelId, BIG_ENDIAN),
-    writeUInt32(hop.lastUpdate.feeBaseMsat, BIG_ENDIAN), writeUInt32(hop.lastUpdate.feeProportionalMillionths, BIG_ENDIAN),
-    writeUInt16(hop.lastUpdate.cltvExpiryDelta, BIG_ENDIAN).data.toArray)
+  def pack(hop: Hop) = aconcat(hop.nodeId.toBin.data.toArray, writeUInt64(hop.shortChannelId, BIG_ENDIAN),
+    writeUInt32(hop.feeBaseMsat, BIG_ENDIAN), writeUInt32(hop.feeProportionalMillionths, BIG_ENDIAN),
+    writeUInt16(hop.cltvExpiryDelta, BIG_ENDIAN).data.toArray)
 }
 
 object RoutingInfoTag {
   def parse(data: Int5Seq) = {
     val pubkey = data.slice(0, 33)
-    val shortChannelId = uint64(data.slice(33, 33 + 8), BIG_ENDIAN)
+    val shortChanId = uint64(data.slice(33, 33 + 8), BIG_ENDIAN)
     val feeBaseMsat = uint32(data.slice(33 + 8, 33 + 8 + 4), BIG_ENDIAN)
     val cltvExpiryDelta = uint16(data.slice(33 + 8 + 4 + 4, chunkLength), BIG_ENDIAN)
     val feeProportionalMillionths = uint32(data.slice(33 + 8 + 4, 33 + 8 + 4 + 4), BIG_ENDIAN)
-    val cu = ChannelUpdate(BinaryData("00"), BinaryData("00"), shortChannelId, System.currentTimeMillis / 1000L,
-      flags = BinaryData("0000"), cltvExpiryDelta, htlcMinimumMsat = 0L, feeBaseMsat, feeProportionalMillionths)
-
-    Hop(PublicKey(pubkey), cu)
+    Hop(PublicKey(pubkey), shortChanId, cltvExpiryDelta, 0L, feeBaseMsat, feeProportionalMillionths)
   }
 
   type PaymentRoute = Vector[Hop]

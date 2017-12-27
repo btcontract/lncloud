@@ -58,13 +58,13 @@ object Router { me =>
     def safeFindPaths(ns: NodeIdSet, cs: ShortChannelIdSet, from: PublicKey, to: PublicKey) = Try {
       // First we check if we can use a cached graph to improve performance, then we return the most economic paths
       val res = if (ns.isEmpty && cs.isEmpty) findPaths(cached, from, to) else findPaths(refined(ns, cs), from, to)
-      res sortBy { hops: Vector[Hop] => hops.map(_.lastUpdate.score).sum } take 8
+      res sortBy { hops: Vector[Hop] => hops.map(_.score).sum } take 8
     } getOrElse Nil
 
     private def findPaths(graph: CachedPathGraph, from: PublicKey, to: PublicKey) =
       for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
         for (direction <- path.getEdgeList.asScala.toVector) yield
-          Hop(direction.from, updates apply direction)
+          updates(direction) toHop direction.from
 
     private def refined(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
       val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)

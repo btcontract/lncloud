@@ -4,6 +4,7 @@ import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import com.lightning.wallet.ln.Tools.fromShortId
+import com.lightning.wallet.ln.{Hop, Tools}
 import fr.acinq.eclair.UInt64
 
 
@@ -12,12 +13,15 @@ trait RoutingMessage extends LightningMessage
 trait ChannelMessage extends LightningMessage
 
 case class Error(channelId: BinaryData, data: BinaryData) extends LightningMessage {
-  def explanation = s"Remote error, channelId: $channelId, " + new String(data.toArray)
+  Tools log s"Remote error, channelId: $channelId, " + new String(data.toArray, "UTF-8")
 }
 
 case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends LightningMessage
 case class Ping(pongLength: Int, data: BinaryData) extends LightningMessage
 case class Pong(data: BinaryData) extends LightningMessage
+
+case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long,
+                              nextRemoteRevocationNumber: Long) extends ChannelMessage
 
 case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long,
                        dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
@@ -79,6 +83,6 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
                          flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage {
 
-  // When returning paths to user we order them by cumulative score
-  lazy val score = cltvExpiryDelta * 10 + feeBaseMsat + feeProportionalMillionths
+  def toHop(nodeId: PublicKey) = Hop(nodeId, shortChannelId, cltvExpiryDelta,
+    htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
 }

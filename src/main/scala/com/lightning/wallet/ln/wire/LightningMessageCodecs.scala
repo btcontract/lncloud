@@ -7,8 +7,8 @@ import com.lightning.wallet.ln.crypto.Sphinx
 import fr.acinq.eclair.UInt64
 import java.math.BigInteger
 
-import com.lightning.wallet.ln.{Hop, LightningException}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import com.lightning.wallet.ln.{Hop, LightningException}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec, Err}
@@ -26,13 +26,13 @@ object LightningMessageCodecs { me =>
     serialize(lightningMessageCodec encode msg)
 
   def serialize(attempt: BitVectorAttempt) = attempt match {
-    case Attempt.Failure(some) => throw new LightningException
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
+    case Attempt.Failure(_) => throw new LightningException
   }
 
   def deserialize(raw: BinaryData): LightningMessage =
     lightningMessageCodec decode BitVector(raw.data) match {
-      case Attempt.Failure(some) => throw new LightningException
+      case Attempt.Failure(_) => throw new LightningException
       case Attempt.Successful(result) => result.value
     }
 
@@ -152,6 +152,11 @@ object LightningMessageCodecs { me =>
 
   private val pong =
     varsizebinarydata withContext "data"
+
+  val channelReestablish =
+    (binarydata(32) withContext "channelId") ::
+      (uint64 withContext "nextLocalCommitmentNumber") ::
+      (uint64 withContext "nextRemoteRevocationNumber")
 
   private val openChannel =
     (binarydata(32) withContext "chainHash") ::
@@ -311,22 +316,18 @@ object LightningMessageCodecs { me =>
       (uint32 withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths")
 
+  private val hop =
+    (publicKey withContext "nodeId") ::
+      (int64 withContext "shortChannelId") ::
+      (uint16 withContext "cltvExpiryDelta") ::
+      (uint64 withContext "htlcMinimumMsat") ::
+      (uint32 withContext "feeBaseMsat") ::
+      (uint32 withContext "feeProportionalMillionths")
+
   private val channelUpdate = (signature withContext "signature") :: channelUpdateWitness
   private val nodeAnnouncement = (signature withContext "signature") :: nodeAnnouncementWitness
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = nodeAnnouncement.as[NodeAnnouncement]
   val channelUpdateCodec: Codec[ChannelUpdate] = channelUpdate.as[ChannelUpdate]
-
-  private val perHopPayload =
-    (constant(ByteVector fromByte 0) withContext "realm") ::
-      (uint64 withContext "shortChannelId") ::
-      (uint64 withContext "amtToForward") ::
-      (uint32 withContext "outgoingCltv") ::
-      (ignore(8 * 12) withContext "unusedWithV0VersionOnHeader")
-
-  private val hop =
-    (publicKey withContext "nodeId") ::
-      (channelUpdateCodec withContext "lastUpdate")
-
   val hopCodec: Codec[Hop] = hop.as[Hop]
 
   val lightningMessageCodec =
@@ -349,6 +350,7 @@ object LightningMessageCodecs { me =>
       .typecase(cr = revokeAndAck.as[RevokeAndAck], tag = 133)
       .typecase(cr = updateFee.as[UpdateFee], tag = 134)
       .typecase(cr = updateFailMalformedHtlc.as[UpdateFailMalformedHtlc], tag = 135)
+      .typecase(cr = channelReestablish.as[ChannelReestablish], tag = 136)
       .typecase(cr = channelAnnouncement.as[ChannelAnnouncement], tag = 256)
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
       .typecase(cr = channelUpdateCodec, tag = 258)
