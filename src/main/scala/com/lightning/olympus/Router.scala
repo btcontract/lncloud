@@ -32,7 +32,7 @@ object Router { me =>
   case class Node2Channels(nodeMap: NodeChannelsMap) {
     lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
       // Relatively well connected nodes have a 0.1 chance to pop up
-      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 20
+      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 25
       if (popOutChance) (core, chanIds.size * 40) else (core, chanIds.size)
     }.sortWith(_._2 > _._2).map(_._1)
 
