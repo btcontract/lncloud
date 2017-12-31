@@ -209,7 +209,7 @@ public class CachedAllDirectedPaths<V, E>
          */
         List<GraphPath<V, E>> completePaths = new ArrayList<>();
         Deque<List<E>> incompletePaths = new LinkedList<>();
-        long limit = 10000;
+        long retryAttempts = 1000;
 
         // Input sanity checking
         if (maxPathLength != null) {
@@ -275,24 +275,17 @@ public class CachedAllDirectedPaths<V, E>
                         GraphPath<V, E> completePath = makePath(newPath);
                         assert sourceVertices.contains(completePath.getStartVertex());
                         assert targetVertices.contains(completePath.getEndVertex());
-                        assert (maxPathLength == null)
-                                || (completePath.getWeight() <= maxPathLength);
-
-                        if (limit > 0)
-                            completePaths.add(completePath);
-                        else
-                            return completePaths;
-
-                        limit--;
+                        assert (maxPathLength == null) || (completePath.getWeight() <= maxPathLength);
+                        if (completePaths.size() > 500) return completePaths;
+                        else completePaths.add(completePath);
                     }
 
-                    // If this path is short enough, consider further
-                    // extensions of it
+                    // If this path is short enough, consider further extensions of it
                     if ((maxPathLength == null) || (newPath.size() < maxPathLength)) {
-                        incompletePaths.addFirst(newPath); // We use
-                        // incompletePaths in
-                        // FIFO mode to avoid
-                        // memory blowup
+                        if (retryAttempts > 0) {
+                            incompletePaths.addFirst(newPath);
+                            retryAttempts--;
+                        }
                     }
                 }
             }
