@@ -17,15 +17,15 @@ import scala.util.Try
 
 
 class ListenerManager(db: Database) {
-  def connect = ConnectionManager requestConnection announce
+  def connect = ConnectionManager connectTo announce
   val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing source",
     new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
-    override def onMessage(msg: LightningMessage) = Router receive msg
-    override def onOperational(id: PublicKey, their: Init) = Tools log "Socket is operational"
-    override def onTerminalError(id: PublicKey) = ConnectionManager.connections.get(id).foreach(_.socket.close)
-    override def onDisconnect(id: PublicKey): Unit = Obs.just(Tools log "Restarting socket").delay(5.seconds)
+    override def onMessage(lightningMessage: LightningMessage) = Router receive lightningMessage
+    override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Socket is operational"
+    override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
+    override def onDisconnect(ann: NodeAnnouncement) = Obs.just(Tools log "Restarting socket").delay(5.seconds)
       .subscribe(_ => connect, _.printStackTrace)
   }
 

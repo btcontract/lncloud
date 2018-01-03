@@ -100,8 +100,6 @@ abstract class TransportHandler(keyPair: KeyPair, remotePubKey: BinaryData) exte
       doProcess(Ping)
 
     case _ =>
-      // Let know if received an unhandled message
-      Tools log s"TransportHandler: unhandled $change : $data"
   }
 }
 
