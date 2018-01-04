@@ -77,12 +77,12 @@ object ConnectionManager {
         lastPing = System.currentTimeMillis
 
       case _: Init => events onTerminalError ann
-      case theirMessage => events onMessage theirMessage
+      case _ => events onMessage message
     }
   }
 
-  Obs interval 2.minute foreach { _ =>
-    val outdated = System.currentTimeMillis - 1000 * 60 * 2
+  Obs interval 90.seconds foreach { _ =>
+    val outdated = System.currentTimeMillis - 1000 * 90
     for (work <- connections.values if work.lastPing < outdated)
       work.disconnect
   }
