@@ -1,17 +1,15 @@
 package com.lightning.olympus
 
+import spray.json._
 import com.lightning.wallet.ln._
 import collection.JavaConverters._
-import com.lightning.olympus.Utils._
-import org.json4s.jackson.JsonMethods._
-
+import spray.json.DefaultJsonProtocol._
 import rx.lang.scala.{Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import com.github.kevinsawicki.http.HttpRequest
 import com.lightning.olympus.crypto.ECBlindSign
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
-import org.json4s.jackson.Serialization
 import org.spongycastle.math.ec.ECPoint
 import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
@@ -32,16 +30,14 @@ class BlindTokens { me =>
   }
 
   def generateInvoice(price: MilliSatoshi): PaymentRequest = {
-    val params = Map("params" -> List(price.amount, "Storage tokens"), "method" -> "receive")
+    val content = s"""{ "params": [${price.amount}, "Storage tokens"], "method": "receive" }"""
     val request = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
-    val raw = parse(request.send(Serialization write params).body) \ "result"
-    PaymentRequest read raw.values.toString
+    PaymentRequest read request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
   }
 
   def isFulfilled(hash: BinaryData): Boolean = {
-    val params = Map("params" -> List(hash.toString), "method" -> "checkpayment")
+    val content = s"""{ "params": ["${hash.toString}"], "method": "checkpayment" }"""
     val request = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
-    val raw = parse(request.send(Serialization write params).body) \ "result"
-    raw.extract[Boolean]
+    request.send(content).body.parseJson.asJsObject.fields("result").convertTo[Boolean]
   }
 }

@@ -1,8 +1,8 @@
 package com.lightning.olympus
 
+import spray.json._
 import scala.concurrent.duration._
 import com.lightning.olympus.Utils._
-import org.json4s.jackson.JsonMethods._
 import rx.lang.scala.{Scheduler, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 
@@ -17,16 +17,13 @@ import java.math.BigInteger
 object Utils {
   var values: Vals = _
   type StringSeq = Seq[String]
-
-  implicit val formats = org.json4s.DefaultFormats
-  lazy val bitcoin = new javabitcoindrpcclient.BitcoinJSONRPCClient(values.btcApi)
   val hex2Ascii: String => String = raw => new String(HEX decode raw, "UTF-8")
+  lazy val bitcoin = new javabitcoindrpcclient.BitcoinJSONRPCClient(values.btcApi)
 
   implicit def string2PublicKey(raw: String): PublicKey = PublicKey(BinaryData apply raw)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
   def extract[T](src: Map[String, String], fn: String => T, args: String*): Seq[T] = args.map(src andThen fn)
-  def toClass[T : Manifest](raw: String): T = parse(raw, useBigDecimalForDouble = true).extract[T]
   def errLog: PartialFunction[Throwable, Unit] = { case err => Tools log err.getMessage }
 }
 
@@ -37,11 +34,12 @@ object JsonHttpUtils {
     Obs.just(null).delay(delayLeft.millis).flatMap(_ => next)
   }
 
-  def obsOn[T](provider: => T, scheduler: Scheduler): Obs[T] =
+  def obsOn[T](provider: => T, scheduler: Scheduler) =
     Obs.just(null).subscribeOn(scheduler).map(_ => provider)
 
   def pickInc(err: Throwable, next: Int) = next.seconds
-  def retry[T](obs: Obs[T], pick: (Throwable, Int) => Duration, times: Range): Obs[T] =
+  def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
+  def retry[T](obs: Obs[T], pick: (Throwable, Int) => Duration, times: Range) =
     obs.retryWhen(_.zipWith(Obs from times)(pick) flatMap Obs.timer)
 }
 

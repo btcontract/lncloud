@@ -13,8 +13,8 @@ val workaround = {
 libraryDependencies += "org.http4s" % "http4s-dsl_2.11" % "0.15.5"
 libraryDependencies += "org.http4s" % "http4s-blaze-server_2.11" % "0.15.5"
 libraryDependencies += "com.github.kevinsawicki" % "http-request" % "6.0"
-libraryDependencies += "org.json4s" % "json4s-jackson_2.11" % "3.5.3"
 libraryDependencies += "com.mdialog" % "scala-zeromq_2.11" % "1.1.1"
+libraryDependencies += "io.spray" % "spray-json_2.11" % "1.3.4"
 libraryDependencies += "org.zeromq" % "jeromq" % "0.3.6"
 
 // Mongo with logging

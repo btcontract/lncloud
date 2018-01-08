@@ -1,20 +1,24 @@
 package com.lightning.olympus
 
+import spray.json._
 import org.http4s.dsl._
+import fr.acinq.bitcoin._
 import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
+import spray.json.DefaultJsonProtocol._
 import scala.collection.JavaConverters._
+import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Transaction}
-import org.http4s.{HttpService, Response}
 
+import org.http4s.{HttpService, Response}
 import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
+import com.lightning.olympus.JsonHttpUtils.to
 import org.http4s.server.blaze.BlazeBuilder
 import com.lightning.wallet.ln.Tools.random
 import fr.acinq.bitcoin.Crypto.PublicKey
-import org.json4s.jackson.Serialization
+import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
@@ -33,7 +37,7 @@ object Olympus extends ServerApp {
           eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", ip = "127.0.0.1", checkByToken = true)
 
       case List("production", rawVals) =>
-        values = toClass[Vals](rawVals)
+        values = to[Vals](rawVals)
     }
 
     LNParams.setup(random getBytes 32)
@@ -46,12 +50,14 @@ object Olympus extends ServerApp {
 class Responder { me =>
   type TaskResponse = Task[Response]
   type HttpParams = Map[String, String]
+
+  implicit def js2Task(js: JsValue): TaskResponse = Ok(js.toString)
+  private val (bODY, oK, eRROR) = Tuple3("body", "ok", "error")
   private val exchangeRates = new ExchangeRates
   private val blindTokens = new BlindTokens
   private val feeRates = new FeeRates
   private val db = new MongoDatabase
   private val V1 = Root / "v1"
-  private val BODY = "body"
 
   // Watching chain and socket
   new ListenerManager(db).connect
@@ -67,13 +73,13 @@ class Responder { me =>
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
     case POST -> V1 / "blindtokens" / "info" => new ECKey(random) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
-      Ok apply ok(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
+      Tuple4(oK, blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity).toJson
     }
 
     // Record tokens and send an Invoice
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val prunedTokens = toClass[StringSeq](hex2Ascii apply tokens) take values.quantity
+      val prunedTokens = hex2Ascii andThen to[StringSeq] apply tokens take values.quantity
 
       val requestInvoice = for {
         pkItem <- blindTokens.cache get sesKey
@@ -81,12 +87,12 @@ class Responder { me =>
         blind = BlindData(request.paymentHash, pkItem.data, prunedTokens)
       } yield {
         db.putPendingTokens(blind, sesKey)
-        ok(PaymentRequest write request)
+        PaymentRequest write request
       }
 
       requestInvoice match {
-        case Some(invoice) => Ok apply invoice
-        case None => Ok apply error("notfound")
+        case Some(invoice) => Tuple2(oK, invoice).toJson
+        case None => Tuple2(eRROR, "notfound").toJson
       }
 
     // Provide signed blind tokens
@@ -99,23 +105,22 @@ class Responder { me =>
       } yield blindTokens sign blindData
 
       blindSignatures match {
-        case Some(sigs) => Ok apply ok(sigs:_*)
-        case None => Ok apply error("notfound")
+        case Some(sigs) => Tuple2(oK, sigs).toJson
+        case None => Tuple2(eRROR, "notfound").toJson
       }
 
     // ROUTER
 
     case req @ POST -> V1 / "router" / "routes"
       if Router.black.contains(req params "from") =>
-      Ok apply error("fromblacklisted")
+      Tuple2(eRROR, "fromblacklisted").toJson
 
     case req @ POST -> V1 / "router" / "routes" =>
-      val Seq(nodes, channels, from, to) = extract(req.params, identity, "nodes", "channels", "from", "to")
-      val withoutNodeIds = toClass[StringSeq](hex2Ascii apply nodes).toSet take 100 map string2PublicKey
-      val withoutShortChannelIds = toClass[ShortChannelIdSet](hex2Ascii apply channels).take(100)
-      val paths = Router.finder.safeFindPaths(withoutNodeIds, withoutShortChannelIds, from, to)
-      val encoded = for (hops <- paths) yield hops.map(hopCodec.encode(_).require.toHex)
-      Ok apply ok(encoded:_*)
+      val Seq(nodes, channels, x, y) = extract(req.params, identity, "nodes", "channels", "from", "to")
+      val noNodes = hex2Ascii andThen to[StringSeq] apply nodes take 100 map string2PublicKey
+      val noChans = hex2Ascii andThen to[ShortChannelIdSet] apply channels take 100
+      val paths = Router.finder.safeFindPaths(noNodes.toSet, noChans, x, y)
+      Tuple2(oK, paths).toJson
 
     case req @ POST -> V1 / "router" / "nodes" =>
       val query = req.params("query").trim.take(32).toLowerCase
@@ -126,61 +131,48 @@ class Responder { me =>
       // Json4s serializes tuples as maps while we need lists so we explicitly fix that here
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
       val sizes = announces.take(24).map(ann => Router.maps.nodeId2Chans.nodeMap(ann.nodeId).size)
-      val fixed = encoded zip sizes map { case enc \ size => enc :: size :: Nil }
-      Ok apply ok(fixed.toList:_*)
+      Tuple2(oK, encoded zip sizes).toJson
 
     // TRANSACTIONS
 
     case req @ POST -> V1 / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
-      val txids = req.params andThen hex2Ascii andThen toClass[StringSeq] apply "txids"
-      val spendTxs = db.getTxs(txids take 24)
-      Ok apply ok(spendTxs:_*)
+      val txIds = req.params andThen hex2Ascii andThen to[StringSeq] apply "txids" take 24
+      Tuple2(oK, db getTxs txIds).toJson
 
     case req @ POST -> V1 / "txs" / "schedule" => check.verify(req.params) {
-      val txs = req.params andThen hex2Ascii andThen toClass[StringSeq] apply BODY
+      val txs = req.params andThen hex2Ascii andThen to[StringSeq] apply bODY
       for (raw <- txs) db.putScheduled(Transaction read raw)
-      Ok apply ok("done")
+      Tuple2(oK, "done").toJson
     }
 
     // ARBITRARY DATA
 
     case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
-      val Seq(key, userDataHex) = extract(req.params, identity, "key", BODY)
+      val Seq(key, userDataHex) = extract(req.params, identity, "key", bODY)
       db.putData(key, prefix = userDataHex take 64, userDataHex)
-      Ok apply ok("done")
+      Tuple2(oK, "done").toJson
     }
 
     case req @ POST -> V1 / "data" / "get" =>
       val results = db.getData(req params "key")
-      Ok apply ok(results:_*)
+      Tuple2(oK, results).toJson
 
     // FEERATE AND EXCHANGE RATES
 
     case POST -> Root / _ / "rates" / "get" =>
-      val feeEstimates = feeRates.rates.mapValues(_ getOrElse 0)
-      val exchanges = exchangeRates.currencies.map(c => c.code -> c.average)
-      val processedExchanges = exchanges.toMap.mapValues(_ getOrElse 0)
-      val result = feeEstimates :: processedExchanges :: Nil
-      Ok apply ok(result)
+      val feesPerBlock = feeRates.rates.mapValues(_ getOrElse 0D).toSeq
+      val fiatRates = exchangeRates.currencies.map(c => c.code -> c.average)
+      Tuple3(oK, feesPerBlock, fiatRates).toJson
 
     case GET -> Root / _ / "rates" / "state" =>
       Ok(exchangeRates.displayState mkString "\r\n\r\n")
 
     // NEW VERSION WARNING AND TESTS
 
-    case req @ POST -> Root / _ / "check" => check.verify(req.params) {
-      // This is a test where we simply check if a user supplied data is ok
-      Ok apply ok("done")
-    }
-
-    case POST -> Root / "v2" / _ =>
-      Ok apply error("mustupdate")
+    case req @ POST -> Root / _ / "check" => check.verify(req.params)(Tuple2(oK, "done").toJson)
+    case POST -> Root / "v2" / _ => Tuple2(eRROR, "mustupdateolympus").toJson
   }
-
-  // HTTP answer as JSON array
-  def ok(data: Any*): String = Serialization write "ok" +: data
-  def error(data: Any*): String = Serialization write "error" +: data
 
   trait DataChecker {
     // Incoming data may be accepted either by signature or blind token
@@ -193,22 +185,22 @@ class Responder { me =>
       lazy val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
         clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
-      if (params(BODY).length > 250000) Ok apply error("bodytoolarge")
-      else if (db isClearTokenUsed cleartoken) Ok apply error("tokenused")
-      else if (!signatureIsFine) Ok apply error("tokeninvalid")
+      if (params(bODY).length > 250000) Tuple2(eRROR, "bodytoolarge").toJson
+      else if (db isClearTokenUsed cleartoken) Tuple2(eRROR, "tokenused").toJson
+      else if (!signatureIsFine) Tuple2(eRROR, "tokeninvalid").toJson
       else try next finally db putClearToken cleartoken
     }
   }
 
   class SignatureChecker extends DataChecker {
     def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(data, sig, pubkey) = extract(params, BinaryData.apply, BODY, "sig", "pubkey")
+      val Seq(data, sig, pubkey) = extract(params, BinaryData.apply, bODY, "sig", "pubkey")
       lazy val sigOk = Crypto.verifySignature(Crypto sha256 data, sig, PublicKey apply pubkey)
 
       val userPubKeyIsPresent = db keyExists pubkey.toString
-      if (params(BODY).length > 250000) Ok apply error("bodytoolarge")
-      else if (!userPubKeyIsPresent) Ok apply error("keynotfound")
-      else if (!sigOk) Ok apply error("siginvalid")
+      if (params(bODY).length > 250000) Tuple2(eRROR, "bodytoolarge").toJson
+      else if (!userPubKeyIsPresent) Tuple2(eRROR, "keynotfound").toJson
+      else if (!sigOk) Tuple2(eRROR, "siginvalid").toJson
       else next
     }
   }

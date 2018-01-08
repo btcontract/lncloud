@@ -4,7 +4,6 @@ import com.lightning.wallet.ln._
 import scala.collection.JavaConverters._
 import com.lightning.olympus.JsonHttpUtils._
 import org.knowm.xchange.currency.CurrencyPair._
-
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
 import rx.lang.scala.schedulers.IOScheduler
@@ -17,7 +16,6 @@ import org.knowm.xchange.bitfinex.v1.BitfinexExchange
 import org.knowm.xchange.bitstamp.BitstampExchange
 import org.knowm.xchange.paymium.PaymiumExchange
 import org.knowm.xchange.kraken.KrakenExchange
-import org.knowm.xchange.okcoin.OkCoinExchange
 import org.knowm.xchange.currency.CurrencyPair
 import org.knowm.xchange.quoine.QuoineExchange
 import org.knowm.xchange.gdax.GDAXExchange
@@ -34,15 +32,15 @@ class AveragePrice(val pair: CurrencyPair, val code: String) {
       exchangeInstance.getMarketDataService.getTicker(pair).getLast: BigDecimal
     }
 
-  def average: PriceTry = Try {
+  def average = Try {
     val recentPrices = history.values.flatMap(_.recentValue)
     recentPrices.map(_.get).sum / recentPrices.size
-  }
+  } getOrElse BigDecimal(0)
 
   class PriceHistory {
     var prices: List[PriceTry] = Nil
-    def add(item: PriceTry): Unit = prices = item :: prices take 5
-    def recentValue: Option[PriceTry] = prices.find(_.isSuccess)
+    def recentValue = prices.find(_.isSuccess)
+    def add(item: PriceTry) = prices = item :: prices take 5
   }
 }
 
@@ -60,13 +58,13 @@ class ExchangeRates {
   }
 
   val cny = new AveragePrice(BTC_CNY, "yuan") {
-    override val exchanges = classOf[OkCoinExchange].getName ::
-      classOf[BitcoinAverageExchange].getName :: Nil
+    override val exchanges = classOf[BitcoinAverageExchange].getName :: Nil
   }
 
   val jpy = new AveragePrice(BTC_JPY, "yen") {
-    override val exchanges = classOf[BitfinexExchange].getName :: classOf[KrakenExchange].getName ::
-      classOf[BitcoinAverageExchange].getName :: classOf[QuoineExchange].getName :: Nil
+    override val exchanges = classOf[KrakenExchange].getName ::
+      classOf[BitcoinAverageExchange].getName ::
+      classOf[QuoineExchange].getName :: Nil
   }
 
   def displayState = for {
