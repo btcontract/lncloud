@@ -73,7 +73,8 @@ class Responder { me =>
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
     case POST -> V1 / "blindtokens" / "info" => new ECKey(random) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
-      Tuple4(oK, blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity).toJson
+      val response = Tuple3(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
+      Tuple2(oK, response).toJson
     }
 
     // Record tokens and send an Invoice
@@ -161,9 +162,10 @@ class Responder { me =>
     // FEERATE AND EXCHANGE RATES
 
     case POST -> Root / _ / "rates" / "get" =>
-      val feesPerBlock = feeRates.rates.mapValues(_ getOrElse 0D).toSeq
-      val fiatRates = exchangeRates.currencies.map(c => c.code -> c.average)
-      Tuple3(oK, feesPerBlock, fiatRates).toJson
+      val feesPerBlock = for (k \ v <- feeRates.rates) yield (k.toString, v getOrElse 0D)
+      val fiatRates = for (cur <- exchangeRates.currencies) yield (cur.code, cur.average)
+      val response = Tuple2(feesPerBlock.toMap, fiatRates.toMap)
+      Tuple2(oK, response).toJson
 
     case GET -> Root / _ / "rates" / "state" =>
       Ok(exchangeRates.displayState mkString "\r\n\r\n")

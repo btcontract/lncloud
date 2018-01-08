@@ -56,16 +56,6 @@ object ImplicitJsonFormats { me =>
   implicit val milliSatoshiFmt = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "amount")
   implicit val satoshiFmt = jsonFormat[Long, Satoshi](Satoshi.apply, "amount")
 
-  // Payment request and tags
-
-  implicit object TagFmt extends JsonFormat[Tag] {
-    def read(json: JsValue): Tag = PaymentRequest.Tag parse json.convertTo[Bytes]
-    def write(internal: Tag): JsValue = internal.toInt5s.toJson
-  }
-
-  implicit val paymentRequestFmt = jsonFormat[String, Option[MilliSatoshi], Long, PublicKey, Vector[Tag], BinaryData,
-    PaymentRequest](PaymentRequest.apply, "prefix", "amount", "timestamp", "nodeId", "tags", "signature")
-
   implicit val valsFmt = jsonFormat[String, MilliSatoshi, Int, String, String, String, String, Int, String, Int, String, Boolean,
     Vals](Vals.apply, "privKey", "price", "quantity", "btcApi", "zmqApi", "eclairApi", "eclairSockIp", "eclairSockPort",
     "eclairNodeId", "rewindRange", "ip", "checkByToken")
