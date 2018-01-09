@@ -32,27 +32,6 @@ object Router { me =>
   val black = mutable.Set.empty[PublicKey]
   val maps = new Mappings
 
-  case class Node2Channels(nodeMap: NodeChannelsMap) {
-    lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
-      // Relatively well connected nodes have a 0.1 chance to pop up
-      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 50
-      if (popOutChance) (core, chanIds.size * 10) else (core, chanIds.size)
-    }.sortWith(_._2 > _._2).map(_._1)
-
-    def plusShortChannelId(info: ChanInfo) = {
-      nodeMap(info.ca.nodeId1) += info.ca.shortChannelId
-      nodeMap(info.ca.nodeId2) += info.ca.shortChannelId
-      Node2Channels(nodeMap)
-    }
-
-    def minusShortChannelId(info: ChanInfo) = {
-      nodeMap(info.ca.nodeId1) -= info.ca.shortChannelId
-      nodeMap(info.ca.nodeId2) -= info.ca.shortChannelId
-      val mapping1 = nodeMap.filter(_._2.nonEmpty)
-      Node2Channels(mapping1)
-    }
-  }
-
   case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate] = mutable.Map.empty) {
     // This class is intended to be fully replaced each time an update is disabled, outdated or added
 
@@ -132,6 +111,27 @@ object Router { me =>
       .find(info => info.ca.nodeId1 != info1.ca.nodeId1 || info.ca.nodeId2 != info.ca.nodeId2)
   }
 
+  case class Node2Channels(nodeMap: NodeChannelsMap) {
+    lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
+      // Relatively well connected nodes have a 0.1 chance to pop up
+      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 50
+      if (popOutChance) (core, chanIds.size * 10) else (core, chanIds.size)
+    }.sortWith(_._2 > _._2).map(_._1)
+
+    def plusShortChannelId(info: ChanInfo) = {
+      nodeMap(info.ca.nodeId1) += info.ca.shortChannelId
+      nodeMap(info.ca.nodeId2) += info.ca.shortChannelId
+      Node2Channels(nodeMap)
+    }
+
+    def minusShortChannelId(info: ChanInfo) = {
+      nodeMap(info.ca.nodeId1) -= info.ca.shortChannelId
+      nodeMap(info.ca.nodeId2) -= info.ca.shortChannelId
+      val mapping1 = nodeMap.filter(_._2.nonEmpty)
+      Node2Channels(mapping1)
+    }
+  }
+
   def receive(msg: LightningMessage) = me synchronized doReceive(msg)
   private def doReceive(message: LightningMessage): Unit = message match {
     case ca: ChannelAnnouncement if black.contains(ca.nodeId1) || black.contains(ca.nodeId2) => Tools log s"Blacklisted $ca"
@@ -192,7 +192,7 @@ object Router { me =>
   }
 
   // Channels may disappear without a closing on-chain so we must disable them if that happens
-  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 3600 * 24 * 5
+  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 3600 * 24 * 4
   private def outdatedInfos = finder.updates.values.filter(isOutdated).map(_.shortChannelId).map(maps.chanId2Info)
   Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
 }
