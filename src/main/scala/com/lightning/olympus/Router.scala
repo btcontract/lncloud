@@ -7,33 +7,36 @@ import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.googlecode.concurrenttrees.radix.node.concrete._
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
+import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
+import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import com.lightning.wallet.ln.Scripts.multiSig2of2
 import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.collection.mutable
-import scala.util.Try
 
-import com.lightning.wallet.ln.Tools.{wrap, random}
+import com.lightning.wallet.ln.Tools.{random, wrap}
 import fr.acinq.bitcoin.{BinaryData, Script}
 import rx.lang.scala.{Observable => Obs}
+import scala.util.{Success, Try}
 
 
 object Router { me =>
   type NodeIdSet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
+  type ChanInfos = Iterable[ChanInfo]
   type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIdSet]
-  type CachedPathGraph = CachedAllDirectedPaths[PublicKey, ChanDirection]
-  var finder = GraphFinder(mutable.Map.empty[ChanDirection, ChannelUpdate], 8)
+  private val chanDirectionClass = classOf[ChanDirection]
+  var finder = GraphFinder(mutable.Map.empty)
   val black = mutable.Set.empty[PublicKey]
   val maps = new Mappings
 
   case class Node2Channels(nodeMap: NodeChannelsMap) {
     lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
       // Relatively well connected nodes have a 0.1 chance to pop up
-      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 25
-      if (popOutChance) (core, chanIds.size * 40) else (core, chanIds.size)
+      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 50
+      if (popOutChance) (core, chanIds.size * 10) else (core, chanIds.size)
     }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChannelId(info: ChanInfo) = {
@@ -50,21 +53,25 @@ object Router { me =>
     }
   }
 
-  case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate], maxPathLength: Int) {
+  case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate] = mutable.Map.empty) {
     // This class is intended to be fully replaced each time an update is disabled, outdated or added
-    private lazy val cached: CachedPathGraph = refined(Set.empty, Set.empty)
-    private val chanDirectionClass = classOf[ChanDirection]
 
-    def safeFindPaths(ns: NodeIdSet, cs: ShortChannelIdSet, from: PublicKey, to: PublicKey) = Try {
-      // First we check if we can use a cached graph to improve performance, then we return the most economic paths
-      val res = if (ns.isEmpty && cs.isEmpty) findPaths(cached, from, to) else findPaths(refined(ns, cs), from, to)
-      res sortBy { hops: Vector[Hop] => hops.map(_.score).sum } take 8
-    } getOrElse Nil
+    def findPaths(ns: NodeIdSet, cs: ShortChannelIdSet, from: PublicKey, to: PublicKey,
+                  left: Int, acc: Vector[PaymentRoute] = Vector.empty): Vector[PaymentRoute] =
 
-    private def findPaths(graph: CachedPathGraph, from: PublicKey, to: PublicKey) =
-      for (path <- graph.getAllPaths(from, to, true, maxPathLength).asScala) yield
-        for (direction <- path.getEdgeList.asScala.toVector) yield
-          updates(direction) toHop direction.from
+      Try apply findPaths(refined(ns, cs), from, to) match {
+        case Success(paymentRoute) if paymentRoute.size > 2 && left > 0 =>
+          val nodesWithRemovedPeersPeer: NodeIdSet = ns + paymentRoute.tail.head.nodeId
+          findPaths(nodesWithRemovedPeersPeer, cs, from, to, left - 1, paymentRoute +: acc)
+
+        // Either no more attempts left or a failure
+        case Success(paymentRoute) => paymentRoute +: acc
+        case _ => acc
+      }
+
+    private def findPaths(graph: DefaultDirectedGraph[PublicKey, ChanDirection], from: PublicKey, to: PublicKey) =
+      for (direction <- DijkstraShortestPath.findPathBetween(graph, from, to).getEdgeList.asScala.toVector)
+        yield updates(direction) toHop direction.from
 
     private def refined(withoutNodes: NodeIdSet, withoutChannels: ShortChannelIdSet) = {
       val directedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
@@ -82,9 +89,7 @@ object Router { me =>
         if !withoutNodes.contains(direction.from)
         if !withoutNodes.contains(direction.to)
       } insert(direction)
-
-      // Paths without specified routes
-      new CachedPathGraph(directedGraph)
+      directedGraph
     }
   }
 
@@ -165,13 +170,12 @@ object Router { me =>
     case _ =>
   }
 
-  type ChanInfos = Iterable[ChanInfo]
   def complexRemove(infos: ChanInfos) = me synchronized {
     for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
     maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.nodeMap(_).isEmpty).values foreach maps.rmNode
-    finder = GraphFinder(finder.updates.filter(maps.chanId2Info contains _._1.channelId), finder.maxPathLength)
+    finder = GraphFinder apply finder.updates.filter(maps.chanId2Info contains _._1.channelId)
     Tools log s"Removed channels: $infos"
   }
 

@@ -117,10 +117,10 @@ class Responder { me =>
       Tuple2(eRROR, "fromblacklisted").toJson
 
     case req @ POST -> V1 / "router" / "routes" =>
-      val Seq(nodes, channels, x, y) = extract(req.params, identity, "nodes", "channels", "from", "to")
-      val noNodes = hex2Ascii andThen to[StringSeq] apply nodes take 100 map string2PublicKey
-      val noChans = hex2Ascii andThen to[ShortChannelIdSet] apply channels take 100
-      val paths = Router.finder.safeFindPaths(noNodes.toSet, noChans, x, y)
+      val Seq(nodes, channels, n1, n2) = extract(req.params, identity, "nodes", "channels", "from", "to")
+      val noNodes = hex2Ascii andThen to[StringSeq] apply nodes take 250 map string2PublicKey
+      val noChans = hex2Ascii andThen to[ShortChannelIdSet] apply channels take 500
+      val paths = Router.finder.findPaths(noNodes.toSet, noChans, n1, n2, 7)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> V1 / "router" / "nodes" =>
@@ -151,7 +151,7 @@ class Responder { me =>
 
     case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
       val Seq(key, userDataHex) = extract(req.params, identity, "key", bODY)
-      db.putData(key, prefix = userDataHex take 64, userDataHex)
+      db.putData(key, prefix = userDataHex take 32, userDataHex)
       Tuple2(oK, "done").toJson
     }
 
