@@ -43,6 +43,10 @@ object Router { me =>
           val nodesWithRemovedPeersPeer: NodeIdSet = ns + paymentRoute.tail.head.nodeId
           findPaths(nodesWithRemovedPeersPeer, cs, from, to, left - 1, paymentRoute +: acc)
 
+        case Success(paymentRoute) if paymentRoute.size <= 2 && left > 0 =>
+          val chansWithoutDirect: ShortChannelIdSet = cs + paymentRoute.head.shortChannelId
+          findPaths(ns, chansWithoutDirect, from, to, left - 1, paymentRoute +: acc)
+
         // Either no more attempts left or a failure
         case Success(paymentRoute) => paymentRoute +: acc
         case _ => acc
