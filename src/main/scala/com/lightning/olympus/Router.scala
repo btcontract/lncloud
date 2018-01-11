@@ -68,7 +68,7 @@ object Router { me =>
 
       for {
         direction <- updates.keys
-        if !withoutChannels.contains(direction.channelId)
+        if !withoutChannels.contains(direction.shortId)
         if !withoutNodes.contains(direction.from)
         if !withoutNodes.contains(direction.to)
       } insert(direction)
@@ -140,7 +140,7 @@ object Router { me =>
   private def doReceive(message: LightningMessage): Unit = message match {
     case ca: ChannelAnnouncement if black.contains(ca.nodeId1) || black.contains(ca.nodeId2) => Tools log s"Blacklisted $ca"
     case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"
-    case ca: ChannelAnnouncement => Blockchain getInfo ca map updateOrBlacklistChannel
+    case ca: ChannelAnnouncement => for (info <- Blockchain getInfo ca) updateOrBlacklistChannel(info)
 
     case node: NodeAnnouncement if black.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
@@ -179,7 +179,7 @@ object Router { me =>
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
     maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.nodeMap(_).isEmpty).values foreach maps.rmNode
-    finder = GraphFinder apply finder.updates.filter(maps.chanId2Info contains _._1.channelId)
+    finder = GraphFinder apply finder.updates.filter(maps.chanId2Info contains _._1.shortId)
     Tools log s"Removed channels: $infos"
   }
 
@@ -196,7 +196,7 @@ object Router { me =>
   }
 
   // Channels may disappear without a closing on-chain so we must disable them if that happens
-  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 3600 * 24 * 4
+  private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
   private def outdatedInfos = finder.updates.values.filter(isOutdated).map(_.shortChannelId).map(maps.chanId2Info)
   Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
 }

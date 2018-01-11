@@ -17,7 +17,7 @@ import zeromq.{SocketType, ZeroMQ}
 
 case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
 case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
-case class ChanDirection(channelId: Long, from: PublicKey, to: PublicKey)
+case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 
 trait BlockchainListener {
   def onNewBlock(block: Block): Unit = none
