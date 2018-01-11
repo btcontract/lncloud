@@ -82,16 +82,12 @@ class Responder { me =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
       val prunedTokens = hex2Ascii andThen to[StringSeq] apply tokens take values.quantity
 
-      val requestInvoice = for {
-        pkItem <- blindTokens.cache get sesKey
-        request = blindTokens generateInvoice values.price
-        blind = BlindData(request.paymentHash, pkItem.data, prunedTokens)
-      } yield {
+      blindTokens.cache get sesKey map { pkItem =>
+        val request = blindTokens generateInvoice values.price
+        val blind = BlindData(request.paymentHash, pkItem.data, prunedTokens)
         db.putPendingTokens(blind, sesKey)
         PaymentRequest write request
-      }
-
-      requestInvoice match {
+      } match {
         case Some(invoice) => Tuple2(oK, invoice).toJson
         case None => Tuple2(eRROR, "notfound").toJson
       }
@@ -167,11 +163,7 @@ class Responder { me =>
       val response = Tuple2(feesPerBlock.toMap, fiatRates.toMap)
       Tuple2(oK, response).toJson
 
-    case GET -> Root / _ / "rates" / "state" =>
-      Ok(exchangeRates.displayState mkString "\r\n\r\n")
-
-    // NEW VERSION WARNING AND TESTS
-
+    case GET -> Root / _ / "rates" / "state" => Ok(exchangeRates.displayState mkString "\r\n\r\n")
     case req @ POST -> Root / _ / "check" => check.verify(req.params)(Tuple2(oK, "done").toJson)
     case POST -> Root / "v2" / _ => Tuple2(eRROR, "mustupdateolympus").toJson
   }
