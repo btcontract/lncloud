@@ -116,10 +116,14 @@ object Router { me =>
   }
 
   case class Node2Channels(nodeMap: NodeChannelsMap) {
-    lazy val seq = nodeMap.toSeq.map { case core @ (_, chanIds) =>
-      // Relatively well connected nodes have a 0.1 chance to pop up
-      val popOutChance = random.nextDouble < 0.1D && chanIds.size > 50
-      if (popOutChance) (core, chanIds.size * 10) else (core, chanIds.size)
+    def between(v: Long, min: Long, max: Long) = v > min & v < max
+    // Relatively well connected nodes have a 0.1 chance to pop up
+    // Too big nodes have a 0.3 change to get dampened down
+
+    lazy val seq = nodeMap.toSeq.map {
+      case core @ (_, chanIds) if random.nextDouble < 0.3D && between(chanIds.size, 500, Long.MaxValue) => (core, chanIds.size / 10)
+      case core @ (_, chanIds) if random.nextDouble < 0.1D && between(chanIds.size, 50, 200) => (core, chanIds.size * 10)
+      case core @ (_, chanIds) => (core, chanIds.size)
     }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChannelId(info: ChanInfo) = {
