@@ -41,14 +41,14 @@ object Router { me =>
       Try apply findPaths(refined(ns, cs), from, to) match {
         case Success(paymentRoute) if paymentRoute.size > 2 && left > 0 =>
           val nodesWithRemovedPeersPeer: NodeIdSet = ns + paymentRoute.tail.head.nodeId
-          findPaths(nodesWithRemovedPeersPeer, cs, from, to, left - 1, paymentRoute +: acc)
+          findPaths(nodesWithRemovedPeersPeer, cs, from, to, left - 1, acc :+ paymentRoute)
 
         case Success(paymentRoute) if paymentRoute.size <= 2 && left > 0 =>
           val chansWithoutDirect: ShortChannelIdSet = cs + paymentRoute.head.shortChannelId
-          findPaths(ns, chansWithoutDirect, from, to, left - 1, paymentRoute +: acc)
+          findPaths(ns, chansWithoutDirect, from, to, left - 1, acc :+ paymentRoute)
 
         // Either no more attempts left or a failure
-        case Success(paymentRoute) => paymentRoute +: acc
+        case Success(paymentRoute) => acc :+ paymentRoute
         case _ => acc
       }
 
