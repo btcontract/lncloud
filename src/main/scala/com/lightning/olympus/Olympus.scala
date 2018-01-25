@@ -31,10 +31,16 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
+//        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
+//          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+//          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 7,
+//          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", ip = "127.0.0.1", checkByToken = true)
+
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 7,
-          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", ip = "127.0.0.1", checkByToken = true)
+          eclairApi = "http://127.0.0.1:8080", eclairSockIp = "127.0.0.1", eclairSockPort = 9735, rewindRange = 7,
+          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3", ip = "127.0.0.1", checkByToken = true)
+
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -152,8 +158,13 @@ class Responder { me =>
     }
 
     case req @ POST -> V1 / "data" / "get" =>
-      val results = db.getData(req params "key")
-      Tuple2(oK, results).toJson
+      // We need to return an error if results are empty here
+      // so client may use a failover server to get them again
+
+      db.getData(req params "key") match {
+        case Nil => Tuple2(eRROR, "notfound").toJson
+        case results => Tuple2(oK, results).toJson
+      }
 
     // FEERATE AND EXCHANGE RATES
 

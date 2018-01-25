@@ -66,7 +66,7 @@ class MongoDatabase extends Database {
     olympus("userData").update("prefix" $eq prefix, $set("key" -> key, "prefix" -> prefix,
       "data" -> data, "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
-  def getData(key: String) = {
+  def getData(key: String): List[String] = {
     val allResults = olympus("userData").find("key" $eq key)
     val firstOne = allResults sort DBObject("date" -> -1) take 1
     firstOne.map(_ as[String] "data").toList
