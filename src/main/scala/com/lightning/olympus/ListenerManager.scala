@@ -30,14 +30,7 @@ class ListenerManager(db: Database) {
   }
 
   Blockchain.listeners += new BlockchainListener {
-    override def onNewTx(twr: TransactionWithRaw) = for {
-      // We need to check if any input spends a channel output
-      // related payment channels should be removed
-
-      input <- twr.tx.txIn
-      chanInfo <- Router.maps.txId2Info get input.outPoint.txid
-      if chanInfo.ca.outputIndex == input.outPoint.index
-    } Router complexRemove Seq(chanInfo)
+    // Related channels should be removed from router
 
     override def onNewBlock(block: Block) = {
       val chanInfos = Router.maps.txId2Info.values
@@ -49,8 +42,8 @@ class ListenerManager(db: Database) {
   Blockchain.listeners +=
     new BlockchainListener {
       override def onNewTx(twr: TransactionWithRaw) = {
-        val inputs = twr.tx.txIn.map(_.outPoint.txid.toString)
-        db.putTx(inputs, twr.tx.txid.toString, twr.raw.toString)
+        val parents = twr.tx.txIn.map(_.outPoint.txid.toString)
+        db.putTx(parents, twr.tx.txid.toString, twr.raw.toString)
       }
 
       override def onNewBlock(block: Block) = for {
