@@ -48,7 +48,7 @@ $ mongo
 
 > use blindSignatures
 > db.blindTokens.createIndex( { "seskey": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 } )
-> "0123456789abcdefABCDEF".split('').forEach(function(v) { db["clearTokens" + v].createIndex( { "token": 1 }, { unique: true } ) })
+> "0123456789".split('').forEach(function(v) { db["clearTokens" + v].createIndex( { "token": 1 }, { unique: true } ) })
 ```
 
 6. Get Eclair fat JAR file, either by downloading it directly from a repository or by compiling from source:  
