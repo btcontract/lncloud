@@ -39,7 +39,7 @@ object Olympus extends ServerApp {
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
           eclairApi = "http://127.0.0.1:8080", eclairSockIp = "127.0.0.1", eclairSockPort = 9735, rewindRange = 7,
-          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3", ip = "127.0.0.1", checkByToken = true)
+          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3", ip = "127.0.0.1", checkByToken = false)
 
 
       case List("production", rawVals) =>
@@ -158,13 +158,8 @@ class Responder { me =>
     }
 
     case req @ POST -> V1 / "data" / "get" =>
-      // We need to return an error if results are empty here
-      // so client may use a failover server to get them again
-
-      db.getData(req params "key") match {
-        case Nil => Tuple2(eRROR, "notfound").toJson
-        case results => Tuple2(oK, results).toJson
-      }
+      val results = db.getData(req params "key")
+      Tuple2(oK, results).toJson
 
     // FEERATE AND EXCHANGE RATES
 

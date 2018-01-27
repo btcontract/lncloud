@@ -12,7 +12,6 @@ import rx.lang.scala.{Observable => Obs}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import com.lightning.olympus.database.Database
 import scala.concurrent.duration.DurationInt
-import fr.acinq.bitcoin.Crypto.PublicKey
 import scala.util.Try
 
 
