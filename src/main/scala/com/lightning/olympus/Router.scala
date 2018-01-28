@@ -1,7 +1,6 @@
 package com.lightning.olympus
 
 import com.lightning.wallet.ln._
-import com.softwaremill.quicklens._
 import com.lightning.olympus.Utils._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
@@ -28,12 +27,13 @@ object Router { me =>
   type ChanInfos = Iterable[ChanInfo]
   type NodeChannelsMap = mutable.Map[PublicKey, ShortChannelIdSet]
   private val chanDirectionClass = classOf[ChanDirection]
-  var finder = GraphFinder(mutable.Map.empty)
   val black = mutable.Set.empty[PublicKey]
+  var finder = GraphFinder(Map.empty)
   val maps = new Mappings
 
-  case class GraphFinder(updates: mutable.Map[ChanDirection, ChannelUpdate] = mutable.Map.empty) {
-    // This class is intended to be fully replaced each time an update is disabled, outdated or added
+  case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
+    // This class is intended to be fully replaced with an updated copy of graph map
+    // each time an existing deirection is disabled, outdated or added by an update
 
     def findPaths(ns: NodeIdSet, cs: ShortChannelIdSet, from: PublicKey, to: PublicKey,
                   left: Int, acc: Vector[PaymentRoute] = Vector.empty): Vector[PaymentRoute] =
@@ -159,7 +159,6 @@ object Router { me =>
 
     case cu: ChannelUpdate => try {
       val info = maps chanId2Info cu.shortChannelId
-      val isEnabled = Announcements isEnabled cu.flags
       val chanDirection = Announcements isNode1 cu.flags match {
         case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
@@ -168,23 +167,29 @@ object Router { me =>
       require(!black.contains(info.ca.nodeId1) & !black.contains(info.ca.nodeId2), s"Ignoring $cu")
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
       require(Announcements.checkSig(cu, chanDirection.from), s"Ignoring invalid signatures for $cu")
+      require(notProportionalOutlier(cu), s"Ignoring feeProportionalMillionths outlier $cu")
+      require(notBaseOutlier(cu), s"Ignoring feeBaseMsat outlier $cu")
 
-      // Removing and adding an update should replace a finder
-      if (!isEnabled) finder = finder.copy(updates = finder.updates - chanDirection)
-      else if (finder.updates contains chanDirection) finder.updates(chanDirection) = cu
-      else finder = finder.modify(_.updates) setTo finder.updates.updated(chanDirection, cu)
+      val updates1 =
+        // A node MAY create and send a channel_update with the disable bit set
+        if (Announcements isDisabled cu.flags) finder.updates - chanDirection
+        else finder.updates.updated(chanDirection, cu)
+
+      // Updaing should replace a finder
+      finder = finder.copy(updates = updates1)
     } catch errLog
 
     case _ =>
   }
 
-  def complexRemove(infos: ChanInfos) = me synchronized {
-    for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
+  def complexRemove(infos: ChanInfos, why: String) = me synchronized {
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
+
+    for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
     maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.nodeMap(_).isEmpty).values foreach maps.rmNode
     finder = GraphFinder apply finder.updates.filter(maps.chanId2Info contains _._1.shortId)
-    Tools log s"Removed channels: $infos"
+    Tools log s"$why: $infos"
   }
 
   private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
@@ -194,13 +199,38 @@ object Router { me =>
 
     maps.isBadChannel(info) map { compromised =>
       val toRemove = List(compromised.ca.nodeId1, compromised.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
-      complexRemove(toRemove.flatMap(maps.nodeId2Chans.nodeMap) map maps.chanId2Info)
+      complexRemove(toRemove.flatMap(maps.nodeId2Chans.nodeMap) map maps.chanId2Info, "Removed blacklisted")
       for (blackKey <- toRemove) yield black add blackKey
     } getOrElse maps.addChanInfo(info)
   }
 
-  // Channels may disappear without a closing on-chain so we must disable them if that happens
+  // At start these are true, updated later
+  var notBaseOutlier = (cu: ChannelUpdate) => true
+  var notProportionalOutlier = (cu: ChannelUpdate) => true
+  val baseFeeStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.feeBaseMsat.toDouble }
+  val proportionalFeeStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.feeProportionalMillionths.toDouble }
+
+  private def outlierInfos = {
+    // Update feeBaseMsat checker
+    val updates = finder.updates.values
+    val baseFeeMean = baseFeeStat mean updates
+    val baseFeeStdDev = math sqrt baseFeeStat.variance(updates, baseFeeMean)
+    notBaseOutlier = baseFeeStat.notOutlier(baseFeeMean, baseFeeStdDev, 2)
+
+    // Update feeProportionalMillionths checkes
+    val proportionalFeeMean = proportionalFeeStat mean updates
+    val proportionalFeeStdDev = math sqrt proportionalFeeStat.variance(updates, proportionalFeeMean)
+    notProportionalOutlier = proportionalFeeStat.notOutlier(proportionalFeeMean, proportionalFeeStdDev, 3)
+
+    // Filter out outliers
+    val baseOutliers = updates filterNot notBaseOutlier
+    val proportionalOutliers = updates filterNot notProportionalOutlier
+    (baseOutliers ++ proportionalOutliers).map(maps chanId2Info _.shortChannelId)
+  }
+
+  // Channels may disappear without a closing on-chain transaction so we must disable them once we detect that
   private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
-  private def outdatedInfos = finder.updates.values.filter(isOutdated).map(_.shortChannelId).map(maps.chanId2Info)
-  Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos), errLog)
+  private def outdatedInfos = finder.updates.values.filter(isOutdated).map(maps chanId2Info _.shortChannelId)
+  Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos, "Removed outdated channels"), errLog)
+  Obs.interval(2.minutes).foreach(_ => complexRemove(outlierInfos, "Removed outliers channels"), errLog)
 }

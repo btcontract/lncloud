@@ -65,7 +65,7 @@ object Announcements { me =>
   // A node MAY create and send a channel_update with the disable
   // bit set to signal the temporary unavailability of a channel
 
-  def isEnabled(flags: BinaryData) = !BitVector(flags.data).reverse.get(1)
+  def isDisabled(flags: BinaryData) = BitVector(flags.data).reverse.get(1)
 
   def makeFlags(isNode1: Boolean, enable: Boolean): BinaryData = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(16).toByteArray
   def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,

@@ -32,9 +32,8 @@ class ListenerManager(db: Database) {
     // Related channels should be removed from router
 
     override def onNewBlock(block: Block) = {
-      val chanInfos = Router.maps.txId2Info.values
-      val spent = chanInfos filter Blockchain.isSpent
-      if (spent.nonEmpty) Router complexRemove spent
+      val spent = Router.maps.txId2Info.values filter Blockchain.isSpent
+      if (spent.nonEmpty) Router.complexRemove(spent, "Removed spent channels")
     }
   }
 
