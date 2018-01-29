@@ -168,6 +168,7 @@ object Router { me =>
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
       require(Announcements.checkSig(cu, chanDirection.from), s"Ignoring invalid signatures for $cu")
       require(notProportionalOutlier(cu), s"Ignoring feeProportionalMillionths outlier $cu")
+      require(notDeltaCltvOutlier(cu), s"Ignoring cltvExpiryDelta outlier $cu")
       require(notBaseOutlier(cu), s"Ignoring feeBaseMsat outlier $cu")
 
       val updates1 =
@@ -207,30 +208,43 @@ object Router { me =>
   // At start these are true, updated later
   var notBaseOutlier = (cu: ChannelUpdate) => true
   var notProportionalOutlier = (cu: ChannelUpdate) => true
+  var notDeltaCltvOutlier = (cu: ChannelUpdate) => true
+
   val baseFeeStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.feeBaseMsat.toDouble }
   val proportionalFeeStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.feeProportionalMillionths.toDouble }
+  val deltaCltvStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.cltvExpiryDelta.toDouble }
 
   private def outlierInfos = {
     // Update feeBaseMsat checker
     val updates = finder.updates.values
     val baseFeeMean = baseFeeStat mean updates
     val baseFeeStdDev = math sqrt baseFeeStat.variance(updates, baseFeeMean)
-    notBaseOutlier = baseFeeStat.notOutlier(baseFeeMean, baseFeeStdDev, 2)
+    notBaseOutlier = baseFeeStat.notOutlier(baseFeeMean, baseFeeStdDev, 3)
 
     // Update feeProportionalMillionths checkes
     val proportionalFeeMean = proportionalFeeStat mean updates
     val proportionalFeeStdDev = math sqrt proportionalFeeStat.variance(updates, proportionalFeeMean)
-    notProportionalOutlier = proportionalFeeStat.notOutlier(proportionalFeeMean, proportionalFeeStdDev, 3)
+    notProportionalOutlier = proportionalFeeStat.notOutlier(proportionalFeeMean, proportionalFeeStdDev, 4)
+
+    // Update cltvExpiryDelta checks
+    val cltvExpiryDeltaMean = deltaCltvStat mean updates
+    val cltvExpiryDeltaStdDev = math sqrt deltaCltvStat.variance(updates, cltvExpiryDeltaMean)
+    notDeltaCltvOutlier = deltaCltvStat.notOutlier(cltvExpiryDeltaMean, cltvExpiryDeltaStdDev, 4)
 
     // Filter out outliers
     val baseOutliers = updates filterNot notBaseOutlier
     val proportionalOutliers = updates filterNot notProportionalOutlier
-    (baseOutliers ++ proportionalOutliers).map(maps chanId2Info _.shortChannelId)
+    val cltvExpiryDeltaOutliers = updates filterNot notDeltaCltvOutlier
+    val all = baseOutliers ++ proportionalOutliers ++ cltvExpiryDeltaOutliers
+    all.map(maps chanId2Info _.shortChannelId)
   }
 
   // Channels may disappear without a closing on-chain transaction so we must disable them once we detect that
   private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
   private def outdatedInfos = finder.updates.values.filter(isOutdated).map(maps chanId2Info _.shortChannelId)
-  Obs.interval(12.hours).foreach(_ => complexRemove(outdatedInfos, "Removed outdated channels"), errLog)
-  Obs.interval(2.minutes).foreach(_ => complexRemove(outlierInfos, "Removed outliers channels"), errLog)
+
+  Obs.interval(10.minutes) foreach { _ =>
+    complexRemove(outdatedInfos, "Removed outdated channels")
+    complexRemove(outlierInfos, "Removed outlier channels")
+  }
 }
