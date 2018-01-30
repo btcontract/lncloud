@@ -46,7 +46,8 @@ object Blockchain { me =>
 
   def isSpent(chanInfo: ChanInfo) = Try {
     // Absent output tx means it has been spent already
-    bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex)
+    // attempting to get confirmations out of null result will fail here
+    bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex).confirmations
   }.isFailure
 
   def isParentDeepEnough(txid: String) = Try {

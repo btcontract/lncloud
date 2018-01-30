@@ -28,12 +28,20 @@ class ListenerManager(db: Database) {
       .subscribe(_ => connect, _.printStackTrace)
   }
 
+  val rmSpent = "Removed spent channels"
   Blockchain.listeners += new BlockchainListener {
-    // Related channels should be removed from router
+    override def onNewTx(twr: TransactionWithRaw) = for {
+      // We need to check if any input spends a channel output
+      // related payment channels should be removed
+
+      input <- twr.tx.txIn
+      chanInfo <- Router.maps.txId2Info get input.outPoint.txid
+      if chanInfo.ca.outputIndex == input.outPoint.index
+    } Router.complexRemove(chanInfo :: Nil, rmSpent)
 
     override def onNewBlock(block: Block) = {
       val spent = Router.maps.txId2Info.values filter Blockchain.isSpent
-      if (spent.nonEmpty) Router.complexRemove(spent, "Removed spent channels")
+      if (spent.nonEmpty) Router.complexRemove(spent, rmSpent)
     }
   }
 
@@ -48,7 +56,7 @@ class ListenerManager(db: Database) {
         // We need to save which txids this one spends from
         // since clients will need this to extract preimages
 
-        txid <- block.tx.asScala.par
+        txid <- block.tx.asScala
         hex <- Try(bitcoin getRawTransactionHex txid)
         twr = TransactionWithRaw apply BinaryData(hex)
       } onNewTx(twr)
