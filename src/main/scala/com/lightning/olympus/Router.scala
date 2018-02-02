@@ -171,8 +171,6 @@ object Router { me =>
       require(notDeltaCltvOutlier(cu), s"Ignoring cltvExpiryDelta outlier $cu")
       require(notBaseOutlier(cu), s"Ignoring feeBaseMsat outlier $cu")
 
-      println(cu)
-
       val updates1 =
         // A node MAY create and send a channel_update with the disable bit set
         if (Announcements isDisabled cu.flags) finder.updates - chanDirection

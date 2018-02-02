@@ -22,11 +22,10 @@ object ConnectionManager {
   val listeners = mutable.Set.empty[ConnectionListener]
 
   protected[this] val events = new ConnectionListener {
-    override def onDisconnect(ann: NodeAnnouncement) = for (lst <- listeners) lst.onDisconnect(ann)
-    override def onMessage(message: LightningMessage) = for (lst <- listeners) lst.onMessage(message)
+    override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = for (lst <- listeners) lst.onMessage(ann, msg)
+    override def onOperational(ann: NodeAnnouncement, their: Init) = for (lst <- listeners) lst.onOperational(ann, their)
     override def onTerminalError(ann: NodeAnnouncement) = for (lst <- listeners) lst.onTerminalError(ann)
-    override def onOperational(ann: NodeAnnouncement, their: Init) =
-      for (lst <- listeners) lst.onOperational(ann, their)
+    override def onDisconnect(ann: NodeAnnouncement) = for (lst <- listeners) lst.onDisconnect(ann)
   }
 
   def connectTo(a: NodeAnnouncement) = connections get a match {
@@ -66,18 +65,25 @@ object ConnectionManager {
     work onComplete { _ => events onDisconnect ann }
     def disconnect = try socket.close catch none
 
-    // Some messages need a special handling so we intercept
-    def intercept(message: LightningMessage) = message match {
-      case their: Init if areSupported(their.localFeatures) =>
-        events.onOperational(ann, their)
-        savedInit = their
 
-      case ping: Ping if ping.pongLength > 0 =>
-        handler process Pong("00" * ping.pongLength)
-        lastPing = System.currentTimeMillis
+    def intercept(message: LightningMessage) = {
+      // Some incoming messages need special handling
+      // also update ping counter on every message
+      lastPing = System.currentTimeMillis
 
-      case _: Init => events onTerminalError ann
-      case _ => events onMessage message
+      message match {
+        case their: Init if areSupported(their.localFeatures) =>
+          // We need to save their Init in case of repeated requests
+          events.onOperational(ann, their)
+          savedInit = their
+
+        case ping: Ping if ping.pongLength > 0 =>
+          val response = Pong("00" * ping.pongLength)
+          handler process response
+
+        case _: Init => events.onTerminalError(ann)
+        case _ => events.onMessage(ann, message)
+      }
     }
   }
 
@@ -89,8 +95,8 @@ object ConnectionManager {
 }
 
 class ConnectionListener {
+  def onMessage(ann: NodeAnnouncement, msg: LightningMessage): Unit = none
   def onOperational(ann: NodeAnnouncement, their: Init): Unit = none
   def onTerminalError(ann: NodeAnnouncement): Unit = none
   def onDisconnect(ann: NodeAnnouncement): Unit = none
-  def onMessage(msg: LightningMessage): Unit = none
 }

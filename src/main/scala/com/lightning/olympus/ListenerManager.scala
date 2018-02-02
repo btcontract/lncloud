@@ -21,7 +21,7 @@ class ListenerManager(db: Database) {
     new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
-    override def onMessage(lightningMessage: LightningMessage) = Router receive lightningMessage
+    override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg
     override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Socket is operational"
     override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
     override def onDisconnect(ann: NodeAnnouncement) = Obs.just(Tools log "Restarting socket").delay(5.seconds)
