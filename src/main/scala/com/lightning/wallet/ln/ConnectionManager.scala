@@ -10,7 +10,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import com.lightning.wallet.ln.LNParams.nodePrivateKey
 import com.lightning.wallet.ln.crypto.Noise.KeyPair
 import fr.acinq.bitcoin.BinaryData
-import scala.collection.mutable
 import scala.concurrent.Future
 import java.net.Socket
 
@@ -18,8 +17,8 @@ import java.net.Socket
 object ConnectionManager {
   val pair = KeyPair(nodePrivateKey.publicKey, nodePrivateKey.toBin)
   val ourInit = Init(LNParams.globalFeatures, LNParams.localFeatures)
-  val connections = mutable.Map.empty[NodeAnnouncement, Worker]
-  val listeners = mutable.Set.empty[ConnectionListener]
+  var connections = Map.empty[NodeAnnouncement, Worker]
+  var listeners = Set.empty[ConnectionListener]
 
   protected[this] val events = new ConnectionListener {
     override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = for (lst <- listeners) lst.onMessage(ann, msg)
@@ -33,8 +32,10 @@ object ConnectionManager {
       if (null == existingWorker.savedInit) existingWorker.disconnect
       else events.onOperational(a, existingWorker.savedInit)
 
-    // Either disconnected or no worker at all
-    case _ => connections(a) = new Worker(a)
+    case _ =>
+      val newWorker = new Worker(a)
+      // Either disconnected or no worker at all yet
+      connections = connections.updated(a, newWorker)
   }
 
   class Worker(ann: NodeAnnouncement) {
