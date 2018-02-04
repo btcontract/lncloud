@@ -168,9 +168,6 @@ object Router { me =>
       require(!black.contains(info.ca.nodeId1) & !black.contains(info.ca.nodeId2), s"Ignoring $cu")
       require(finder.updates.get(chanDirection).forall(_.timestamp < cu.timestamp), s"Outdated $cu")
       require(Announcements.checkSig(cu, chanDirection.from), s"Ignoring invalid signatures for $cu")
-      require(notProportionalOutlier(cu), s"Ignoring feeProportionalMillionths outlier $cu")
-      require(notDeltaCltvOutlier(cu), s"Ignoring cltvExpiryDelta outlier $cu")
-      require(notBaseOutlier(cu), s"Ignoring feeBaseMsat outlier $cu")
 
       val updates1 =
         // A node MAY create and send a channel_update with the disable bit set
@@ -206,46 +203,11 @@ object Router { me =>
     } getOrElse maps.addChanInfo(info)
   }
 
-  // At start these are true, updated later
-  var notBaseOutlier = (cu: ChannelUpdate) => true
-  var notProportionalOutlier = (cu: ChannelUpdate) => true
-  var notDeltaCltvOutlier = (cu: ChannelUpdate) => true
-
-  val baseFeeStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.feeBaseMsat.toDouble }
-  val proportionalFeeStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.feeProportionalMillionths.toDouble }
-  val deltaCltvStat = new Statistics[ChannelUpdate] { def extract(item: ChannelUpdate) = item.cltvExpiryDelta.toDouble }
-
-  def outlierInfos = {
-    // Update feeBaseMsat checker
-    val updates = finder.updates.values
-    val baseFeeMean = baseFeeStat mean updates
-    val baseFeeStdDev = math sqrt baseFeeStat.variance(updates, baseFeeMean)
-    notBaseOutlier = baseFeeStat.notOutlier(baseFeeMean, baseFeeStdDev, 4)
-
-    // Update feeProportionalMillionths checkes
-    val proportionalFeeMean = proportionalFeeStat mean updates
-    val proportionalFeeStdDev = math sqrt proportionalFeeStat.variance(updates, proportionalFeeMean)
-    notProportionalOutlier = proportionalFeeStat.notOutlier(proportionalFeeMean, proportionalFeeStdDev, 6)
-
-    // Update cltvExpiryDelta checks
-    val cltvExpiryDeltaMean = deltaCltvStat mean updates
-    val cltvExpiryDeltaStdDev = math sqrt deltaCltvStat.variance(updates, cltvExpiryDeltaMean)
-    notDeltaCltvOutlier = deltaCltvStat.notOutlier(cltvExpiryDeltaMean, cltvExpiryDeltaStdDev, 6)
-
-    // Filter out outliers
-    val baseOutliers = updates filterNot notBaseOutlier
-    val proportionalOutliers = updates filterNot notProportionalOutlier
-    val cltvExpiryDeltaOutliers = updates filterNot notDeltaCltvOutlier
-    val all = baseOutliers ++ proportionalOutliers ++ cltvExpiryDeltaOutliers
-    all.map(maps chanId2Info _.shortChannelId)
-  }
-
-  // Channels may disappear without a closing on-chain transaction
   def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
   def outdatedInfos = finder.updates.values.filter(isOutdated).map(maps chanId2Info _.shortChannelId)
 
   Obs.interval(10.minutes) foreach { _ =>
+    // Channels may disappear without an on-chain transaction
     complexRemove(outdatedInfos, "Removed outdated channels")
-    complexRemove(outlierInfos, "Removed outlier channels")
   }
 }
