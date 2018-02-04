@@ -244,7 +244,7 @@ object Router { me =>
   private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
   private def outdatedInfos = finder.updates.values.filter(isOutdated).map(maps chanId2Info _.shortChannelId)
 
-  Obs.interval(2.minutes) foreach { _ =>
+  Obs.interval(10.minutes) foreach { _ =>
     complexRemove(outdatedInfos, "Removed outdated channels")
     complexRemove(outlierInfos, "Removed outlier channels")
   }
