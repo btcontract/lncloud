@@ -116,13 +116,14 @@ object Router { me =>
   }
 
   case class Node2Channels(nodeMap: NodeChannelsMap) {
-    def between(v: Long, min: Long, max: Long) = v > min & v < max
-    // Relatively well connected nodes have a 0.1 chance to pop up
-    // Too big nodes have a 0.3 change to get dampened down
+    // Too big nodes have a 30% change to get dampened down
+    // Relatively well connected nodes have a 10% chance to pop up
+    def between(size: Long, min: Long, max: Long, chance: Double) =
+      random.nextDouble < chance && size > min & size < max
 
     lazy val seq = nodeMap.toSeq.map {
-      case core @ (_, chanIds) if random.nextDouble < 0.3D && between(chanIds.size, 500, Long.MaxValue) => (core, chanIds.size / 10)
-      case core @ (_, chanIds) if random.nextDouble < 0.1D && between(chanIds.size, 50, 200) => (core, chanIds.size * 10)
+      case core @ (_, chanIds) if between(chanIds.size, 500, Long.MaxValue, 0.3D) => (core, chanIds.size / 10)
+      case core @ (_, chanIds) if between(chanIds.size, 50, 200, 0.1D) => (core, chanIds.size * 10)
       case core @ (_, chanIds) => (core, chanIds.size)
     }.sortWith(_._2 > _._2).map(_._1)
 
@@ -190,7 +191,7 @@ object Router { me =>
     for (chanInfoToRemove <- infos) maps rmChanInfo chanInfoToRemove
     maps.nodeId2Announce.filterKeys(maps.nodeId2Chans.nodeMap(_).isEmpty).values foreach maps.rmNode
     finder = GraphFinder apply finder.updates.filter(maps.chanId2Info contains _._1.shortId)
-    Tools log s"$why: $infos"
+    Tools log s"$why: ${infos.size}"
   }
 
   private def updateOrBlacklistChannel(info: ChanInfo): Unit = {
@@ -219,17 +220,17 @@ object Router { me =>
     val updates = finder.updates.values
     val baseFeeMean = baseFeeStat mean updates
     val baseFeeStdDev = math sqrt baseFeeStat.variance(updates, baseFeeMean)
-    notBaseOutlier = baseFeeStat.notOutlier(baseFeeMean, baseFeeStdDev, 3)
+    notBaseOutlier = baseFeeStat.notOutlier(baseFeeMean, baseFeeStdDev, 30)
 
     // Update feeProportionalMillionths checkes
     val proportionalFeeMean = proportionalFeeStat mean updates
     val proportionalFeeStdDev = math sqrt proportionalFeeStat.variance(updates, proportionalFeeMean)
-    notProportionalOutlier = proportionalFeeStat.notOutlier(proportionalFeeMean, proportionalFeeStdDev, 4)
+    notProportionalOutlier = proportionalFeeStat.notOutlier(proportionalFeeMean, proportionalFeeStdDev, 40)
 
     // Update cltvExpiryDelta checks
     val cltvExpiryDeltaMean = deltaCltvStat mean updates
     val cltvExpiryDeltaStdDev = math sqrt deltaCltvStat.variance(updates, cltvExpiryDeltaMean)
-    notDeltaCltvOutlier = deltaCltvStat.notOutlier(cltvExpiryDeltaMean, cltvExpiryDeltaStdDev, 4)
+    notDeltaCltvOutlier = deltaCltvStat.notOutlier(cltvExpiryDeltaMean, cltvExpiryDeltaStdDev, 40)
 
     // Filter out outliers
     val baseOutliers = updates filterNot notBaseOutlier
@@ -243,7 +244,7 @@ object Router { me =>
   private def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
   private def outdatedInfos = finder.updates.values.filter(isOutdated).map(maps chanId2Info _.shortChannelId)
 
-  Obs.interval(10.minutes) foreach { _ =>
+  Obs.interval(2.minutes) foreach { _ =>
     complexRemove(outdatedInfos, "Removed outdated channels")
     complexRemove(outlierInfos, "Removed outlier channels")
   }
