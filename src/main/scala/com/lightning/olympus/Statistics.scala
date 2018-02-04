@@ -12,5 +12,6 @@ abstract class Statistics[O] {
   } / items.size
 
   def notOutlier(mu: Double, sd: Double, stdDevs: Double)(item: O) =
-    extract(item) >= mu - sd * stdDevs && extract(item) <= mu + sd * stdDevs
+    // We only check for upper bound here thus favoring lower values
+    extract(item) <= mu + sd * stdDevs
 }
