@@ -35,13 +35,8 @@ case class DescriptionHashTag(hash: BinaryData) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32 eight2five hash, 'h')
 }
 
-case class Hop(nodeId: PublicKey, shortChannelId: Long,
-               cltvExpiryDelta: Int, htlcMinimumMsat: Long,
-               feeBaseMsat: Long, feeProportionalMillionths: Long) {
-
-  // When returning paths to user we order them by cumulative score, the lower the better
-  lazy val score = cltvExpiryDelta * 10 + feeBaseMsat + feeProportionalMillionths * 100
-}
+case class Hop(nodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,
+               htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long)
 
 case class RoutingInfoTag(route: PaymentRoute) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32.eight2five(route flatMap pack), 'r')
@@ -86,8 +81,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta }
   lazy val paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
-  // Amount MUST be present if this is an outgoing payment
-  lazy val finalSum = amount.get
 
   def isFresh: Boolean = {
     val expiry = tags.collectFirst { case ex: ExpiryTag => ex.seconds }
@@ -121,14 +114,12 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
   type Int5Seq = Seq[Int5]
-
-  def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
-            privateKey: PrivateKey, description: String, fallbackAddress: Option[String],
-            extra: PaymentRoute): PaymentRequest = {
+  def apply(chain: BinaryData, amount: Option[MilliSatoshi],
+            paymentHash: BinaryData, privateKey: PrivateKey, description: String,
+            fallbackAddress: Option[String], extra: PaymentRoute): PaymentRequest = {
 
     val paymentHashTag = PaymentHashTag(paymentHash)
-    val expirySeconds = if (amount.isDefined) 3600 * 6 else 3600 * 24 * 365 * 5
-    val tags = Vector(DescriptionTag(description), ExpiryTag(expirySeconds), paymentHashTag)
+    val tags = Vector(DescriptionTag(description), ExpiryTag(3600 * 6), paymentHashTag)
     PaymentRequest(getPrefix(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey,
       if (extra.isEmpty) tags else RoutingInfoTag(extra) +: tags, BinaryData.empty) sign privateKey
   }
@@ -169,7 +160,7 @@ object PaymentRequest {
   object Timestamp {
     def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
     def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
-      else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
+    else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {
