@@ -6,23 +6,26 @@ import fr.acinq.bitcoin._
 import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
 import spray.json.DefaultJsonProtocol._
+
 import scala.collection.JavaConverters._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-
 import org.http4s.{HttpService, Response}
-import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.JsonHttpUtils.to
 import org.http4s.server.blaze.BlazeBuilder
 import com.lightning.wallet.ln.Tools.random
 import fr.acinq.bitcoin.Crypto.PublicKey
+
 import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
+
 import scalaz.concurrent.Task
 import java.math.BigInteger
+
+import com.lightning.olympus.Router.ShortChannelIdSet
 
 
 object Olympus extends ServerApp {
@@ -33,7 +36,7 @@ object Olympus extends ServerApp {
       case List("testrun") =>
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 7,
+          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
           eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", ip = "127.0.0.1", checkByToken = true)
 
 //        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
@@ -86,7 +89,7 @@ class Responder { me =>
     // Record tokens and send an Invoice
     case req @ POST -> V1 / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val pruned = hex2Ascii andThen to[StringSeq] apply tokens take values.quantity
+      val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.quantity
 
       blindTokens.cache get sesKey map { item =>
         val request = blindTokens generateInvoice values.price
@@ -115,32 +118,33 @@ class Responder { me =>
     // ROUTER
 
     case req @ POST -> V1 / "router" / "routes" =>
-      val Seq(nodes, channels, n1, n2) = extract(req.params, identity, "nodes", "channels", "from", "to")
-      val noNodes = hex2Ascii andThen to[StringSeq] apply nodes take 250 map string2PublicKey
-      val noChans = hex2Ascii andThen to[ShortChannelIdSet] apply channels take 500
-      val paths = Router.finder.findPaths(noNodes.toSet, noChans, n1, n2, 7)
+      val Seq(xnodes, xchans, froms, tos) = extract(req.params, hex2Ascii, "xn", "xc", "froms", "tos")
+      val paths = Router.finder.findPaths(xNodes = to[StringSet](xnodes) take 250 map string2PublicKey,
+        xChans = to[ShortChannelIdSet](xchans) take 500, to[StringVec](froms) take 3 map string2PublicKey,
+        destination = to[StringVec](tos).head)
+
       Tuple2(oK, paths).toJson
 
     case req @ POST -> V1 / "router" / "nodes" =>
       val query = req.params("query").trim.take(32).toLowerCase
       // A node may be well connected but not public and thus having no node announcement
-      val announces = if (query.nonEmpty) Router.maps.searchTrie.getValuesForKeysStartingWith(query).asScala
-        else Router.maps.nodeId2Chans.seq take 48 flatMap { case key \ _ => Router.maps.nodeId2Announce get key }
+      val announces = if (query.nonEmpty) Router.searchTrie.getValuesForKeysStartingWith(query).asScala
+        else Router.nodeId2Chans.defaultSuggestions take 48 flatMap Router.nodeId2Announce.get
 
       // Json4s serializes tuples as maps while we need lists so we explicitly fix that here
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
-      val sizes = announces.take(24).map(ann => Router.maps.nodeId2Chans.nodeMap(ann.nodeId).size)
+      val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
       Tuple2(oK, encoded zip sizes).toJson
 
     // TRANSACTIONS
 
     case req @ POST -> V1 / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
-      val txIds = req.params andThen hex2Ascii andThen to[StringSeq] apply "txids" take 24
+      val txIds = req.params andThen hex2Ascii andThen to[StringVec] apply "txids" take 24
       Tuple2(oK, db getTxs txIds).toJson
 
     case req @ POST -> V1 / "txs" / "schedule" => check.verify(req.params) {
-      val txs = req.params andThen hex2Ascii andThen to[StringSeq] apply bODY
+      val txs = req.params andThen hex2Ascii andThen to[StringVec] apply bODY
       for (raw <- txs) db.putScheduled(Transaction read raw)
       Tuple2(oK, "done").toJson
     }

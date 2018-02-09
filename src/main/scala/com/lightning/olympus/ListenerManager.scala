@@ -35,32 +35,31 @@ class ListenerManager(db: Database) {
       // related payment channels should be removed
 
       input <- twr.tx.txIn
-      chanInfo <- Router.maps.txId2Info get input.outPoint.txid
+      chanInfo <- Router.txId2Info get input.outPoint.txid
       if chanInfo.ca.outputIndex == input.outPoint.index
     } Router.complexRemove(chanInfo :: Nil, rmSpent)
 
     override def onNewBlock(block: Block) = {
-      val spent = Router.maps.txId2Info.values filter Blockchain.isSpent
+      val spent = Router.txId2Info.values filter Blockchain.isSpent
       if (spent.nonEmpty) Router.complexRemove(spent, rmSpent)
     }
   }
 
-  Blockchain.listeners +=
-    new BlockchainListener {
-      override def onNewTx(twr: TransactionWithRaw) = {
-        val parents = twr.tx.txIn.map(_.outPoint.txid.toString)
-        db.putTx(parents, twr.tx.txid.toString, twr.raw.toString)
-      }
-
-      override def onNewBlock(block: Block) = for {
-        // We need to save which txids this one spends from
-        // since clients will need this to extract preimages
-
-        txid <- block.tx.asScala
-        hex <- Try(bitcoin getRawTransactionHex txid)
-        twr = TransactionWithRaw apply BinaryData(hex)
-      } onNewTx(twr)
+  Blockchain.listeners += new BlockchainListener {
+    override def onNewTx(twr: TransactionWithRaw) = {
+      val parents = twr.tx.txIn.map(_.outPoint.txid.toString)
+      db.putTx(parents, twr.tx.txid.toString, twr.raw.toString)
     }
+
+    override def onNewBlock(block: Block) = for {
+      // We need to save which txids this one spends from
+      // since clients will need this to extract preimages
+
+      txid <- block.tx.asScala
+      hex <- Try(bitcoin getRawTransactionHex txid)
+      twr = TransactionWithRaw apply BinaryData(hex)
+    } onNewTx(twr)
+  }
 
   Blockchain.listeners +=
     new BlockchainListener {

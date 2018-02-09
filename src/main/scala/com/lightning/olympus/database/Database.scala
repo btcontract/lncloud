@@ -3,7 +3,7 @@ package com.lightning.olympus.database
 import com.mongodb.casbah.Imports._
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import com.lightning.wallet.ln.Scripts.cltvBlocks
-import com.lightning.olympus.Utils.StringSeq
+import com.lightning.olympus.Utils.StringVec
 import com.lightning.olympus.BlindData
 import language.implicitConversions
 import java.math.BigInteger
@@ -15,8 +15,8 @@ abstract class Database {
   def keyExists(key: String): Boolean
 
   // Recording on-chain transactions
-  def putTx(txids: StringSeq, prefix: String, hex: String)
-  def getTxs(txids: StringSeq): StringSeq
+  def putTx(txids: Seq[String], prefix: String, hex: String)
+  def getTxs(txids: StringVec): StringVec
 
   // Scheduling txs to spend
   def putScheduled(tx: Transaction): Unit
@@ -36,20 +36,16 @@ abstract class Database {
 class MongoDatabase extends Database {
   val olympus: MongoDB = MongoClient("localhost")("olympus")
   val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
-
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
 
   // For signature-based auth users need to save their keys in this collection
   def keyExists(key: String) = olympus("authKeys").findOne("key" $eq key).isDefined
 
-  def putTx(txids: StringSeq, prefix: String, hex: String) =
-    olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids, "prefix" -> prefix,
-      "hex" -> hex, "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
-
-  def getTxs(txids: StringSeq) =
-    olympus("spentTxs").find("txids" $in txids)
-      .map(_ as[String] "hex").toList
+  def getTxs(txids: StringVec) = olympus("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toVector
+  def putTx(txids: Seq[String], prefix: String, hex: String) = olympus("spentTxs").update("hex" $eq hex,
+    $set("txids" -> txids, "prefix" -> prefix, "hex" -> hex, "createdAt" -> new Date),
+    upsert = true, multi = false, WriteConcern.Safe)
 
   def putScheduled(tx: Transaction) =
     olympus("scheduledTxs").update("txid" $eq tx.txid.toString, $set("txid" -> tx.txid.toString,
@@ -80,11 +76,11 @@ class MongoDatabase extends Database {
 
   def getPendingTokens(seskey: String) =
     blindSignatures("blindTokens").findOne("seskey" $eq seskey) map { result =>
-      val tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toList
+      val tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toVector
       BlindData(BinaryData(result get "paymentHash"), new BigInteger(result get "k"), tokens)
     }
 
   // Many collections in total to store clear tokens because we have to keep every token
-  def putClearToken(clear: String) = blindSignatures(s"clearTokens${clear take 1}").insert("token" $eq clear)
-  def isClearTokenUsed(clear: String) = blindSignatures(s"clearTokens${clear take 1}").findOne("token" $eq clear).isDefined
+  def putClearToken(clear: String) = blindSignatures("clearTokens" + clear.head).insert("token" $eq clear)
+  def isClearTokenUsed(clear: String) = blindSignatures("clearTokens" + clear.head).findOne("token" $eq clear).isDefined
 }

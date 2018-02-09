@@ -16,10 +16,11 @@ import java.math.BigInteger
 
 object Utils {
   var values: Vals = _
-  type StringSeq = Seq[String]
+  type StringSet = Set[String]
+  type StringVec = Vector[String]
+
   val hex2Ascii: String => String = raw => new String(HEX decode raw, "UTF-8")
   lazy val bitcoin = new javabitcoindrpcclient.BitcoinJSONRPCClient(values.btcApi)
-
   implicit def string2PublicKey(raw: String): PublicKey = PublicKey(BinaryData apply raw)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
@@ -47,7 +48,7 @@ object JsonHttpUtils {
 // tokens is a list of yet unsigned blind BigInts from client
 
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindData(paymentHash: BinaryData, k: BigInteger, tokens: StringSeq)
+case class BlindData(paymentHash: BinaryData, k: BigInteger, tokens: StringVec)
 case class Vals(privKey: String, price: MilliSatoshi, quantity: Int, btcApi: String,
                 zmqApi: String, eclairApi: String, eclairSockIp: String, eclairSockPort: Int,
                 eclairNodeId: String, rewindRange: Int, ip: String, checkByToken: Boolean) {

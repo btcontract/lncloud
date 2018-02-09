@@ -1,23 +1,20 @@
 package com.lightning.olympus
 
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient._
-import com.lightning.wallet.ln.wire.ChannelAnnouncement
-import scala.concurrent.duration.DurationInt
-import rx.lang.scala.schedulers.IOScheduler
-import com.lightning.wallet.ln.Tools.none
-import fr.acinq.bitcoin.Crypto.PublicKey
-import com.lightning.wallet.ln.Tools
-import scala.util.Try
-
 import rx.lang.scala.{Subscription, Observable => Obs}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import Utils.{bitcoin, errLog, values}
 import zeromq.{SocketType, ZeroMQ}
 
+import com.lightning.wallet.ln.wire.ChannelAnnouncement
+import scala.concurrent.duration.DurationInt
+import rx.lang.scala.schedulers.IOScheduler
+import com.lightning.wallet.ln.Tools.none
+import com.lightning.wallet.ln.Tools
+import scala.util.Try
+
 
 case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
-case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
-case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 
 trait BlockchainListener {
   def onNewBlock(block: Block): Unit = none
@@ -36,11 +33,10 @@ object Blockchain { me =>
     .retryWhen(_ delay 10.second).subscribe(block => listeners.foreach(_ onNewBlock block), errLog)
 
   def rescanBlocks = {
-    Tools log "Rescanning blocks..."
     val currentPoint = bitcoin.getBlockCount
     val pastPoint = currentPoint - values.rewindRange
     val blocks = pastPoint to currentPoint map bitcoin.getBlock
-    for (block <- blocks) for (lst <- listeners) lst onNewBlock block
+    for (block <- blocks.par) for (lst <- listeners) lst onNewBlock block
     Tools log "Done rescanning blocks..."
   }
 
