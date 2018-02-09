@@ -100,10 +100,10 @@ object Router { me =>
       val commonDirectedGraph: Graph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
       lazy val finder = find(Vector.empty, commonDirectedGraph, math.ceil(6D / sources.size).toInt) _
 
-      def find(acc: Vector[PaymentRoute], graph: Graph, lim: Int)(source: PublicKey): Vector[PaymentRoute] =
+      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
         Try apply BidirectionalDijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if way.size > 2 && acc.size < lim => find(acc :+ toHops(way), xVertex(graph, way.head.to), lim)(source)
-          case Success(way) if way.size < 3 && acc.size < lim => find(acc :+ toHops(way), xEdge(graph, way.head), lim)(source)
+          case Success(way) if way.size > 2 && limit > 0 => find(acc :+ toHops(way), xVertex(graph, way.head.to), limit - 1)(source)
+          case Success(way) if way.size < 3 && limit > 0 => find(acc :+ toHops(way), xEdge(graph, way.head), limit - 1)(source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }

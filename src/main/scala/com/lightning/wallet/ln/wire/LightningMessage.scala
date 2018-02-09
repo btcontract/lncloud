@@ -65,7 +65,11 @@ case class UpdateFee(channelId: BinaryData, feeratePerKw: Long) extends ChannelM
 case class CommitSig(channelId: BinaryData, signature: BinaryData, htlcSignatures: List[BinaryData] = Nil) extends ChannelMessage
 case class RevokeAndAck(channelId: BinaryData, perCommitmentSecret: Scalar, nextPerCommitmentPoint: Point) extends ChannelMessage
 
-case class Error(channelId: BinaryData, data: BinaryData) extends ChannelMessage
+case class Error(channelId: BinaryData, data: BinaryData) extends ChannelMessage {
+  def humanText = if (text.trim.isEmpty) "Error message from remote peer" else text
+  val text = new String(data, "UTF-8")
+}
+
 case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long, yourLastPerCommitmentSecret: Option[Scalar],
                               myCurrentPerCommitmentPoint: Option[Point] = None) extends ChannelMessage

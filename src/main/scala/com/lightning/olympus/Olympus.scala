@@ -6,26 +6,23 @@ import fr.acinq.bitcoin._
 import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
 import spray.json.DefaultJsonProtocol._
-
 import scala.collection.JavaConverters._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import org.http4s.{HttpService, Response}
+
+import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.JsonHttpUtils.to
 import org.http4s.server.blaze.BlazeBuilder
 import com.lightning.wallet.ln.Tools.random
 import fr.acinq.bitcoin.Crypto.PublicKey
-
 import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
-
 import scalaz.concurrent.Task
 import java.math.BigInteger
-
-import com.lightning.olympus.Router.ShortChannelIdSet
 
 
 object Olympus extends ServerApp {
@@ -131,7 +128,6 @@ class Responder { me =>
       val announces = if (query.nonEmpty) Router.searchTrie.getValuesForKeysStartingWith(query).asScala
         else Router.nodeId2Chans.defaultSuggestions take 48 flatMap Router.nodeId2Announce.get
 
-      // Json4s serializes tuples as maps while we need lists so we explicitly fix that here
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
       val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
       Tuple2(oK, encoded zip sizes).toJson
