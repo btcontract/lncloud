@@ -49,7 +49,7 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    BlazeBuilder.bindHttp(9001, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(9002, values.ip).mountService(postLift).start
   }
 }
 
@@ -63,7 +63,6 @@ class Responder { me =>
   private val blindTokens = new BlindTokens
   private val feeRates = new FeeRates
   private val db = new MongoDatabase
-  private val V1 = Root / "v1"
 
   // Watching chain and socket
   new ListenerManager(db).connect
@@ -77,14 +76,14 @@ class Responder { me =>
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
-    case POST -> V1 / "blindtokens" / "info" => new ECKey(random) match { case ses =>
+    case POST -> Root / "blindtokens" / "info" => new ECKey(random) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
       val response = Tuple3(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
       Tuple2(oK, response).toJson
     }
 
     // Record tokens and send an Invoice
-    case req @ POST -> V1 / "blindtokens" / "buy" =>
+    case req @ POST -> Root / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
       val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.quantity
 
@@ -99,7 +98,7 @@ class Responder { me =>
       }
 
     // Provide signed blind tokens
-    case req @ POST -> V1 / "blindtokens" / "redeem" =>
+    case req @ POST -> Root / "blindtokens" / "redeem" =>
       // We only sign tokens if the request has been paid
 
       val blindSignatures = for {
@@ -114,7 +113,7 @@ class Responder { me =>
 
     // ROUTER
 
-    case req @ POST -> V1 / "router" / "routes" =>
+    case req @ POST -> Root / "router" / "routes" =>
       val Seq(xnodes, xchans, froms, tos) = extract(req.params, hex2Ascii, "xn", "xc", "froms", "tos")
       val paths = Router.finder.findPaths(xNodes = to[StringSet](xnodes) take 250 map string2PublicKey,
         xChans = to[ShortChannelIdSet](xchans) take 500, to[StringVec](froms) take 3 map string2PublicKey,
@@ -122,7 +121,7 @@ class Responder { me =>
 
       Tuple2(oK, paths).toJson
 
-    case req @ POST -> V1 / "router" / "nodes" =>
+    case req @ POST -> Root / "router" / "nodes" =>
       val query = req.params("query").trim.take(32).toLowerCase
       // A node may be well connected but not public and thus having no node announcement
       val announces = if (query.nonEmpty) Router.searchTrie.getValuesForKeysStartingWith(query).asScala
@@ -134,12 +133,12 @@ class Responder { me =>
 
     // TRANSACTIONS
 
-    case req @ POST -> V1 / "txs" / "get" =>
+    case req @ POST -> Root / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
       val txIds = req.params andThen hex2Ascii andThen to[StringVec] apply "txids" take 24
       Tuple2(oK, db getTxs txIds).toJson
 
-    case req @ POST -> V1 / "txs" / "schedule" => check.verify(req.params) {
+    case req @ POST -> Root / "txs" / "schedule" => check.verify(req.params) {
       val txs = req.params andThen hex2Ascii andThen to[StringVec] apply bODY
       for (raw <- txs) db.putScheduled(Transaction read raw)
       Tuple2(oK, "done").toJson
@@ -147,27 +146,26 @@ class Responder { me =>
 
     // ARBITRARY DATA
 
-    case req @ POST -> V1 / "data" / "put" => check.verify(req.params) {
+    case req @ POST -> Root / "data" / "put" => check.verify(req.params) {
       val Seq(key, userDataHex) = extract(req.params, identity, "key", bODY)
       db.putData(key, prefix = userDataHex take 32, userDataHex)
       Tuple2(oK, "done").toJson
     }
 
-    case req @ POST -> V1 / "data" / "get" =>
+    case req @ POST -> Root / "data" / "get" =>
       val results = db.getData(req params "key")
       Tuple2(oK, results).toJson
 
     // FEERATE AND EXCHANGE RATES
 
-    case POST -> Root / _ / "rates" / "get" =>
+    case POST -> Root / "rates" / "get" =>
       val feesPerBlock = for (k \ v <- feeRates.rates) yield (k.toString, v getOrElse 0D)
       val fiatRates = for (cur <- exchangeRates.currencies) yield (cur.code, cur.average)
       val response = Tuple2(feesPerBlock.toMap, fiatRates.toMap)
       Tuple2(oK, response).toJson
 
-    case GET -> Root / _ / "rates" / "state" => Ok(exchangeRates.displayState mkString "\r\n\r\n")
-    case req @ POST -> Root / _ / "check" => check.verify(req.params)(Tuple2(oK, "done").toJson)
-    case POST -> Root / "v2" / _ => Tuple2(eRROR, "mustupdateolympus").toJson
+    case GET -> Root / "rates" / "state" => Ok(exchangeRates.displayState mkString "\r\n\r\n")
+    case req @ POST -> Root / "check" => check.verify(req.params)(Tuple2(oK, "done").toJson)
   }
 
   trait DataChecker {
