@@ -64,7 +64,7 @@ class MongoDatabase extends Database {
 
   def getData(key: String): List[String] = {
     val allResults = olympus("userData").find("key" $eq key)
-    val firstOne = allResults sort DBObject("date" -> -1) take 1
+    val firstOne = allResults sort DBObject("date" -> -1) take 5
     firstOne.map(_ as[String] "data").toList
   }
 

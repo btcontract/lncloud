@@ -92,18 +92,18 @@ object Router { me =>
   }
 
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
-    def xVertex(graph: Graph, key: PublicKey) = runAnd(graph)(graph removeVertex key)
-    def xEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
+    def rmVertex(graph: Graph, key: PublicKey) = runAnd(graph)(graph removeVertex key)
+    def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
 
     def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, sources: Vector[PublicKey], destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = directions => for (dir <- directions) yield updates(dir) toHop dir.from
       val commonDirectedGraph: Graph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
-      lazy val finder = find(Vector.empty, commonDirectedGraph, math.ceil(6D / sources.size).toInt) _
+      val perSource = math.ceil(16D / sources.size).toInt
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
         Try apply BidirectionalDijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if way.size > 2 && limit > 0 => find(acc :+ toHops(way), xVertex(graph, way.head.to), limit - 1)(source)
-          case Success(way) if way.size < 3 && limit > 0 => find(acc :+ toHops(way), xEdge(graph, way.head), limit - 1)(source)
+          case Success(way) if way.size > 2 && limit > 0 => find(acc :+ toHops(way), rmVertex(graph, way.head.to), limit - 1)(source)
+          case Success(way) if way.size < 3 && limit > 0 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
@@ -120,8 +120,9 @@ object Router { me =>
         _ = commonDirectedGraph addVertex from
       } commonDirectedGraph.addEdge(from, to, dir)
 
-      // Squash all route results
-      sources flatMap finder
+      // Squash all route results into a single sequence
+      // also use a single common pruned graph for all route searches
+      sources flatMap find(Vector.empty, commonDirectedGraph, perSource)
     }
   }
 

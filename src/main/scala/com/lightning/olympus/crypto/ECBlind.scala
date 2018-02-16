@@ -9,8 +9,8 @@ import java.math.BigInteger
 
 // As seen on http://arxiv.org/pdf/1304.2094.pdf
 class ECBlind(signerQ: ECPoint, signerR: ECPoint) {
-  def params(number: Int): List[BlindParam] = List.fill(number)(makeParams)
-  def tokens(number: Int): List[BigInteger] = List.fill(number)(oneToken)
+  def params(number: Int) = List.fill(number)(makeParams)
+  def tokens(number: Int) = List.fill(number)(oneToken)
   def oneToken = new BigInteger(1, random getBytes 64)
 
   def makeParams: BlindParam = {

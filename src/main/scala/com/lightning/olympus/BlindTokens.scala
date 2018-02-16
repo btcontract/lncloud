@@ -35,8 +35,8 @@ class BlindTokens { me =>
     PaymentRequest read request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
   }
 
-  def isFulfilled(hash: BinaryData): Boolean = {
-    val content = s"""{ "params": ["${hash.toString}"], "method": "checkpayment" }"""
+  def isFulfilled(data: BlindData): Boolean = {
+    val content = s"""{ "params": ["${data.paymentHash.toString}"], "method": "checkpayment" }"""
     val request = HttpRequest.post(values.eclairApi).connectTimeout(5000).contentType("application/json")
     request.send(content).body.parseJson.asJsObject.fields("result").convertTo[Boolean]
   }

@@ -34,7 +34,8 @@ object Olympus extends ServerApp {
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
           eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
-          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", ip = "127.0.0.1", checkByToken = true)
+          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375",
+          ip = "127.0.0.1", checkByToken = true)
 
 //        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
 //          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
@@ -99,16 +100,14 @@ class Responder { me =>
 
     // Provide signed blind tokens
     case req @ POST -> Root / "blindtokens" / "redeem" =>
-      // We only sign tokens if the request has been paid
+      // We only sign tokens if the request has been fulfilled
 
-      val blindSignatures = for {
-        blindData <- db.getPendingTokens(req params "seskey")
-        if blindTokens isFulfilled blindData.paymentHash
-      } yield blindTokens sign blindData
+      db.getPendingTokens(req params "seskey") match {
+        case Some(data) if blindTokens isFulfilled data =>
+          Tuple2(oK, blindTokens sign data).toJson
 
-      blindSignatures match {
-        case Some(sigs) => Tuple2(oK, sigs).toJson
         case None => Tuple2(eRROR, "notfound").toJson
+        case _ => Tuple2(eRROR, "notfulfilled").toJson
       }
 
     // ROUTER
@@ -117,7 +116,7 @@ class Responder { me =>
       val Seq(xnodes, xchans, froms, tos) = extract(req.params, hex2Ascii, "xn", "xc", "froms", "tos")
       val paths = Router.finder.findPaths(xNodes = to[StringSet](xnodes) take 250 map string2PublicKey,
         xChans = to[ShortChannelIdSet](xchans) take 500, to[StringVec](froms) take 3 map string2PublicKey,
-        destination = to[StringVec](tos).head)
+        destination = to[StringSet](tos).head)
 
       Tuple2(oK, paths).toJson
 
