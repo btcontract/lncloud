@@ -31,17 +31,17 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
-//        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
-//          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-//          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
-//          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375",
-//          ip = "127.0.0.1", checkByToken = true)
-
         values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 7,
-          eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
+          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
+          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", eclairPass = "pass",
           ip = "127.0.0.1", checkByToken = true)
+
+//        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
+//          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+//          eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 7,
+//          eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
+//          ip = "127.0.0.1", checkByToken = true)
 
 
       case List("production", rawVals) =>
@@ -116,7 +116,7 @@ class Responder { me =>
     case req @ POST -> Root / "router" / "routes" =>
       val Seq(xnodes, xchans, froms, tos) = extract(req.params, hex2Ascii, "xn", "xc", "froms", "tos")
       val paths = Router.finder.findPaths(xNodes = to[StringSet](xnodes) take 250 map string2PublicKey,
-        xChans = to[ShortChannelIdSet](xchans) take 500, to[StringVec](froms) take 3 map string2PublicKey,
+        xChans = to[ShortChannelIdSet](xchans) take 500, to[StringVec](froms) take 8 map string2PublicKey,
         destination = to[StringSet](tos).head)
 
       Tuple2(oK, paths).toJson
