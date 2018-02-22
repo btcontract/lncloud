@@ -194,14 +194,17 @@ object Router { me =>
   def isBadChannel(candidateInfo: ChanInfo): Option[ChanInfo] = chanId2Info.get(candidateInfo.ca.shortChannelId)
     .find(info => info.ca.nodeId1 != candidateInfo.ca.nodeId1 || info.ca.nodeId2 != info.ca.nodeId2)
 
+  Obs.interval(5.minutes) foreach { _ =>
+    // Affects the next check: removing channels will render affected nodes outdated
+    val updates1 = finder.updates filterNot { case _ \ upd => me isOutdated upd }
+    finder = GraphFinder(updates1)
+  }
+
   Obs interval 30.minutes foreach { _ =>
     val twoWeeksBehind = bitcoin.getBlockCount - 2016 // ~2 weeks
     val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
     val oldChanInfos = chanId2Info.values.filter(_.ca.blockHeight < twoWeeksBehind)
-
-    complexRemove(oldChanInfos filter {
-      case info if !shortId2Updates.contains(info.ca.shortChannelId) => true
-      case info => shortId2Updates(info.ca.shortChannelId) forall isOutdated
-    }, "Removed outdated channels")
+    val outdatedChanInfos = oldChanInfos.filterNot(shortId2Updates contains _.ca.shortChannelId)
+    complexRemove(outdatedChanInfos, "Removed outdated nodes and channels")
   }
 }
