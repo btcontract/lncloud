@@ -98,7 +98,7 @@ object Router { me =>
     def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, sources: Vector[PublicKey], destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = directions => for (dir <- directions) yield updates(dir) toHop dir.from
       val commonDirectedGraph: Graph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
-      val perSource = math.ceil(16D / sources.size).toInt
+      val perSource = math.ceil(24D / sources.size).toInt
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
         Try apply BidirectionalDijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
