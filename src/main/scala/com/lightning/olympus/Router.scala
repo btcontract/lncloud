@@ -95,10 +95,10 @@ object Router { me =>
     def rmVertex(graph: Graph, key: PublicKey) = runAnd(graph)(graph removeVertex key)
     def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
 
-    def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, sources: Vector[PublicKey], destination: PublicKey) = {
+    def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, src: Vector[PublicKey], destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = directions => for (dir <- directions) yield updates(dir) toHop dir.from
       val commonDirectedGraph: Graph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
-      val perSource = math.ceil(24D / sources.size).toInt
+      val perSource = math.ceil(24D / src.size).toInt
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
         Try apply BidirectionalDijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
@@ -110,7 +110,7 @@ object Router { me =>
 
       for {
         dir @ ChanDirection(shortId, from, to) <- updates.keys
-        if from == destination || nodeId2Chans.dict(from).size > 1
+        if src.contains(from) || nodeId2Chans.dict(from).size > 1
         if to == destination || nodeId2Chans.dict(to).size > 1
         if !xChans.contains(shortId)
         if !xNodes.contains(from)
@@ -122,11 +122,14 @@ object Router { me =>
 
       // Squash all route results into a single sequence
       // also use a single common pruned graph for all route searches
-      sources flatMap find(Vector.empty, commonDirectedGraph, perSource)
+      src flatMap find(Vector.empty, commonDirectedGraph, perSource)
     }
   }
 
-  def receive(m: LightningMessage) = me synchronized doReceive(m)
+  def receive(m: LightningMessage) = {
+    println(s"<-- $m")
+    me synchronized doReceive(m)
+  }
   private def doReceive(message: LightningMessage) = message match {
     case ca: ChannelAnnouncement if isBlacklisted(ca) => Tools log s"Blacklisted $ca"
     case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"

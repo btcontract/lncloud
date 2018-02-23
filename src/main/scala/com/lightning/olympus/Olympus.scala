@@ -39,8 +39,8 @@ object Olympus extends ServerApp {
 
 //        values = Vals("33337641954423495759821968886025053266790003625264088739786982511471995762588",
 //          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-//          eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 7,
-//          eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
+//          eclairApi = "http://127.0.0.1:8080", eclairSockIp = "127.0.0.1", eclairSockPort = 9735, rewindRange = 1,
+//          eclairNodeId = "0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3", eclairPass = "pass",
 //          ip = "127.0.0.1", checkByToken = true)
 
 
