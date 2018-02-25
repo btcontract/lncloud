@@ -134,7 +134,8 @@ class Responder { me =>
 
     case req @ POST -> Root / "block" / "get" =>
       val block = bitcoin.getBlock(req params "hash")
-      Tuple2(oK, block.height -> block.tx.asScala.toList).toJson
+      val data = block.height -> block.tx.asScala.toVector
+      Tuple2(oK, data).toJson
 
     case req @ POST -> Root / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
