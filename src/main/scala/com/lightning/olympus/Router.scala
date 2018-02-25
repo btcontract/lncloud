@@ -97,7 +97,7 @@ object Router { me =>
 
     def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, src: Vector[PublicKey], destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = directions => for (dir <- directions) yield updates(dir) toHop dir.from
-      val commonDirectedGraph: Graph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
+      val commonDirectedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
       val perSource = math.ceil(24D / src.size).toInt
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
@@ -126,14 +126,11 @@ object Router { me =>
     }
   }
 
-  def receive(m: LightningMessage) = {
-    println(s"<-- $m")
-    me synchronized doReceive(m)
-  }
+  def receive(m: LightningMessage) = me synchronized doReceive(m)
   private def doReceive(message: LightningMessage) = message match {
     case ca: ChannelAnnouncement if isBlacklisted(ca) => Tools log s"Blacklisted $ca"
     case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"
-    case ca: ChannelAnnouncement => for (info <- Blockchain getInfo ca) updateOrBlacklistChannel(info)
+    case ca: ChannelAnnouncement => Blockchain getInfo ca foreach updateOrBlacklistChannel
 
     case node: NodeAnnouncement if blacklisted.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"

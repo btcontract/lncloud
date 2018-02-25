@@ -14,7 +14,10 @@ import com.lightning.wallet.ln.Tools
 import scala.util.Try
 
 
-case class TransactionWithRaw(raw: BinaryData) { val tx = Transaction read raw }
+case class TransactionWithRaw(raw: BinaryData) {
+  // A wrapper with deserialized tx for performance
+  val tx = Transaction read raw
+}
 
 trait BlockchainListener {
   def onNewBlock(block: Block): Unit = none
@@ -36,8 +39,8 @@ object Blockchain { me =>
     val currentPoint = bitcoin.getBlockCount
     val pastPoint = currentPoint - values.rewindRange
     val blocks = pastPoint to currentPoint map bitcoin.getBlock
-    for (block <- blocks.par) for (lst <- listeners) lst onNewBlock block
-    Tools log "Done rescanning blocks..."
+    for (block <- blocks) for (lst <- listeners) lst onNewBlock block
+    Tools log "Done rescanning blocks"
   }
 
   def isSpent(chanInfo: ChanInfo) = Try {

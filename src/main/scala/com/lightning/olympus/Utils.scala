@@ -31,7 +31,7 @@ object Utils {
 object JsonHttpUtils {
   def initDelay[T](next: Obs[T], startMillis: Long, timeoutMillis: Long) = {
     val adjustedTimeout = startMillis + timeoutMillis - System.currentTimeMillis
-    val delayLeft = if (adjustedTimeout < 0) 0 else adjustedTimeout
+    val delayLeft = if (adjustedTimeout < 0) 0L else adjustedTimeout
     Obs.just(null).delay(delayLeft.millis).flatMap(_ => next)
   }
 

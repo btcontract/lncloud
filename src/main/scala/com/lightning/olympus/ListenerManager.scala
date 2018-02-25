@@ -55,7 +55,7 @@ class ListenerManager(db: Database) {
       // We need to save which txids this one spends from
       // since clients will need this to extract preimages
 
-      txid <- block.tx.asScala
+      txid <- block.tx.asScala.par
       hex <- Try(bitcoin getRawTransactionHex txid)
       twr = TransactionWithRaw apply BinaryData(hex)
     } onNewTx(twr)
