@@ -66,7 +66,6 @@ object ConnectionManager {
     work onComplete { _ => events onDisconnect ann }
     def disconnect = try socket.close catch none
 
-
     def intercept(message: LightningMessage) = {
       // Some incoming messages need special handling
       // also update ping counter on every message

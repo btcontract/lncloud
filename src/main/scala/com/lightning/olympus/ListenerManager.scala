@@ -22,9 +22,11 @@ class ListenerManager(db: Database) {
 
   ConnectionManager.listeners += new ConnectionListener {
     override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg
-    override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Socket is operational"
+    override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Eclair socket is operational"
     override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
-    override def onDisconnect(ann: NodeAnnouncement) = Obs.just(Tools log "Restarting socket").delay(5.seconds)
+
+    override def onDisconnect(announce: NodeAnnouncement) =
+      Obs.just(Tools log "Restarting socket").delay(5.seconds)
       .subscribe(_ => connect, _.printStackTrace)
   }
 

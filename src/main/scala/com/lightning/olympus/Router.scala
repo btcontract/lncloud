@@ -5,22 +5,21 @@ import com.lightning.olympus.Utils._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.googlecode.concurrenttrees.radix.node.concrete._
+import org.jgrapht.graph.{ClassBasedEdgeFactory, DirectedMultigraph}
+import com.lightning.wallet.ln.Tools.{random, wrap}
+import rx.lang.scala.{Observable => Obs}
+import scala.util.{Success, Try}
+
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.ScriptPubKey
 import org.jgrapht.alg.shortestpath.BidirectionalDijkstraShortestPath
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
-import com.lightning.wallet.ln.Scripts.multiSig2of2
-import org.jgrapht.graph.DefaultDirectedGraph
 import scala.concurrent.duration.DurationInt
 import com.lightning.wallet.ln.Tools.runAnd
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.BinaryData
 import scala.collection.mutable
-
-import com.lightning.wallet.ln.Tools.{random, wrap}
-import fr.acinq.bitcoin.{BinaryData, Script}
-import rx.lang.scala.{Observable => Obs}
-import scala.util.{Success, Try}
 
 
 case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
@@ -29,10 +28,10 @@ case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 object Router { me =>
   type ShortChannelIdSet = Set[Long]
   type DefFactory = DefaultCharArrayNodeFactory
-  type Graph = DefaultDirectedGraph[PublicKey, ChanDirection]
+  type Graph = DirectedMultigraph[PublicKey, ChanDirection]
   private[this] val chanDirectionClass = classOf[ChanDirection]
 
-  val blacklisted = mutable.Set.empty[PublicKey]
+  val removedChannels = mutable.Set.empty[Long]
   val chanId2Info = mutable.Map.empty[Long, ChanInfo]
   val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
@@ -41,13 +40,15 @@ object Router { me =>
   var finder = GraphFinder(Map.empty)
 
   def rmChanInfo(info: ChanInfo) = {
-    nodeId2Chans = nodeId2Chans minusShortChannelId info
+    // Make sure it can't be added again
+    removedChannels += info.ca.shortChannelId
+    nodeId2Chans = nodeId2Chans minusShortChanId info
     chanId2Info -= info.ca.shortChannelId
     txId2Info -= info.txid
   }
 
   def addChanInfo(info: ChanInfo) = {
-    nodeId2Chans = nodeId2Chans plusShortChannelId info
+    nodeId2Chans = nodeId2Chans plusShortChanId info
     chanId2Info(info.ca.shortChannelId) = info
     txId2Info(info.txid) = info
   }
@@ -77,13 +78,13 @@ object Router { me =>
       case key \ chanIds => key -> chanIds -> chanIds.size
     }.sortWith(_._2 > _._2).map(_._1._1)
 
-    def plusShortChannelId(info: ChanInfo) = {
+    def plusShortChanId(info: ChanInfo) = {
       val dict1 = dict.updated(info.ca.nodeId1, dict(info.ca.nodeId1) + info.ca.shortChannelId)
       val dict2 = dict1.updated(info.ca.nodeId2, dict1(info.ca.nodeId2) + info.ca.shortChannelId)
       Node2Channels(dict2)
     }
 
-    def minusShortChannelId(info: ChanInfo) = {
+    def minusShortChanId(info: ChanInfo) = {
       val dict1 = dict.updated(info.ca.nodeId1, dict(info.ca.nodeId1) - info.ca.shortChannelId)
       val dict2 = dict1.updated(info.ca.nodeId2, dict1(info.ca.nodeId2) - info.ca.shortChannelId)
       val dict3 = dict2 filterNot { case _ \ ids => ids.isEmpty }
@@ -96,8 +97,8 @@ object Router { me =>
     def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
 
     def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, src: Vector[PublicKey], destination: PublicKey) = {
-      val toHops: Vector[ChanDirection] => PaymentRoute = directions => for (dir <- directions) yield updates(dir) toHop dir.from
-      val commonDirectedGraph = new DefaultDirectedGraph[PublicKey, ChanDirection](chanDirectionClass)
+      val toHops: Vector[ChanDirection] => PaymentRoute = directs => for (dir <- directs) yield updates(dir) toHop dir.from
+      val commonDirectedGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
       val perSource = math.ceil(24D / src.size).toInt
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
@@ -118,7 +119,7 @@ object Router { me =>
 
         _ = commonDirectedGraph addVertex to
         _ = commonDirectedGraph addVertex from
-      } commonDirectedGraph.addEdge(from, to, dir)
+      }  commonDirectedGraph.addEdge(from, to, dir)
 
       // Squash all route results into a single sequence
       // also use a single common pruned graph for all route searches
@@ -128,22 +129,20 @@ object Router { me =>
 
   def receive(m: LightningMessage) = me synchronized doReceive(m)
   private def doReceive(message: LightningMessage) = message match {
-    case ca: ChannelAnnouncement if isBlacklisted(ca) => Tools log s"Blacklisted $ca"
-    case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signatures $ca"
-    case ca: ChannelAnnouncement => Blockchain getInfo ca foreach updateOrBlacklistChannel
+    case ca: ChannelAnnouncement if removedChannels.contains(ca.shortChannelId) => Tools log s"Ignoring removed $ca"
+    case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signature $ca"
+    case ca: ChannelAnnouncement => Blockchain getInfo ca foreach addChanInfo
 
-    case node: NodeAnnouncement if blacklisted.contains(node.nodeId) => Tools log s"Ignoring $node"
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
     case node: NodeAnnouncement if nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
     case node: NodeAnnouncement if !nodeId2Chans.dict.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
-    case node: NodeAnnouncement if !Announcements.checkSig(node) => Tools log s"Ignoring invalid signatures $node"
     case node: NodeAnnouncement => wrap(me addNode node)(me rmNode node) // Might be an update
 
     case cu: ChannelUpdate if cu.flags.data.size != 2 => Tools log s"Ignoring invalid flags length ${cu.flags.data.size}"
     case cu: ChannelUpdate if !chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
     case cu: ChannelUpdate if isOutdated(cu) => Tools log s"Ignoring outdated update $cu"
 
-    case cu: ChannelUpdate => try {
+    case cu: ChannelUpdate =>
       val info = chanId2Info(cu.shortChannelId)
       val isDisabled = Announcements isDisabled cu.flags
       val direction = Announcements isNode1 cu.flags match {
@@ -151,12 +150,9 @@ object Router { me =>
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
       }
 
-      require(!isBlacklisted(info.ca), s"Ignoring blacklisted $cu")
       require(finder.updates.get(direction).forall(_.timestamp < cu.timestamp), s"Ignoring outdated $cu")
-      require(Announcements.checkSig(cu, direction.from), s"Ignoring update with invalid signatures $cu")
       val updates1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
       finder = finder.copy(updates = updates1)
-    } catch errLog
 
     case _ =>
   }
@@ -164,35 +160,18 @@ object Router { me =>
   def complexRemove(infos: Iterable[ChanInfo], why: String) = me synchronized {
     // Once channel infos are removed we also have to remove all the affected updates
     // Removal also may result in lost nodes so all nodes with now zero channels are removed too
+    // And finally we need to remove all the updates which have no channel announcements left
 
-    for (chanInfoToRemove <- infos) rmChanInfo(chanInfoToRemove)
+    infos foreach rmChanInfo
     nodeId2Announce.filterKeys(nodeId => nodeId2Chans.dict(nodeId).isEmpty).values foreach rmNode
     val updates1 = finder.updates filter { case direction \ _ => chanId2Info contains direction.shortId }
     finder = GraphFinder(updates1)
+    Tools log why
   }
 
-  def updateOrBlacklistChannel(info: ChanInfo) = {
-    // May fail because scripts don't match, may be blacklisted or added/updated
-    val fundingOutScript = Script pay2wsh multiSig2of2(info.ca.bitcoinKey1, info.ca.bitcoinKey2)
-    require(Script.write(fundingOutScript) == BinaryData(info.key.hex), s"Incorrect script $info")
-
-    isBadChannel(info) match {
-      case Some(compromised) =>
-        val rm = List(compromised.ca.nodeId1, compromised.ca.nodeId2, info.ca.nodeId1, info.ca.nodeId2)
-        complexRemove(rm flatMap nodeId2Chans.dict map chanId2Info, "Removed blacklisted channels")
-        rm foreach blacklisted.add
-
-      case None =>
-        // Everything is fine
-        addChanInfo(info)
-    }
-  }
-
-  // Blacklist if same channel with valid sigs but different node ids
-  def isOutdated(cu: ChannelUpdate) = cu.timestamp < System.currentTimeMillis / 1000 - 1209600 // 2 weeks
-  def isBlacklisted(ca: ChannelAnnouncement) = blacklisted.contains(ca.nodeId1) || blacklisted.contains(ca.nodeId2)
-  def isBadChannel(candidateInfo: ChanInfo): Option[ChanInfo] = chanId2Info.get(candidateInfo.ca.shortChannelId)
-    .find(info => info.ca.nodeId1 != candidateInfo.ca.nodeId1 || info.ca.nodeId2 != info.ca.nodeId2)
+  def isOutdated(cu: ChannelUpdate) =
+    // Considered outdated if it older than two weens
+    cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
   Obs.interval(5.minutes) foreach { _ =>
     // Affects the next check: removing channels will render affected nodes outdated
@@ -200,11 +179,11 @@ object Router { me =>
     finder = GraphFinder(updates1)
   }
 
-  Obs interval 30.minutes foreach { _ =>
+  Obs interval 15.minutes foreach { _ =>
     val twoWeeksBehind = bitcoin.getBlockCount - 2016 // ~2 weeks
     val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
     val oldChanInfos = chanId2Info.values.filter(_.ca.blockHeight < twoWeeksBehind)
     val outdatedChanInfos = oldChanInfos.filterNot(shortId2Updates contains _.ca.shortChannelId)
-    complexRemove(outdatedChanInfos, "Removed outdated nodes and channels")
+    complexRemove(outdatedChanInfos, "Removed possible present outdated nodes and channels")
   }
 }
