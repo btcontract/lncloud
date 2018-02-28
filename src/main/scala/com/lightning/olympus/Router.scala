@@ -101,13 +101,16 @@ object Router { me =>
       val commonDirectedGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
       val perSource = math.ceil(24D / src.size).toInt
 
-      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] =
+      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] = {
+        // We must account for a special case when one source node is has channel with another and with destination
+        def rmVertexOrEdge(dir: ChanDirection) = if (src contains dir.to) rmEdge(graph, dir) else rmVertex(graph, dir.to)
         Try apply BidirectionalDijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if way.size > 2 && limit > 0 => find(acc :+ toHops(way), rmVertex(graph, way.head.to), limit - 1)(source)
+          case Success(way) if way.size > 2 && limit > 0 => find(acc :+ toHops(way), rmVertexOrEdge(way.head), limit - 1)(source)
           case Success(way) if way.size < 3 && limit > 0 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
+      }
 
       for {
         dir @ ChanDirection(shortId, from, to) <- updates.keys
@@ -130,7 +133,6 @@ object Router { me =>
   def receive(m: LightningMessage) = me synchronized doReceive(m)
   private def doReceive(message: LightningMessage) = message match {
     case ca: ChannelAnnouncement if removedChannels.contains(ca.shortChannelId) => Tools log s"Ignoring removed $ca"
-    case ca: ChannelAnnouncement if !Announcements.checkSigs(ca) => Tools log s"Ignoring invalid signature $ca"
     case ca: ChannelAnnouncement => Blockchain getInfo ca foreach addChanInfo
 
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
