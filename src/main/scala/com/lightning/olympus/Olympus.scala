@@ -31,17 +31,17 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
-        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          MilliSatoshi(2000000), quantity = 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
-          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", eclairPass = "pass",
-          ip = "127.0.0.1", checkByToken = true)
-
 //        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-//          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-//          eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 1,
-//          eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
+//          MilliSatoshi(2000000), quantity = 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+//          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
+//          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", eclairPass = "pass",
 //          ip = "127.0.0.1", checkByToken = true)
+
+        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
+          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
+          eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 1,
+          eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
+          ip = "127.0.0.1", checkByToken = true)
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -124,7 +124,7 @@ class Responder { me =>
       val query = req.params("query").trim.take(32).toLowerCase
       // A node may be well connected but not public and thus having no node announcement
       val announces = if (query.nonEmpty) Router.searchTrie.getValuesForKeysStartingWith(query).asScala
-        else Router.nodeId2Chans.defaultSuggestions take 48 flatMap Router.nodeId2Announce.get
+        else Router.nodeId2Chans.scoredNodeSuggestions take 48 flatMap Router.nodeId2Announce.get
 
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
       val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)

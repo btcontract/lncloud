@@ -5,20 +5,21 @@ import com.lightning.olympus.Utils._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.googlecode.concurrenttrees.radix.node.concrete._
-import org.jgrapht.graph.{ClassBasedEdgeFactory, DirectedMultigraph}
-import com.lightning.wallet.ln.Tools.{random, wrap}
-import rx.lang.scala.{Observable => Obs}
-import scala.util.{Success, Try}
 
+import scala.util.{Success, Try}
+import rx.lang.scala.{Observable => Obs}
+import com.lightning.wallet.ln.Tools.{random, wrap}
+import org.jgrapht.graph.{ClassBasedEdgeFactory, DirectedMultigraph}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.ScriptPubKey
-import org.jgrapht.alg.shortestpath.BidirectionalDijkstraShortestPath
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
+import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import scala.concurrent.duration.DurationInt
 import com.lightning.wallet.ln.Tools.runAnd
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.BinaryData
+import scala.util.Random.shuffle
 import scala.collection.mutable
 
 
@@ -72,11 +73,11 @@ object Router { me =>
     // Too big nodes have a 50% change to get dampened down, relatively well connected nodes have a 10% chance to pop up
     def between(size: Long, min: Long, max: Long, chance: Double) = random.nextDouble < chance && size > min & size < max
 
-    lazy val defaultSuggestions = dict.toSeq.map {
-      case key \ chanIds if between(chanIds.size, 300, Long.MaxValue, 0.5D) => key -> chanIds -> chanIds.size / 10
-      case key \ chanIds if between(chanIds.size, 25, 75, 0.1D) => key -> chanIds -> chanIds.size * 10
-      case key \ chanIds => key -> chanIds -> chanIds.size
-    }.sortWith(_._2 > _._2).map(_._1._1)
+    lazy val scoredNodeSuggestions = dict.toSeq.map {
+      case key \ chanIds if between(chanIds.size, 300, Long.MaxValue, 0.5D) => key -> chanIds.size / 10
+      case key \ chanIds if between(chanIds.size, 25, 300, 0.1D) => key -> chanIds.size * 10
+      case key \ chanIds => key -> chanIds.size
+    }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChanId(info: ChanInfo) = {
       val dict1 = dict.updated(info.ca.nodeId1, dict(info.ca.nodeId1) + info.ca.shortChannelId)
@@ -87,30 +88,29 @@ object Router { me =>
     def minusShortChanId(info: ChanInfo) = {
       val dict1 = dict.updated(info.ca.nodeId1, dict(info.ca.nodeId1) - info.ca.shortChannelId)
       val dict2 = dict1.updated(info.ca.nodeId2, dict1(info.ca.nodeId2) - info.ca.shortChannelId)
-      val dict3 = dict2 filterNot { case _ \ ids => ids.isEmpty }
+      val dict3 = dict2 filter { case _ \ shortChanIds => shortChanIds.nonEmpty }
       Node2Channels(dict3)
     }
   }
 
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
-    def rmVertex(graph: Graph, key: PublicKey) = runAnd(graph)(graph removeVertex key)
     def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
+    def rmRandomEdge(ds: Seq[ChanDirection], graph: Graph) = rmEdge(graph, shuffle(ds).head)
 
     def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, src: Vector[PublicKey], destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = directs => for (dir <- directs) yield updates(dir) toHop dir.from
-      val commonDirectedGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
-      val perSource = math.ceil(24D / src.size).toInt
+      val baseGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
+      val singleTargetChan = nodeId2Chans.dict(destination).size == 1
+      val perSource = math.ceil(16D / src.size).toInt
 
-      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(source: PublicKey): Vector[PaymentRoute] = {
-        // We must account for a special case when one source node is has channel with another and with destination
-        def rmVertexOrEdge(dir: ChanDirection) = if (src contains dir.to) rmEdge(graph, dir) else rmVertex(graph, dir.to)
-        Try apply BidirectionalDijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if way.size > 2 && limit > 0 => find(acc :+ toHops(way), rmVertexOrEdge(way.head), limit - 1)(source)
-          case Success(way) if way.size < 3 && limit > 0 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(source)
+      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(src: PublicKey): Vector[PaymentRoute] =
+        Try apply DijkstraShortestPath.findPathBetween(graph, src, destination).getEdgeList.asScala.toVector match {
+          case Success(way) if limit > 0 && singleTargetChan => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(src)
+          case Success(way) if limit > 0 && way.size == 1 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(src)
+          case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1)(src)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
-      }
 
       for {
         dir @ ChanDirection(shortId, from, to) <- updates.keys
@@ -120,19 +120,18 @@ object Router { me =>
         if !xNodes.contains(from)
         if !xNodes.contains(to)
 
-        _ = commonDirectedGraph addVertex to
-        _ = commonDirectedGraph addVertex from
-      }  commonDirectedGraph.addEdge(from, to, dir)
+        _ = baseGraph addVertex to
+        _ = baseGraph addVertex from
+      } baseGraph.addEdge(from, to, dir)
 
-      // Squash all route results into a single sequence
-      // also use a single common pruned graph for all route searches
-      src flatMap find(Vector.empty, commonDirectedGraph, perSource)
+      // Squash all route results into a single sequence, use a separate graph per source
+      src flatMap find(Vector.empty, baseGraph.clone.asInstanceOf[Graph], perSource)
     }
   }
 
   def receive(m: LightningMessage) = me synchronized doReceive(m)
   private def doReceive(message: LightningMessage) = message match {
-    case ca: ChannelAnnouncement if removedChannels.contains(ca.shortChannelId) => Tools log s"Ignoring removed $ca"
+    case ca: ChannelAnnouncement if removedChannels.contains(ca.shortChannelId) =>
     case ca: ChannelAnnouncement => Blockchain getInfo ca foreach addChanInfo
 
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
@@ -152,20 +151,20 @@ object Router { me =>
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
       }
 
-      require(finder.updates.get(direction).forall(_.timestamp < cu.timestamp), s"Ignoring outdated $cu")
+      val isFresh = finder.updates.get(direction).forall(existing => existing.timestamp < cu.timestamp)
       val updates1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
-      finder = finder.copy(updates = updates1)
+      if (isFresh) finder = finder.copy(updates = updates1)
 
     case _ =>
   }
 
   def complexRemove(infos: Iterable[ChanInfo], why: String) = me synchronized {
-    // Once channel infos are removed we also have to remove all the affected updates
-    // Removal also may result in lost nodes so all nodes with now zero channels are removed too
-    // And finally we need to remove all the updates which have no channel announcements left
+    // Once channel infos are removed we may have nodes without channels and updates
 
     infos foreach rmChanInfo
+    // Removal may result in lost nodes so all nodes with now zero channels are removed
     nodeId2Announce.filterKeys(nodeId => nodeId2Chans.dict(nodeId).isEmpty).values foreach rmNode
+    // And finally we need to remove all the lost updates which have no channel announcements left
     val updates1 = finder.updates filter { case direction \ _ => chanId2Info contains direction.shortId }
     finder = GraphFinder(updates1)
     Tools log why
