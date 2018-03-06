@@ -11,9 +11,6 @@ import java.util.Date
 
 
 abstract class Database {
-  // For signature-based auth
-  def keyExists(key: String): Boolean
-
   // Recording on-chain transactions
   def putTx(txids: Seq[String], prefix: String, hex: String)
   def getTxs(txids: StringVec): StringVec
@@ -38,9 +35,6 @@ class MongoDatabase extends Database {
   val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
   implicit def obj2Long(source: Object): Long = source.toString.toLong
   implicit def obj2String(source: Object): String = source.toString
-
-  // For signature-based auth users need to save their keys in this collection
-  def keyExists(key: String) = olympus("authKeys").findOne("key" $eq key).isDefined
 
   def getTxs(txids: StringVec) = olympus("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toVector
   def putTx(txids: Seq[String], prefix: String, hex: String) = olympus("spentTxs").update("hex" $eq hex,

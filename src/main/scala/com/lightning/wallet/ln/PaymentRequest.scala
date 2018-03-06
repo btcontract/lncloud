@@ -6,8 +6,9 @@ import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin.Protocol._
 import fr.acinq.eclair.crypto.BitStream._
 import com.lightning.wallet.ln.PaymentRequest._
+import com.lightning.wallet.ln.RoutingInfoTag._
 import com.lightning.wallet.ln.crypto.MultiStreamUtils._
-import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
+
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
 import java.math.BigInteger
@@ -28,7 +29,7 @@ case class PaymentHashTag(hash: BinaryData) extends Tag {
 }
 
 case class DescriptionTag(description: String) extends Tag {
-  def toInt5s = encode(Bech32 eight2five description.getBytes("UTF-8"), 'd')
+  def toInt5s = encode(Bech32 eight2five description.getBytes, 'd')
 }
 
 case class DescriptionHashTag(hash: BinaryData) extends Tag {
@@ -56,6 +57,8 @@ object RoutingInfoTag {
   }
 
   type PaymentRoute = Vector[Hop]
+  type PaymentRouteVec = Vector[PaymentRoute]
+
   val chunkLength = 33 + 8 + 4 + 4 + 2
   def parseAll(data: Int5Seq): PaymentRoute =
     data.grouped(chunkLength).map(parse).toVector
@@ -81,6 +84,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta }
   lazy val paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
+  lazy val unsafeMsat = amount.get.amount
 
   def isFresh: Boolean = {
     val expiry = tags.collectFirst { case ex: ExpiryTag => ex.seconds }
@@ -88,8 +92,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }
 
   def description = tags.collectFirst {
-    case DescriptionHashTag(hash) => Left(hash)
-    case DescriptionTag(text) => Right(text)
+    case DescriptionHashTag(hash) => hash.toString
+    case DescriptionTag(description) => description
   }.get
 
   def stream: BitStream = {
@@ -100,7 +104,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   def hash: BinaryData = {
     val base = prefix + Amount.encode(amount)
-    Crypto.sha256(base.getBytes("UTF-8") ++ stream.bytes)
+    Crypto sha256 base.getBytes("UTF-8") ++ stream.bytes
   }
 
   def sign(priv: PrivateKey) = {
@@ -114,14 +118,16 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
   type Int5Seq = Seq[Int5]
-  def apply(chain: BinaryData, amount: Option[MilliSatoshi],
-            paymentHash: BinaryData, privateKey: PrivateKey, description: String,
-            fallbackAddress: Option[String], extra: PaymentRoute): PaymentRequest = {
+  type AmountOption = Option[MilliSatoshi]
+
+  def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
+            privateKey: PrivateKey, description: String, fallbackAddress: Option[String],
+            routes: PaymentRouteVec): PaymentRequest = {
 
     val paymentHashTag = PaymentHashTag(paymentHash)
-    val tags = Vector(DescriptionTag(description), ExpiryTag(3600 * 6), paymentHashTag)
-    PaymentRequest(getPrefix(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey,
-      if (extra.isEmpty) tags else RoutingInfoTag(extra) +: tags, BinaryData.empty) sign privateKey
+    val tags = routes.map(RoutingInfoTag.apply) ++ Vector(DescriptionTag(description), ExpiryTag(3600), paymentHashTag)
+    val pr = PaymentRequest(getPrefix(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey, tags, BinaryData.empty)
+    pr sign privateKey
   }
 
   def getPrefix(chain: BinaryData) = chain match {
@@ -139,7 +145,6 @@ object PaymentRequest {
       case _ => 'm'
     }
 
-    type AmountOption = Option[MilliSatoshi]
     def decode(input: String): AmountOption = input.lastOption match {
       case Some('p') => Some(MilliSatoshi apply input.dropRight(1).toLong / 10)
       case Some('n') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100)
@@ -160,7 +165,7 @@ object PaymentRequest {
   object Timestamp {
     def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
     def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
-    else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
+      else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {
@@ -283,7 +288,7 @@ object PaymentRequest {
 
     val signature = sig.reverse
     val (r, s, recid) = Signature decode signature
-    val messageHash = Crypto.sha256(hrp.getBytes ++ stream1.bytes)
+    val messageHash = Crypto sha256 hrp.getBytes ++ stream1.bytes
     val (pub1, pub2) = Crypto.recoverPublicKey(r -> s, messageHash)
     val pub = if (recid % 2 != 0) pub2 else pub1
 

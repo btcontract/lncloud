@@ -18,7 +18,6 @@ object LightningMessageCodecs { me =>
   type BitVectorAttempt = Attempt[BitVector]
   type LNMessageVector = Vector[LightningMessage]
   type InetSocketAddressList = List[InetSocketAddress]
-  type AnnounceChansNum = (NodeAnnouncement, Int)
   type AddressPort = (InetAddress, Int)
   type RGB = (Byte, Byte, Byte)
 
@@ -69,48 +68,24 @@ object LightningMessageCodecs { me =>
 
   // Codecs
 
-  val signature = Codec[BinaryData](
-    encoder = (derEncoded: BinaryData) => {
-      val vec = bin2Vec(me der2wire derEncoded)
-      bytes(64) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(64) decode wireEncoded
-    } yield decodeResult map vec2Bin map wire2der
+  val signature = Codec[BinaryData] (
+    encoder = (der: BinaryData) => bytes(64) encode bin2Vec(me der2wire der),
+    decoder = (wire: BitVector) => bytes(64) decode wire map (_ map vec2Bin map wire2der)
   )
 
-  val scalar = Codec[Scalar](
-    encoder = (scalar: Scalar) => {
-      val vec = bin2Vec(scalar.toBin)
-      bytes(32) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(32) decode wireEncoded
-    } yield decodeResult map vec2Bin map Scalar.apply
+  val scalar = Codec[Scalar] (
+    encoder = (scalar: Scalar) => bytes(32) encode bin2Vec(scalar.toBin),
+    decoder = (wire: BitVector) => bytes(32) decode wire map (_ map vec2Bin map Scalar.apply)
   )
 
-  val point = Codec[Point](
-    encoder = (point: Point) => {
-      val vec = bin2Vec(point toBin true)
-      bytes(33) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(33) decode wireEncoded
-    } yield decodeResult map vec2Bin map Point.apply
+  val point = Codec[Point] (
+    encoder = (point: Point) => bytes(33) encode bin2Vec(point toBin true),
+    decoder = (wire: BitVector) => bytes(33) decode wire map (_ map vec2Bin map Point.apply)
   )
 
-  val publicKey = Codec[PublicKey](
-    encoder = (publicKey: PublicKey) => {
-      val vec = bin2Vec(publicKey.value toBin true)
-      bytes(33) encode vec
-    },
-
-    decoder = (wireEncoded: BitVector) => for {
-      decodeResult <- bytes(33) decode wireEncoded
-    } yield decodeResult map vec2Bin map PublicKey.apply
+  val publicKey = Codec[PublicKey] (
+    encoder = (publicKey: PublicKey) => bytes(33) encode bin2Vec(publicKey.value toBin true),
+    decoder = (wire: BitVector) => bytes(33) decode wire map (_ map vec2Bin map PublicKey.apply)
   )
 
   val uint64: Codec[Long] = int64.narrow(long =>
@@ -134,6 +109,7 @@ object LightningMessageCodecs { me =>
   val rgb: Codec[RGB] = bytes(3).xmap(bv2Rgb, rgb2Bv)
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(vec2Bin, bin2Vec)
   val varsizebinarydata: Codec[BinaryData] = variableSizeBytes(value = bytes.xmap(vec2Bin, bin2Vec), size = uint16)
+  val varsizebinarydataLong: Codec[BinaryData] = variableSizeBytesLong(value = bytes.xmap(vec2Bin, bin2Vec), size = uint32)
   val zeropaddedstring: Codec[String] = fixedSizeBytes(32, utf8).xmap(_.takeWhile(_ != '\u0000'), identity)
 
   // Data formats
@@ -329,13 +305,6 @@ object LightningMessageCodecs { me =>
       (uint32 withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths")
 
-  private val perHopPayload =
-    (constant(ByteVector fromByte 0) withContext "realm") ::
-      (uint64 withContext "shortChannelId") ::
-      (uint64 withContext "amtToForward") ::
-      (uint32 withContext "outgoingCltv") ::
-      (ignore(8 * 12) withContext "unusedWithV0VersionOnHeader")
-
   private val channelUpdate = (signature withContext "signature") :: channelUpdateWitness
   private val nodeAnnouncement = (signature withContext "signature") :: nodeAnnouncementWitness
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = nodeAnnouncement.as[NodeAnnouncement]
@@ -367,4 +336,20 @@ object LightningMessageCodecs { me =>
       .typecase(cr = nodeAnnouncementCodec, tag = 257)
       .typecase(cr = channelUpdateCodec, tag = 258)
       .typecase(cr = announcementSignatures.as[AnnouncementSignatures], tag = 259)
+
+  // Not in a spec
+
+  private val walletZygote =
+    (uint16 withContext "v") ::
+      (varsizebinarydataLong withContext "db") ::
+      (varsizebinarydataLong withContext "wallet") ::
+      (varsizebinarydataLong withContext "chain")
+
+  private val aesZygote =
+    (uint16 withContext "v") ::
+      (varsizebinarydataLong withContext "iv") ::
+      (varsizebinarydataLong withContext "ciphertext")
+
+  val walletZygoteCodec = walletZygote.as[WalletZygote]
+  val aesZygoteCodec = aesZygote.as[AESZygote]
 }

@@ -17,7 +17,6 @@ import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.JsonHttpUtils.to
 import org.http4s.server.blaze.BlazeBuilder
 import com.lightning.wallet.ln.Tools.random
-import fr.acinq.bitcoin.Crypto.PublicKey
 import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
@@ -35,13 +34,13 @@ object Olympus extends ServerApp {
 //          MilliSatoshi(2000000), quantity = 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
 //          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
 //          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", eclairPass = "pass",
-//          ip = "127.0.0.1", checkByToken = true)
+//          ip = "127.0.0.1")
 
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
           eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 1,
           eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
-          ip = "127.0.0.1", checkByToken = true)
+          ip = "127.0.0.1")
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -68,12 +67,6 @@ class Responder { me =>
   // Watching chain and socket
   new ListenerManager(db).connect
   Blockchain.rescanBlocks
-
-  private val check =
-    values.checkByToken match {
-      case true => new BlindTokenChecker
-      case false => new SignatureChecker
-    }
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -142,7 +135,7 @@ class Responder { me =>
       val txIds = req.params andThen hex2Ascii andThen to[StringVec] apply "txids" take 24
       Tuple2(oK, db getTxs txIds).toJson
 
-    case req @ POST -> Root / "txs" / "schedule" => check.verify(req.params) {
+    case req @ POST -> Root / "txs" / "schedule" => verify(req.params) {
       val txs = req.params andThen hex2Ascii andThen to[StringVec] apply bODY
       for (raw <- txs) db.putScheduled(Transaction read raw)
       Tuple2(oK, "done").toJson
@@ -150,7 +143,7 @@ class Responder { me =>
 
     // ARBITRARY DATA
 
-    case req @ POST -> Root / "data" / "put" => check.verify(req.params) {
+    case req @ POST -> Root / "data" / "put" => verify(req.params) {
       val Seq(key, userDataHex) = extract(req.params, identity, "key", bODY)
       db.putData(key, prefix = userDataHex take 32, userDataHex)
       Tuple2(oK, "done").toJson
@@ -168,38 +161,18 @@ class Responder { me =>
       val response = Tuple2(feesPerBlock.toMap, fiatRates.toMap)
       Tuple2(oK, response).toJson
 
-    case GET -> Root / "rates" / "state" => Ok(exchangeRates.displayState mkString "\r\n\r\n")
-    case req @ POST -> Root / "check" => check.verify(req.params)(Tuple2(oK, "done").toJson)
+    case GET -> Root / "rates" / "state" =>
+      Ok(exchangeRates.displayState mkString "\r\n\r\n")
   }
 
-  trait DataChecker {
-    // Incoming data may be accepted either by signature or blind token
-    def verify(params: HttpParams)(next: => TaskResponse): TaskResponse
-  }
+  def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
+    val Seq(point, cleartoken, clearsig) = extract(params, identity, "point", "cleartoken", "clearsig")
+    lazy val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
+      clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
 
-  class BlindTokenChecker extends DataChecker {
-    def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(point, cleartoken, clearsig) = extract(params, identity, "point", "cleartoken", "clearsig")
-      lazy val signatureIsFine = blindTokens.signer.verifyClearSig(clearMsg = new BigInteger(cleartoken),
-        clearSignature = new BigInteger(clearsig), point = blindTokens decodeECPoint point)
-
-      if (params(bODY).length > 250000) Tuple2(eRROR, "bodytoolarge").toJson
-      else if (db isClearTokenUsed cleartoken) Tuple2(eRROR, "tokenused").toJson
-      else if (!signatureIsFine) Tuple2(eRROR, "tokeninvalid").toJson
-      else try next finally db putClearToken cleartoken
-    }
-  }
-
-  class SignatureChecker extends DataChecker {
-    def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
-      val Seq(data, sig, pubkey) = extract(params, BinaryData.apply, bODY, "sig", "pubkey")
-      lazy val sigOk = Crypto.verifySignature(Crypto sha256 data, sig, PublicKey apply pubkey)
-
-      val userPubKeyIsPresent = db keyExists pubkey.toString
-      if (params(bODY).length > 250000) Tuple2(eRROR, "bodytoolarge").toJson
-      else if (!userPubKeyIsPresent) Tuple2(eRROR, "keynotfound").toJson
-      else if (!sigOk) Tuple2(eRROR, "siginvalid").toJson
-      else next
-    }
+    if (params(bODY).length > 250000) Tuple2(eRROR, "bodytoolarge").toJson
+    else if (db isClearTokenUsed cleartoken) Tuple2(eRROR, "tokenused").toJson
+    else if (!signatureIsFine) Tuple2(eRROR, "tokeninvalid").toJson
+    else try next finally db putClearToken cleartoken
   }
 }

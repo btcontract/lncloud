@@ -2,15 +2,14 @@ package com.lightning.wallet.ln
 
 import TransportHandler._
 import com.lightning.wallet.ln.crypto.Noise._
-
-import com.lightning.wallet.ln.wire.{LightningMessage, LightningMessageCodecs}
-import scala.concurrent.{ExecutionContext, Future}
-import fr.acinq.bitcoin.{BinaryData, Protocol}
-
 import scala.concurrent.ExecutionContextExecutor
 import com.lightning.wallet.ln.Tools.random
 import java.util.concurrent.Executors
 import java.nio.ByteOrder
+
+import com.lightning.wallet.ln.wire.{LightningMessage, LightningMessageCodecs}
+import scala.concurrent.{ExecutionContext, Future}
+import fr.acinq.bitcoin.{BinaryData, Protocol}
 
 
 // Used to decrypt remote messages -> send to channel as well as encrypt outgoing messages -> send to socket

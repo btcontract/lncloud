@@ -1,22 +1,20 @@
 package com.lightning.wallet.ln
 
+import scala.concurrent._
 import scala.concurrent.duration._
 import com.lightning.wallet.ln.wire._
+import com.lightning.wallet.ln.LNParams._
 import com.lightning.wallet.ln.Features._
 
 import rx.lang.scala.{Observable => Obs}
 import com.lightning.wallet.ln.Tools.{Bytes, none}
-import scala.concurrent.ExecutionContext.Implicits.global
-import com.lightning.wallet.ln.LNParams.nodePrivateKey
 import com.lightning.wallet.ln.crypto.Noise.KeyPair
+import java.util.concurrent.Executors
 import fr.acinq.bitcoin.BinaryData
-import scala.concurrent.Future
 import java.net.Socket
 
 
 object ConnectionManager {
-  val pair = KeyPair(nodePrivateKey.publicKey, nodePrivateKey.toBin)
-  val ourInit = Init(LNParams.globalFeatures, LNParams.localFeatures)
   var connections = Map.empty[NodeAnnouncement, Worker]
   var listeners = Set.empty[ConnectionListener]
 
@@ -27,31 +25,31 @@ object ConnectionManager {
     override def onDisconnect(ann: NodeAnnouncement) = for (lst <- listeners) lst.onDisconnect(ann)
   }
 
-  def connectTo(a: NodeAnnouncement) = connections get a match {
-    case Some(existingWorker) if !existingWorker.work.isCompleted =>
-      if (null == existingWorker.savedInit) existingWorker.disconnect
-      else events.onOperational(a, existingWorker.savedInit)
+  def disconnectOrCallback(w: Worker, ann: NodeAnnouncement) =
+    // If it is still connected but has no Init we assume failure
+    if (null != w.savedInit) events.onOperational(ann, w.savedInit)
+    else w.disconnect
 
-    case _ =>
-      val newWorker = new Worker(a)
-      // Either disconnected or no worker at all yet
-      connections = connections.updated(a, newWorker)
+  def connectTo(ann: NodeAnnouncement) = connections get ann match {
+    case Some(worker) if !worker.work.isCompleted => disconnectOrCallback(worker, ann)
+    case _ => connections = connections.updated(value = new Worker(ann), key = ann)
   }
 
-  class Worker(ann: NodeAnnouncement) {
-    val handler: TransportHandler = new TransportHandler(pair, ann.nodeId) {
+  class Worker(ann: NodeAnnouncement, val buffer: Bytes = new Bytes(1024), val socket: Socket = new Socket) {
+    implicit val context: ExecutionContextExecutor = ExecutionContext fromExecutor Executors.newSingleThreadExecutor
+    val handler: TransportHandler = new TransportHandler(KeyPair(nodePublicKey.toBin, nodePrivateKey.toBin), ann.nodeId) {
+      def handleEnterOperationalState = handler process Init(globalFeatures = LNParams.globalFeatures, LNParams.localFeatures)
       def handleDecryptedIncomingData(data: BinaryData) = intercept(LightningMessageCodecs deserialize data)
       def handleEncryptedOutgoingData(data: BinaryData) = try socket.getOutputStream write data catch none
       def handleError = { case _ => events onTerminalError ann }
-      def handleEnterOperationalState = process(ourInit)
     }
 
-    val socket: Socket = new Socket
-    var lastPing = System.currentTimeMillis
+    // Used to remove disconnected nodes
+    var lastMsg = System.currentTimeMillis
     var savedInit: Init = _
 
     val work = Future {
-      val buffer = new Bytes(1024)
+      // First blocking connect, then send data
       socket.connect(ann.addresses.head, 7500)
       handler.init
 
@@ -68,12 +66,11 @@ object ConnectionManager {
 
     def intercept(message: LightningMessage) = {
       // Some incoming messages need special handling
-      // also update ping counter on every message
-      lastPing = System.currentTimeMillis
+      lastMsg = System.currentTimeMillis
 
       message match {
         case their: Init if areSupported(their.localFeatures) =>
-          // We need to save their Init in case of repeated requests
+          // We need to save their Init for subsequent requests
           events.onOperational(ann, their)
           savedInit = their
 
@@ -81,6 +78,7 @@ object ConnectionManager {
           val response = Pong("00" * ping.pongLength)
           handler process response
 
+        // This node has incompatible features
         case _: Init => events.onTerminalError(ann)
         case _ => events.onMessage(ann, message)
       }
@@ -89,7 +87,7 @@ object ConnectionManager {
 
   Obs interval 60.seconds foreach { _ =>
     val outdated = System.currentTimeMillis - 1000 * 120
-    for (work <- connections.values if work.lastPing < outdated)
+    for (work <- connections.values if work.lastMsg < outdated)
       work.disconnect
   }
 }

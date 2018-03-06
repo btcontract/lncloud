@@ -102,3 +102,8 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
     Hop(nodeId, shortChannelId, cltvExpiryDelta,
       htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
 }
+
+// Not in a spec
+
+case class WalletZygote(v: Int, db: BinaryData, wallet: BinaryData, chain: BinaryData)
+case class AESZygote(v: Int, iv: BinaryData, ciphertext: BinaryData)

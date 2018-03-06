@@ -171,7 +171,7 @@ object Router { me =>
   }
 
   def isOutdated(cu: ChannelUpdate) =
-    // Considered outdated if it older than two weens
+    // Considered outdated if it older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
   Obs.interval(5.minutes) foreach { _ =>
