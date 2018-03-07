@@ -57,7 +57,8 @@ object ImplicitJsonFormats { me =>
   implicit val satoshiFmt = jsonFormat[Long, Satoshi](Satoshi.apply, "amount")
 
   implicit val valsFmt = jsonFormat[String, MilliSatoshi, Int,
-    String, String, String, String, Int, String, String, Int, String,
+    String, String, String, String, Int, String, String, Int, String, String,
     Vals](Vals.apply, "privKey", "price", "quantity", "btcApi", "zmqApi", "eclairApi",
-    "eclairSockIp", "eclairSockPort", "eclairNodeId", "eclairPass", "rewindRange", "ip")
+    "eclairSockIp", "eclairSockPort", "eclairNodeId", "eclairPass", "rewindRange",
+    "ip", "paymentDescription")
 }

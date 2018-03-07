@@ -35,7 +35,7 @@ class BlindTokens { me =>
     .connectTimeout(5000)
 
   def generateInvoice(price: MilliSatoshi): PaymentRequest = {
-    val content = s"""{ "params": [${price.amount}, "Storage tokens"], "method": "receive" }"""
+    val content = s"""{ "params": [${price.amount}, "${values.paymentDescription}"], "method": "receive" }"""
     PaymentRequest read request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
   }
 
