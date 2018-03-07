@@ -71,8 +71,10 @@ eclair {
 	}
 
 	api {
+		enabled = true
 		binding-ip = "127.0.0.1"
 		port = 8086
+		password = "pass"
 	}
 
 	bitcoind {
