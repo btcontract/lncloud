@@ -15,8 +15,8 @@ object \ {
 object Tools {
   type Bytes = Array[Byte]
   val random = new RandomGenerator
-  def errlog(err: Throwable): Unit = none // err.printStackTrace
-  def log(message: String): Unit = none // println("LN", message)
+  def errlog(err: Throwable): Unit = err.printStackTrace
+  def log(message: String): Unit = println("LN", message)
   def runAnd[T](resultData: T)(action: Any): T = resultData
   def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }

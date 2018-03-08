@@ -101,13 +101,12 @@ object Router { me =>
       val toHops: Vector[ChanDirection] => PaymentRoute = directs => for (dir <- directs) yield updates(dir) toHop dir.from
       val baseGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
       val singleTargetChan = nodeId2Chans.dict(destination).size == 1
-      val perSource = math.ceil(16D / src.size).toInt
 
-      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int)(src: PublicKey): Vector[PaymentRoute] =
-        Try apply DijkstraShortestPath.findPathBetween(graph, src, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if limit > 0 && singleTargetChan => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(src)
-          case Success(way) if limit > 0 && way.size == 1 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1)(src)
-          case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1)(src)
+      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int, key: PublicKey): Vector[PaymentRoute] =
+        Try apply DijkstraShortestPath.findPathBetween(graph, key, destination).getEdgeList.asScala.toVector match {
+          case Success(way) if limit > 0 && singleTargetChan => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
+          case Success(way) if limit > 0 && way.size == 1 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
+          case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1, key)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
@@ -124,8 +123,14 @@ object Router { me =>
         _ = baseGraph addVertex from
       } baseGraph.addEdge(from, to, dir)
 
-      // Squash all route results into a single sequence, use a separate graph per source
-      src flatMap find(Vector.empty, baseGraph.clone.asInstanceOf[Graph], perSource)
+      val results = for (sourceNode <- src) yield {
+        // Create a separate clone for each source node
+        // so multiple removed channels don't interfere
+        val clone = baseGraph.clone.asInstanceOf[Graph]
+        find(Vector.empty, clone, 8, sourceNode)
+      }
+
+      results.flatten
     }
   }
 
