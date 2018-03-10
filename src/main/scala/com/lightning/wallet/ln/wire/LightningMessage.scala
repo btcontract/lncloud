@@ -85,6 +85,7 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: Binar
                                bitcoinKey2: PublicKey) extends RoutingMessage {
 
   val (blockHeight, txIndex, outputIndex) = fromShortId(shortChannelId)
+  val nodes = Set(nodeId1, nodeId2)
 }
 
 case class NodeAnnouncement(signature: BinaryData, features: BinaryData,

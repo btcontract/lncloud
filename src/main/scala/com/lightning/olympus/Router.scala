@@ -27,6 +27,7 @@ case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
 case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 
 object Router { me =>
+  type NodeIdSet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
   type DefFactory = DefaultCharArrayNodeFactory
   type Graph = DirectedMultigraph[PublicKey, ChanDirection]
@@ -37,7 +38,7 @@ object Router { me =>
   val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
   val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefFactory)
-  var nodeId2Chans = Node2Channels(Map.empty withDefaultValue Set.empty)
+  var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
   var finder = GraphFinder(Map.empty)
 
   def rmChanInfo(info: ChanInfo) = {
@@ -69,7 +70,12 @@ object Router { me =>
     nodeId2Announce(node.nodeId) = node
   }
 
-  case class Node2Channels(dict: Map[PublicKey, ShortChannelIdSet] = Map.empty) {
+  def getNeighbours(nodeIds: NodeIdSet, acc: NodeIdSet, reach: Int): NodeIdSet = if (reach < 1) acc else {
+    val neighborhood = nodeIds.flatMap(nodeId2Chans.dict).flatMap(shortId => chanId2Info(shortId).ca.nodes)
+    getNeighbours(neighborhood -- nodeIds, neighborhood ++ acc, reach - 1)
+  }
+
+  case class Node2Channels(dict: mutable.Map[PublicKey, ShortChannelIdSet] = mutable.Map.empty) {
     // Too big nodes have a 50% change to get dampened down, relatively well connected nodes have a 10% chance to pop up
     def between(size: Long, min: Long, max: Long, chance: Double) = random.nextDouble < chance && size > min & size < max
 
@@ -80,16 +86,16 @@ object Router { me =>
     }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChanId(info: ChanInfo) = {
-      val dict1 = dict.updated(info.ca.nodeId1, dict(info.ca.nodeId1) + info.ca.shortChannelId)
-      val dict2 = dict1.updated(info.ca.nodeId2, dict1(info.ca.nodeId2) + info.ca.shortChannelId)
-      Node2Channels(dict2)
+      dict(info.ca.nodeId1) += info.ca.shortChannelId
+      dict(info.ca.nodeId2) += info.ca.shortChannelId
+      Node2Channels(dict)
     }
 
     def minusShortChanId(info: ChanInfo) = {
-      val dict1 = dict.updated(info.ca.nodeId1, dict(info.ca.nodeId1) - info.ca.shortChannelId)
-      val dict2 = dict1.updated(info.ca.nodeId2, dict1(info.ca.nodeId2) - info.ca.shortChannelId)
-      val dict3 = dict2 filter { case _ \ shortChanIds => shortChanIds.nonEmpty }
-      Node2Channels(dict3)
+      dict(info.ca.nodeId1) -= info.ca.shortChannelId
+      dict(info.ca.nodeId2) -= info.ca.shortChannelId
+      val dict1 = dict filter { case _ \ set => set.nonEmpty }
+      Node2Channels(dict1)
     }
   }
 
@@ -97,14 +103,16 @@ object Router { me =>
     def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
     def rmRandomEdge(ds: Seq[ChanDirection], graph: Graph) = rmEdge(graph, shuffle(ds).head)
 
-    def findPaths(xNodes: Set[PublicKey], xChans: ShortChannelIdSet, src: Vector[PublicKey], destination: PublicKey) = {
-      val toHops: Vector[ChanDirection] => PaymentRoute = directs => for (dir <- directs) yield updates(dir) toHop dir.from
+    def findPaths(xNodes: NodeIdSet, xChans: ShortChannelIdSet, sources: NodeIdSet, destination: PublicKey) = {
+      val toHops: Vector[ChanDirection] => PaymentRoute = ds => for (dir <- ds) yield updates(dir) toHop dir.from
       val baseGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
-      val singleTargetChan = nodeId2Chans.dict(destination).size == 1
+      val toNeighborhood = getNeighbours(Set(destination), Set.empty, reach = 2)
+      val fromNeighborhood = getNeighbours(sources, Set.empty, reach = 1)
+      val singleChanTarget = nodeId2Chans.dict(destination).size == 1
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int, key: PublicKey): Vector[PaymentRoute] =
         Try apply DijkstraShortestPath.findPathBetween(graph, key, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if limit > 0 && singleTargetChan => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
+          case Success(way) if limit > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
           case Success(way) if limit > 0 && way.size == 1 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
           case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1, key)
           case Success(way) => acc :+ toHops(way)
@@ -113,8 +121,8 @@ object Router { me =>
 
       for {
         dir @ ChanDirection(shortId, from, to) <- updates.keys
-        if src.contains(from) || nodeId2Chans.dict(from).size > 1
-        if to == destination || nodeId2Chans.dict(to).size > 1
+        if fromNeighborhood.contains(from) || nodeId2Chans.dict(from).size > 10
+        if toNeighborhood.contains(to) || nodeId2Chans.dict(to).size > 10
         if !xChans.contains(shortId)
         if !xNodes.contains(from)
         if !xNodes.contains(to)
@@ -123,12 +131,11 @@ object Router { me =>
         _ = baseGraph addVertex from
       } baseGraph.addEdge(from, to, dir)
 
-      val results = for (sourceNode <- src) yield {
-        // Create a separate clone for each source node
-        // so multiple removed channels don't interfere
-        val clone = baseGraph.clone.asInstanceOf[Graph]
-        find(Vector.empty, clone, 8, sourceNode)
-      }
+      val results = for {
+        sourceNodeKey <- sources
+        clone = baseGraph.clone.asInstanceOf[Graph]
+        // Create a separate graph for each source node
+      } yield find(Vector.empty, clone, 8, sourceNodeKey)
 
       results.flatten
     }
