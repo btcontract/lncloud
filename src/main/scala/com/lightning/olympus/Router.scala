@@ -121,8 +121,8 @@ object Router { me =>
 
       for {
         dir @ ChanDirection(shortId, from, to) <- updates.keys
-        if fromNeighborhood.contains(from) || nodeId2Chans.dict(from).size > 10
-        if toNeighborhood.contains(to) || nodeId2Chans.dict(to).size > 10
+        if fromNeighborhood.contains(from) || nodeId2Chans.dict(from).size >= 10
+        if toNeighborhood.contains(to) || nodeId2Chans.dict(to).size >= 10
         if !xChans.contains(shortId)
         if !xNodes.contains(from)
         if !xNodes.contains(to)
@@ -135,7 +135,7 @@ object Router { me =>
         sourceNodeKey <- sources
         clone = baseGraph.clone.asInstanceOf[Graph]
         // Create a separate graph for each source node
-      } yield find(Vector.empty, clone, 8, sourceNodeKey)
+      } yield find(Vector.empty, clone, 4, sourceNodeKey)
 
       results.flatten
     }

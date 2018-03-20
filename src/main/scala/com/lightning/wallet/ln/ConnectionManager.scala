@@ -26,7 +26,7 @@ object ConnectionManager {
   }
 
   def disconnectOrCallback(w: Worker, ann: NodeAnnouncement) =
-    // If it is still connected but has no Init we assume failure
+  // If it is still connected but has no Init we assume failure
     if (null != w.savedInit) events.onOperational(ann, w.savedInit)
     else w.disconnect
 

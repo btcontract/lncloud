@@ -11,7 +11,6 @@ import fr.acinq.eclair.UInt64
 trait LightningMessage
 trait RoutingMessage extends LightningMessage
 trait ChannelSetupMessage extends LightningMessage
-trait HasHtlcId extends ChannelMessage { def id: Long }
 trait ChannelMessage extends LightningMessage { val channelId: BinaryData }
 
 // BASIC MESSAGES: channels never get these
@@ -49,14 +48,14 @@ case class Shutdown(channelId: BinaryData, scriptPubKey: BinaryData) extends Cha
 
 case class UpdateAddHtlc(channelId: BinaryData, id: Long,
                          amountMsat: Long, paymentHash: BinaryData, expiry: Long,
-                         onionRoutingPacket: BinaryData) extends HasHtlcId {
+                         onionRoutingPacket: BinaryData) extends ChannelMessage {
 
   val amount = MilliSatoshi(amountMsat)
 }
 
-case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends HasHtlcId
-case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends HasHtlcId
-case class UpdateFulfillHtlc(channelId: BinaryData, id: Long, paymentPreimage: BinaryData) extends HasHtlcId {
+case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends ChannelMessage
+case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends ChannelMessage
+case class UpdateFulfillHtlc(channelId: BinaryData, id: Long, paymentPreimage: BinaryData) extends ChannelMessage {
 
   val paymentHash = fr.acinq.bitcoin.Crypto sha256 paymentPreimage.data
 }
@@ -85,7 +84,7 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: Binar
                                bitcoinKey2: PublicKey) extends RoutingMessage {
 
   val (blockHeight, txIndex, outputIndex) = fromShortId(shortChannelId)
-  val nodes = Set(nodeId1, nodeId2)
+  lazy val nodes = Set(nodeId1, nodeId2)
 }
 
 case class NodeAnnouncement(signature: BinaryData, features: BinaryData,

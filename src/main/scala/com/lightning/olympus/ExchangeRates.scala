@@ -6,7 +6,6 @@ import com.lightning.olympus.JsonHttpUtils._
 import org.knowm.xchange.currency.CurrencyPair._
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
-import rx.lang.scala.schedulers.IOScheduler
 import com.lightning.wallet.ln.Tools.none
 import org.knowm.xchange.ExchangeFactory
 import scala.util.Try
@@ -74,7 +73,7 @@ class ExchangeRates {
   } yield s"${average.pair} $exchange \r\n-- $humanHistory"
 
   val currencies = List(usd, eur, jpy, cny)
-  retry(obsOn(currencies.foreach(_.update), IOScheduler.apply), pickInc, 1 to 3)
+  retry(obsOnIO.map(_ => for (average <- currencies) average.update), pickInc, 4 to 6)
     .repeatWhen(_ delay 30.minutes).doOnNext(_ => Tools log "Exchange rates updated")
     .subscribe(none)
 }

@@ -3,13 +3,17 @@ package com.lightning.olympus
 import spray.json._
 import scala.concurrent.duration._
 import com.lightning.olympus.Utils._
-import rx.lang.scala.{Scheduler, Observable => Obs}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import com.lightning.olympus.JsonHttpUtils._
 
+import rx.lang.scala.{Observable => Obs}
+import com.lightning.wallet.ln.{PaymentRequest, Tools}
+import scala.collection.JavaConverters.mapAsJavaMapConverter
+import com.github.kevinsawicki.http.HttpRequest
+import rx.lang.scala.schedulers.IOScheduler
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import wf.bitcoin.javabitcoindrpcclient
-import com.lightning.wallet.ln.Tools
+import fr.acinq.bitcoin.BinaryData
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
 
@@ -31,29 +35,75 @@ object Utils {
 object JsonHttpUtils {
   def initDelay[T](next: Obs[T], startMillis: Long, timeoutMillis: Long) = {
     val adjustedTimeout = startMillis + timeoutMillis - System.currentTimeMillis
-    val delayLeft = if (adjustedTimeout < 0) 0L else adjustedTimeout
+    val delayLeft = if (adjustedTimeout < 0L) 0L else adjustedTimeout
     Obs.just(null).delay(delayLeft.millis).flatMap(_ => next)
   }
 
-  def obsOn[T](provider: => T, scheduler: Scheduler) =
-    Obs.just(null).subscribeOn(scheduler).map(_ => provider)
-
-  def pickInc(err: Throwable, next: Int) = next.seconds
-  def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
+  def obsOnIO = Obs just null subscribeOn IOScheduler.apply
   def retry[T](obs: Obs[T], pick: (Throwable, Int) => Duration, times: Range) =
     obs.retryWhen(_.zipWith(Obs from times)(pick) flatMap Obs.timer)
+
+  def to[T : JsonFormat](raw: String): T = raw.parseJson.convertTo[T]
+  def pickInc(error: Throwable, next: Int) = next.seconds
 }
 
 // k is session private key, a source for signerR
 // tokens is a list of yet unsigned blind BigInts from client
 
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindData(paymentHash: BinaryData, k: BigInteger, tokens: StringVec)
-case class Vals(privKey: String, price: MilliSatoshi, quantity: Int, btcApi: String,
-                zmqApi: String, eclairApi: String, eclairSockIp: String, eclairSockPort: Int,
-                eclairNodeId: String, eclairPass: String, rewindRange: Int, ip: String,
-                paymentDescription: String) {
+case class BlindData(paymentHash: BinaryData, id: String, k: BigInteger, tokens: StringVec)
+case class Vals(privKey: String, btcApi: String, zmqApi: String, eclairSockIp: String, eclairSockPort: Int,
+                eclairNodeId: String, rewindRange: Int, ip: String, paymentProvider: PaymentProvider) {
 
   lazy val bigIntegerPrivKey = new BigInteger(privKey)
   lazy val eclairNodePubKey = PublicKey(eclairNodeId)
+}
+
+trait PaymentProvider {
+  def isPaid(data: BlindData): Boolean
+  def generateInvoice: Charge
+
+  val quantity: Int
+  val priceMsat: Long
+  val description: String
+  val url: String
+}
+
+case class Charge(id: String, paymentHash: String,
+                  paymentRequest: String, paid: Boolean)
+
+case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
+                          url: String, privKey: String) extends PaymentProvider {
+
+  def generateInvoice = {
+    val params = Map("amount" -> priceMsat.toString, "currency" -> "btc", "description" -> "payment")
+    to[Charge](HttpRequest.post(url).form(params.asJava).connectTimeout(10000).basic(privKey, "").body)
+  }
+
+  def isPaid(data: BlindData) =
+    to[Charge](HttpRequest.get(url + "/" + data.id)
+      .connectTimeout(10000).basic(privKey, "").body).paid
+}
+
+case class EclairProvider(priceMsat: Long, quantity: Int, description: String,
+                          url: String, pass: String) extends PaymentProvider {
+
+  def request =
+    HttpRequest.post(url).basic("eclair-cli", pass)
+      .contentType("application/json").connectTimeout(5000)
+
+  def generateInvoice = {
+    val content = s"""{ "params": [$priceMsat, "$description"], "method": "receive" }"""
+    val rawPr = request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
+
+    val pr = PaymentRequest read rawPr
+    val payHash = pr.paymentHash.toString
+    Charge(payHash, payHash, rawPr, paid = false)
+  }
+
+  def isPaid(data: BlindData) = {
+    val paymentHash = data.paymentHash.toString
+    val content = s"""{ "params": ["$paymentHash"], "method": "checkpayment" }"""
+    request.send(content).body.parseJson.asJsObject.fields("result").convertTo[Boolean]
+  }
 }

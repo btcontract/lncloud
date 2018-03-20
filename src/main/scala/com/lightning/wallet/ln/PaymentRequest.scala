@@ -165,7 +165,7 @@ object PaymentRequest {
   object Timestamp {
     def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
     def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
-      else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
+    else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {

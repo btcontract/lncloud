@@ -108,7 +108,7 @@ class Responder { me =>
     case req @ POST -> Root / "router" / "routes" =>
       val Seq(xnodes, xchans, froms, tos) = extract(req.params, hex2Ascii, "xn", "xc", "froms", "tos")
       val paths = Router.finder.findPaths(xNodes = to[StringSet](xnodes) take 250 map string2PublicKey,
-        xChans = to[ShortChannelIdSet](xchans) take 500, to[StringSet](froms) take 8 map string2PublicKey,
+        xChans = to[ShortChannelIdSet](xchans) take 250, to[StringSet](froms) take 8 map string2PublicKey,
         destination = to[StringSet](tos).head)
 
       Tuple2(oK, paths).toJson
