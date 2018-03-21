@@ -1,17 +1,16 @@
 package com.lightning.wallet.lnutils
 
 import spray.json._
-import spray.json.DefaultJsonProtocol._
+import com.lightning.olympus._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi, Transaction}
-import com.lightning.olympus.{EclairProvider, PaymentProvider, StrikeProvider, Vals}
 import scodec.bits.BitVector
 import java.math.BigInteger
 import scodec.Codec
 
 
-object ImplicitJsonFormats { me =>
+object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   def json2BitVec(json: JsValue): Option[BitVector] = BitVector fromHex json2String(json)
   def sCodecJsonFmt[T](codec: Codec[T] /* Json <-> sCodec bridge */) = new JsonFormat[T] {
     def read(serialized: JsValue) = codec.decode(json2BitVec(serialized).get).require.value
@@ -67,6 +66,9 @@ object ImplicitJsonFormats { me =>
   implicit val publicKeyFmt = jsonFormat[Point, Boolean, PublicKey](PublicKey.apply, "value", "compressed")
   implicit val milliSatoshiFmt = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "amount")
   implicit val satoshiFmt = jsonFormat[Long, Satoshi](Satoshi.apply, "amount")
+
+  implicit val chargeFmt = jsonFormat[String, String, String, Boolean,
+    Charge](Charge.apply, "payment_hash", "id", "payment_request", "paid")
 
   implicit object HasCommitmentsFmt
   extends JsonFormat[PaymentProvider] {

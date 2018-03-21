@@ -4,6 +4,7 @@ import spray.json._
 import scala.concurrent.duration._
 import com.lightning.olympus.Utils._
 import com.lightning.olympus.JsonHttpUtils._
+import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 
 import rx.lang.scala.{Observable => Obs}
 import com.lightning.wallet.ln.{PaymentRequest, Tools}
@@ -69,7 +70,7 @@ trait PaymentProvider {
   val url: String
 }
 
-case class Charge(id: String, paymentHash: String,
+case class Charge(paymentHash: String, id: String,
                   paymentRequest: String, paid: Boolean)
 
 case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,

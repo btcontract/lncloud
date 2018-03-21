@@ -81,7 +81,7 @@ object Router { me =>
 
     lazy val scoredNodeSuggestions = dict.toSeq.map {
       case key \ chanIds if between(chanIds.size, 300, Long.MaxValue, 0.5D) => key -> chanIds.size / 10
-      case key \ chanIds if between(chanIds.size, 25, 300, 0.1D) => key -> chanIds.size * 10
+      case key \ chanIds if between(chanIds.size, 30, 300, 0.1D) => key -> chanIds.size * 10
       case key \ chanIds => key -> chanIds.size
     }.sortWith(_._2 > _._2).map(_._1)
 

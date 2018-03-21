@@ -5,7 +5,6 @@ import org.http4s.dsl._
 import fr.acinq.bitcoin._
 import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
-import spray.json.DefaultJsonProtocol._
 import scala.collection.JavaConverters._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
@@ -30,17 +29,12 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
+        val description = "Storage tokens for backup Olympus server at 10.0.2.2"
+        val eclairProvider = EclairProvider(2000000L, 50, description, "http://127.0.0.1:8082", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          MilliSatoshi(2000000), quantity = 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-          eclairApi = "http://213.133.99.89:8080", eclairSockIp = "213.133.99.89", eclairSockPort = 9735, rewindRange = 1,
-          eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375", eclairPass = "pass",
-          ip = "127.0.0.1", paymentDescription = "Storage tokens for backup Olympus server at 213.133.99.89")
-
-//        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-//          MilliSatoshi(2000000), 50, btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000",
-//          eclairApi = "http://127.0.0.1:8082", eclairSockIp = "127.0.0.1", eclairSockPort = 9092, rewindRange = 1,
-//          eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6", eclairPass = "pass",
-//          ip = "127.0.0.1", paymentDescription = "Storage tokens for backup Olympus server at 10.0.2.2")
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
+          eclairSockPort = 9092, eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6",
+          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider)
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -72,20 +66,20 @@ class Responder { me =>
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
     case POST -> Root / "blindtokens" / "info" => new ECKey(random) match { case ses =>
       blindTokens.cache(ses.getPublicKeyAsHex) = CacheItem(ses.getPrivKey, System.currentTimeMillis)
-      val response = Tuple3(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.quantity)
-      Tuple2(oK, response).toJson
+      val res = Tuple3(blindTokens.signer.masterPubKeyHex, ses.getPublicKeyAsHex, values.paymentProvider.quantity)
+      Tuple2(oK, res).toJson
     }
 
     // Record tokens and send an Invoice
     case req @ POST -> Root / "blindtokens" / "buy" =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.quantity
+      val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.paymentProvider.quantity
 
       blindTokens.cache get sesKey map { item =>
-        val request = blindTokens generateInvoice values.price
-        val blind = BlindData(request.paymentHash, item.data, pruned)
-        db.putPendingTokens(blind, sesKey)
-        PaymentRequest write request
+        val Charge(hash, id, serializedPR, false) = values.paymentProvider.generateInvoice
+        db.putPendingTokens(data = BlindData(hash, id, item.data, pruned), sesKey)
+        serializedPR
+
       } match {
         case Some(invoice) => Tuple2(oK, invoice).toJson
         case None => Tuple2(eRROR, "notfound").toJson
@@ -96,7 +90,7 @@ class Responder { me =>
       // We only sign tokens if the request has been fulfilled
 
       db.getPendingTokens(req params "seskey") match {
-        case Some(data) if blindTokens isFulfilled data =>
+        case Some(data) if values.paymentProvider isPaid data =>
           Tuple2(oK, blindTokens sign data).toJson
 
         case None => Tuple2(eRROR, "notfound").toJson
