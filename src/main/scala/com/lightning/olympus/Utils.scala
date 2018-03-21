@@ -48,13 +48,13 @@ object JsonHttpUtils {
   def pickInc(error: Throwable, next: Int) = next.seconds
 }
 
-// k is session private key, a source for signerR
-// tokens is a list of yet unsigned blind BigInts from client
+// k is session private key, a source for signerR, tokens is a list of unsigned blind BigInts from client
+case class BlindData(paymentHash: BinaryData, id: String, k: BigInteger, tokens: StringVec)
 
 case class CacheItem[T](data: T, stamp: Long)
-case class BlindData(paymentHash: BinaryData, id: String, k: BigInteger, tokens: StringVec)
-case class Vals(privKey: String, btcApi: String, zmqApi: String, eclairSockIp: String, eclairSockPort: Int,
-                eclairNodeId: String, rewindRange: Int, ip: String, paymentProvider: PaymentProvider) {
+case class Vals(privKey: String, btcApi: String, zmqApi: String, eclairSockIp: String,
+                eclairSockPort: Int, eclairNodeId: String, rewindRange: Int, ip: String,
+                paymentProvider: PaymentProvider, minChannels: Int) {
 
   lazy val bigIntegerPrivKey = new BigInteger(privKey)
   lazy val eclairNodePubKey = PublicKey(eclairNodeId)
@@ -76,10 +76,9 @@ case class Charge(paymentHash: String, id: String,
 case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
                           url: String, privKey: String) extends PaymentProvider {
 
-  def generateInvoice = {
-    val params = Map("amount" -> priceMsat.toString, "currency" -> "btc", "description" -> "payment")
-    to[Charge](HttpRequest.post(url).trustAllCerts.form(params.asJava).connectTimeout(10000).basic(privKey, "").body)
-  }
+  def generateInvoice =
+    to[Charge](HttpRequest.post(url).trustAllCerts.form(Map("amount" -> priceMsat.toString,
+      "currency" -> "btc", "description" -> "payment").asJava).connectTimeout(10000).basic(privKey, "").body)
 
   def isPaid(data: BlindData) =
     to[Charge](HttpRequest.get(url + "/" + data.id).trustAllCerts

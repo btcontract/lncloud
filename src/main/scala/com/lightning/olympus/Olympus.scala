@@ -34,7 +34,7 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
           eclairSockPort = 9092, eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6",
-          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider)
+          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)

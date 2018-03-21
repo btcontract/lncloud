@@ -9,11 +9,11 @@ import com.googlecode.concurrenttrees.radix.node.concrete._
 import scala.util.{Success, Try}
 import rx.lang.scala.{Observable => Obs}
 import com.lightning.wallet.ln.Tools.{random, wrap}
-import org.jgrapht.graph.{ClassBasedEdgeFactory, DirectedMultigraph}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.ScriptPubKey
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
+import org.jgrapht.graph.DirectedWeightedPseudograph
 import scala.concurrent.duration.DurationInt
 import com.lightning.wallet.ln.Tools.runAnd
 import scala.language.implicitConversions
@@ -24,13 +24,13 @@ import scala.collection.mutable
 
 
 case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
-case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
+case class ChanDirection(fee: Double, shortId: Long, from: PublicKey, to: PublicKey)
 
 object Router { me =>
   type NodeIdSet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
   type DefFactory = DefaultCharArrayNodeFactory
-  type Graph = DirectedMultigraph[PublicKey, ChanDirection]
+  type Graph = DirectedWeightedPseudograph[PublicKey, ChanDirection]
   private[this] val chanDirectionClass = classOf[ChanDirection]
 
   val removedChannels = mutable.Set.empty[Long]
@@ -105,31 +105,32 @@ object Router { me =>
 
     def findPaths(xNodes: NodeIdSet, xChans: ShortChannelIdSet, sources: NodeIdSet, destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = ds => for (dir <- ds) yield updates(dir) toHop dir.from
-      val baseGraph = new Graph(new ClassBasedEdgeFactory(chanDirectionClass), false)
       val toNeighborhood = getNeighbours(Set(destination), Set.empty, reach = 2)
       val fromNeighborhood = getNeighbours(sources, Set.empty, reach = 1)
       val singleChanTarget = nodeId2Chans.dict(destination).size == 1
+      val baseGraph = new Graph(chanDirectionClass)
 
       def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int, key: PublicKey): Vector[PaymentRoute] =
         Try apply DijkstraShortestPath.findPathBetween(graph, key, destination).getEdgeList.asScala.toVector match {
           case Success(way) if limit > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
-          case Success(way) if limit > 0 && way.size == 1 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
+          case Success(way) if limit > 0 && way.size <= 2 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
           case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1, key)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
 
-      for {
-        dir @ ChanDirection(shortId, from, to) <- updates.keys
-        if fromNeighborhood.contains(from) || nodeId2Chans.dict(from).size >= 10
-        if toNeighborhood.contains(to) || nodeId2Chans.dict(to).size >= 10
-        if !xChans.contains(shortId)
-        if !xNodes.contains(from)
-        if !xNodes.contains(to)
+      updates.keys foreach { case dir @ ChanDirection(fee, shortId, fromNode, toNode) =>
+        val ok1 = fromNeighborhood.contains(fromNode) || nodeId2Chans.dict(fromNode).size >= values.minChannels
+        val ok2 = toNeighborhood.contains(toNode) || nodeId2Chans.dict(toNode).size >= values.minChannels
+        val nope = xChans.contains(shortId) || xNodes.contains(fromNode) || xNodes.contains(toNode)
 
-        _ = baseGraph addVertex to
-        _ = baseGraph addVertex from
-      } baseGraph.addEdge(from, to, dir)
+        if (ok1 && ok2 && !nope) {
+          baseGraph addVertex toNode
+          baseGraph addVertex fromNode
+          baseGraph.addEdge(fromNode, toNode, dir)
+          baseGraph.setEdgeWeight(dir, fee)
+        }
+      }
 
       val results = for {
         sourceNodeKey <- sources
@@ -159,8 +160,8 @@ object Router { me =>
       val info = chanId2Info(cu.shortChannelId)
       val isDisabled = Announcements isDisabled cu.flags
       val direction = Announcements isNode1 cu.flags match {
-        case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
-        case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
+        case true => ChanDirection(cu.feeEstimate, cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
+        case false => ChanDirection(cu.feeEstimate, cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
       }
 
       val isFresh = finder.updates.get(direction).forall(existing => existing.timestamp < cu.timestamp)
