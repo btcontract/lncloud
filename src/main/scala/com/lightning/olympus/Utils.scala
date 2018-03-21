@@ -78,11 +78,11 @@ case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
 
   def generateInvoice = {
     val params = Map("amount" -> priceMsat.toString, "currency" -> "btc", "description" -> "payment")
-    to[Charge](HttpRequest.post(url).form(params.asJava).connectTimeout(10000).basic(privKey, "").body)
+    to[Charge](HttpRequest.post(url).trustAllCerts.form(params.asJava).connectTimeout(10000).basic(privKey, "").body)
   }
 
   def isPaid(data: BlindData) =
-    to[Charge](HttpRequest.get(url + "/" + data.id)
+    to[Charge](HttpRequest.get(url + "/" + data.id).trustAllCerts
       .connectTimeout(10000).basic(privKey, "").body).paid
 }
 
