@@ -37,13 +37,13 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 $ mongo
 
 > use olympus
-> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 } )
 > db.spentTxs.createIndex( { "txids": 1 } )
 
 > db.scheduledTxs.createIndex( { "txid": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 14 } )
 > db.scheduledTxs.createIndex( { "cltv": 1 } )
 
-> db.userData.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.userData.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
 > db.userData.createIndex( { "key": 1 } )
 
 > use blindSignatures
