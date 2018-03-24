@@ -5,9 +5,6 @@ import scala.concurrent.duration._
 import com.lightning.olympus.Utils._
 import com.lightning.olympus.JsonHttpUtils._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
-
-import rx.lang.scala.{Observable => Obs}
-import com.lightning.wallet.ln.{PaymentRequest, Tools}
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import com.github.kevinsawicki.http.HttpRequest
 import rx.lang.scala.schedulers.IOScheduler
@@ -17,6 +14,9 @@ import wf.bitcoin.javabitcoindrpcclient
 import fr.acinq.bitcoin.BinaryData
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
+
+import com.lightning.wallet.ln.{PaymentRequest, Tools}
+import rx.lang.scala.{Observable => Obs}
 
 
 object Utils {
@@ -30,7 +30,6 @@ object Utils {
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
   def extract[T](src: Map[String, String], fn: String => T, args: String*): Seq[T] = args.map(src andThen fn)
-  def errLog: PartialFunction[Throwable, Unit] = { case err => Tools log err.getMessage }
 }
 
 object JsonHttpUtils {
@@ -78,11 +77,11 @@ case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
 
   def generateInvoice =
     to[Charge](HttpRequest.post(url).trustAllCerts.form(Map("amount" -> priceMsat.toString,
-      "currency" -> "btc", "description" -> "payment").asJava).connectTimeout(10000).basic(privKey, "").body)
+      "currency" -> "btc", "description" -> "payment").asJava).basic(privKey, "").connectTimeout(10000).body)
 
   def isPaid(data: BlindData) =
     to[Charge](HttpRequest.get(url + "/" + data.id).trustAllCerts
-      .connectTimeout(10000).basic(privKey, "").body).paid
+      .basic(privKey, "").connectTimeout(10000).body).paid
 }
 
 case class EclairProvider(priceMsat: Long, quantity: Int, description: String,
