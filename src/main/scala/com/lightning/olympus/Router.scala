@@ -171,7 +171,7 @@ object Router { me =>
     case _ =>
   }
 
-  def complexRemove(infos: Iterable[ChanInfo], why: String) = me synchronized {
+  def complexRemove(infos: Iterable[ChanInfo], what: String) = me synchronized {
     // Once channel infos are removed we may have nodes without channels and updates
 
     infos foreach rmChanInfo
@@ -180,7 +180,7 @@ object Router { me =>
     // And finally we need to remove all the lost updates which have no channel announcements left
     val updates1 = finder.updates filter { case direction \ _ => chanId2Info contains direction.shortId }
     finder = GraphFinder(updates1)
-    Tools log why
+    Tools log what
   }
 
   def isOutdated(cu: ChannelUpdate) =

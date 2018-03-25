@@ -5,15 +5,15 @@ import org.http4s.dsl._
 import fr.acinq.bitcoin._
 import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
+import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import org.http4s.{HttpService, Response}
-
 import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.JsonHttpUtils.to
+import scala.concurrent.duration.DurationInt
 import org.http4s.server.blaze.BlazeBuilder
 import com.lightning.wallet.ln.Tools.random
 import language.implicitConversions
@@ -22,6 +22,12 @@ import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import java.math.BigInteger
 
+import java.net.{InetAddress, InetSocketAddress}
+import com.lightning.olympus.zmq.ZMQSupervisor
+import org.http4s.{HttpService, Response}
+import rx.lang.scala.{Observable => Obs}
+import akka.actor.{ActorSystem, Props}
+
 
 object Olympus extends ServerApp {
   type ProgramArguments = List[String]
@@ -29,19 +35,19 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
-//        val description = "Storage tokens for backup Olympus server at 10.0.2.2"
-//        val eclairProvider = EclairProvider(2000000L, 50, description, "http://127.0.0.1:8082", "pass")
-//        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-//          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
-//          eclairSockPort = 9092, eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6",
-//          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
-
         val description = "Storage tokens for backup Olympus server at 10.0.2.2"
-        val eclairProvider = EclairProvider(2000000L, 50, description, "http://127.0.0.1:8083", "pass")
+        val eclairProvider = EclairProvider(2000000L, 50, description, "http://127.0.0.1:8082", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
-          eclairSockPort = 9093, eclairNodeId = "036abc346bfcdff85e374e290b5acaeb65b9121cd6f43f08236c3136c376c39e9f",
+          eclairSockPort = 9092, eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6",
           rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
+
+//        val description = "Storage tokens for backup Olympus server at 10.0.2.2"
+//        val eclairProvider = EclairProvider(2000000L, 50, description, "http://127.0.0.1:8083", "pass")
+//        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
+//          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
+//          eclairSockPort = 9093, eclairNodeId = "036abc346bfcdff85e374e290b5acaeb65b9121cd6f43f08236c3136c376c39e9f",
+//          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -65,9 +71,10 @@ class Responder { me =>
   private val feeRates = new FeeRates
   private val db = new MongoDatabase
 
-  // Watching chain and socket
-  new ListenerManager(db).connect
-  Blockchain.rescanBlocks
+  val system = ActorSystem("zmq-system")
+  // Start watching Bitcoin blocks and transactions via ZMQ interface
+  val supervisor = system actorOf Props.create(classOf[ZMQSupervisor], db)
+  LNConnector.connect
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -175,5 +182,21 @@ class Responder { me =>
     else if (db isClearTokenUsed cleartoken) Tuple2(eRROR, "tokenused").toJson
     else if (!signatureIsFine) Tuple2(eRROR, "tokeninvalid").toJson
     else try next finally db putClearToken cleartoken
+  }
+}
+
+object LNConnector {
+  def connect = ConnectionManager connectTo announce
+  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing source",
+    new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort) :: Nil)
+
+  ConnectionManager.listeners += new ConnectionListener {
+    override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg
+    override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Eclair socket is operational"
+    override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
+
+    override def onDisconnect(announce: NodeAnnouncement) =
+      Obs.just(Tools log "Restarting socket").delay(5.seconds)
+        .subscribe(_ => connect, _.printStackTrace)
   }
 }

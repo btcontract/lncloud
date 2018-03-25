@@ -7,6 +7,7 @@ import com.lightning.olympus.JsonHttpUtils._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import com.github.kevinsawicki.http.HttpRequest
+import com.lightning.wallet.ln.PaymentRequest
 import rx.lang.scala.schedulers.IOScheduler
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -14,9 +15,6 @@ import wf.bitcoin.javabitcoindrpcclient
 import fr.acinq.bitcoin.BinaryData
 import org.bitcoinj.core.Utils.HEX
 import java.math.BigInteger
-
-import com.lightning.wallet.ln.{PaymentRequest, Tools}
-import rx.lang.scala.{Observable => Obs}
 
 
 object Utils {
@@ -33,6 +31,7 @@ object Utils {
 }
 
 object JsonHttpUtils {
+  import rx.lang.scala.{Observable => Obs}
   def initDelay[T](next: Obs[T], startMillis: Long, timeoutMillis: Long) = {
     val adjustedTimeout = startMillis + timeoutMillis - System.currentTimeMillis
     val delayLeft = if (adjustedTimeout < 0L) 0L else adjustedTimeout
@@ -47,7 +46,7 @@ object JsonHttpUtils {
   def pickInc(error: Throwable, next: Int) = next.seconds
 }
 
-// k is session private key, a source for signerR, tokens is a list of unsigned blind BigInts from client
+// k is session private key, a source for signerR, tokens is a list of unsigned blind BigInts
 case class BlindData(paymentHash: BinaryData, id: String, k: BigInteger, tokens: StringVec)
 
 case class CacheItem[T](data: T, stamp: Long)

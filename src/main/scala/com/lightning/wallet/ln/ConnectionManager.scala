@@ -15,13 +15,14 @@ import java.net.Socket
 
 
 object ConnectionManager {
-  var connections = Map.empty[NodeAnnouncement, Worker]
   var listeners = Set.empty[ConnectionListener]
+  var connections = Map.empty[NodeAnnouncement, Worker]
 
   protected[this] val events = new ConnectionListener {
     override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = for (lst <- listeners) lst.onMessage(ann, msg)
     override def onOperational(ann: NodeAnnouncement, their: Init) = for (lst <- listeners) lst.onOperational(ann, their)
     override def onTerminalError(ann: NodeAnnouncement) = for (lst <- listeners) lst.onTerminalError(ann)
+    override def onIncompatible(ann: NodeAnnouncement) = for (lst <- listeners) lst.onIncompatible(ann)
     override def onDisconnect(ann: NodeAnnouncement) = for (lst <- listeners) lst.onDisconnect(ann)
   }
 
@@ -65,22 +66,23 @@ object ConnectionManager {
     def disconnect = try socket.close catch none
 
     def intercept(message: LightningMessage) = {
-      // Some incoming messages need special handling
+      // Update liveness on each incoming message
       lastMsg = System.currentTimeMillis
 
       message match {
-        case their: Init if areSupported(their.localFeatures) =>
-          // We need to save their Init for subsequent requests
-          events.onOperational(ann, their)
-          savedInit = their
-
         case ping: Ping if ping.pongLength > 0 =>
           val response = Pong("00" * ping.pongLength)
           handler process response
 
-        // This node has incompatible features
-        case _: Init => events.onTerminalError(ann)
-        case _ => events.onMessage(ann, message)
+        case their: Init =>
+          // Save their Init for possible subsequent requests
+          val isOk = areSupported(their.localFeatures) && dataLossProtect(their.localFeatures)
+          if (isOk) events.onOperational(ann, their) else events.onIncompatible(ann)
+          if (isOk) savedInit = their
+
+        case _ =>
+          // Send a message downstream
+          events.onMessage(ann, message)
       }
     }
   }
@@ -96,5 +98,6 @@ class ConnectionListener {
   def onMessage(ann: NodeAnnouncement, msg: LightningMessage): Unit = none
   def onOperational(ann: NodeAnnouncement, their: Init): Unit = none
   def onTerminalError(ann: NodeAnnouncement): Unit = none
+  def onIncompatible(ann: NodeAnnouncement): Unit = none
   def onDisconnect(ann: NodeAnnouncement): Unit = none
 }
