@@ -12,6 +12,7 @@ import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
+import com.lightning.olympus.zmq.ZMQSupervisor
 import com.lightning.olympus.JsonHttpUtils.to
 import scala.concurrent.duration.DurationInt
 import org.http4s.server.blaze.BlazeBuilder
@@ -23,7 +24,6 @@ import scalaz.concurrent.Task
 import java.math.BigInteger
 
 import java.net.{InetAddress, InetSocketAddress}
-import com.lightning.olympus.zmq.ZMQSupervisor
 import org.http4s.{HttpService, Response}
 import rx.lang.scala.{Observable => Obs}
 import akka.actor.{ActorSystem, Props}

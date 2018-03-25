@@ -74,13 +74,15 @@ case class Charge(paymentHash: String, id: String,
 case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
                           url: String, privKey: String) extends PaymentProvider {
 
-  def generateInvoice =
-    to[Charge](HttpRequest.post(url).trustAllCerts.form(Map("amount" -> priceMsat.toString,
-      "currency" -> "btc", "description" -> "payment").asJava).basic(privKey, "").connectTimeout(10000).body)
+  def generateInvoice = {
+    val parameters = Map("amount" -> priceMsat.toString, "currency" -> "btc", "description" -> "payment").asJava
+    to[Charge](HttpRequest.post(url).basic(privKey, "").userAgent("curl/7.47.0").form(parameters).connectTimeout(10000).body)
+  }
 
-  def isPaid(data: BlindData) =
-    to[Charge](HttpRequest.get(url + "/" + data.id).trustAllCerts
-      .basic(privKey, "").connectTimeout(10000).body).paid
+  def isPaid(data: BlindData) = {
+    val request = HttpRequest.get(url + "/" + data.id).basic(privKey, "")
+    to[Charge](request.userAgent("curl/7.47.0").connectTimeout(10000).body).paid
+  }
 }
 
 case class EclairProvider(priceMsat: Long, quantity: Int, description: String,
