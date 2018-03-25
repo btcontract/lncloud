@@ -37,13 +37,13 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 $ mongo
 
 > use olympus
-> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 } )
 > db.spentTxs.createIndex( { "txids": 1 } )
 
 > db.scheduledTxs.createIndex( { "txid": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 14 } )
 > db.scheduledTxs.createIndex( { "cltv": 1 } )
 
-> db.userData.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 2 } )
+> db.userData.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
 > db.userData.createIndex( { "key": 1 } )
 
 > use blindSignatures
@@ -100,5 +100,7 @@ assembly
 
 10. Run Olympus instance by issuing:
 ```
-java -jar olympus-assembly-1.0.jar production "{\"privKey\":\"33337641954423495759821968886025053266790003625264088739786982511471995762588\",\"price\":{\"amount\":2000000},\"quantity\":50,\"btcApi\":\"http://foo:bar@127.0.0.1:18332\",\"zmqApi\":\"tcp://127.0.0.1:29000\",\"eclairApi\":\"http://127.0.0.1:8080\",\"eclairSockIp\":\"127.0.0.1\",\"eclairSockPort\":9735,\"eclairNodeId\":\"03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375\",\"eclairPass\":\"pass\",\"rewindRange\":6,\"ip\":\"127.0.0.1\",\"paymentDescription\":\"Storage tokens for backup Olympus server at 127.0.0.1\"}"
+$ java -jar olympus-assembly-1.0.jar production "{\"zmqApi\":\"tcp://127.0.0.1:29000\",\"ip\":\"127.0.0.1\",\"privKey\":\"17237641984433455757821928886025053286790003625266087739786982589470995742521\",\"minChannels\":5,\"btcApi\":\"http://foo:bar@127.0.0.1:18332\",\"eclairSockPort\":9735,\"rewindRange\":1,\"eclairSockIp\":\"127.0.0.1\",\"eclairNodeId\":\"03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375\",\"paymentProvider\":{\"quantity\":50,\"priceMsat\":2000000,\"url\":\"http://127.0.0.1:8080\",\"description\":\"Storage tokens for backup Olympus server at 127.0.0.1\",\"tag\":\"EclairProvider\",\"pass\":\"pass\"}}"
 ```
+
+Note: Olympus config is provided as a command line argument instead of a file because it contains private keys (the one for storage tokens and for Strike). Don't forget to use space before issuing a command (i.e. `$ java -jar ...`, NOT `$java - jar ...`) so it does not get recorded in history.
