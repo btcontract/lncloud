@@ -31,13 +31,14 @@ abstract class Database {
 }
 
 class MongoDatabase extends Database {
-  val olympus: MongoDB = MongoClient("localhost")("olympus")
-  val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
   implicit def obj2String(source: Object): String = source.toString
+  val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
+  val olympus: MongoDB = MongoClient("localhost")("olympus")
+  val createdAt = "createdAt"
 
   def putTx(txids: Seq[String], prefix: String, hex: String) =
     olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids,
-      "prefix" -> prefix, "hex" -> hex, "createdAt" -> new Date),
+      "prefix" -> prefix, "hex" -> hex, createdAt -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def getTxs(txids: StringVec) =
@@ -46,7 +47,7 @@ class MongoDatabase extends Database {
 
   def putScheduled(tx: Transaction) =
     olympus("scheduledTxs").update("txid" $eq tx.txid.toString, $set("txid" -> tx.txid.toString,
-      "tx" -> Transaction.write(tx).toString, "cltv" -> cltvBlocks(tx), "createdAt" -> new Date),
+      "tx" -> Transaction.write(tx).toString, "cltv" -> cltvBlocks(tx), createdAt -> new Date),
       upsert = true, multi = false, WriteConcern.Safe)
 
   def getScheduled(depth: Int) = {
@@ -57,11 +58,11 @@ class MongoDatabase extends Database {
   // Storing arbitrary data
   def putData(key: String, prefix: String, data: String) =
     olympus("userData").update("prefix" $eq prefix, $set("key" -> key, "prefix" -> prefix,
-      "data" -> data, "createdAt" -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+      "data" -> data, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getData(key: String) = {
     val allResults = olympus("userData").find("key" $eq key)
-    val firstOne = allResults sort DBObject("date" -> -1) take 5
+    val firstOne = allResults sort DBObject(createdAt -> -1) take 8
     firstOne.map(_ as[String] "data").toList
   }
 
@@ -69,7 +70,7 @@ class MongoDatabase extends Database {
   def putPendingTokens(data: BlindData, seskey: String) =
     blindSignatures("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey,
       "paymentHash" -> data.paymentHash.toString, "id" -> data.id, "k" -> data.k.toString,
-      "tokens" -> data.tokens, "createdAt" -> new Date), upsert = true, multi = false,
+      "tokens" -> data.tokens, createdAt -> new Date), upsert = true, multi = false,
       WriteConcern.Safe)
 
   def getPendingTokens(seskey: String) = for {
