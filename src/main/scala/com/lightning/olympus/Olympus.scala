@@ -9,7 +9,6 @@ import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.lightning.wallet.lnutils.ImplicitJsonFormats._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import com.lightning.olympus.Router.ShortChannelIdSet
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.zmq.ZMQSupervisor
@@ -42,13 +41,6 @@ object Olympus extends ServerApp {
           eclairSockPort = 9092, eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6",
           rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
 
-//        val description = "Storage tokens for backup Olympus server at 10.0.2.2"
-//        val eclairProvider = EclairProvider(2000000L, 50, description, "http://127.0.0.1:8083", "pass")
-//        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-//          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
-//          eclairSockPort = 9093, eclairNodeId = "036abc346bfcdff85e374e290b5acaeb65b9121cd6f43f08236c3136c376c39e9f",
-//          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
-
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
     }
@@ -56,7 +48,7 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    BlazeBuilder.bindHttp(9002, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(9003, values.ip).mountService(postLift).start
   }
 }
 
@@ -114,11 +106,8 @@ class Responder { me =>
     // ROUTER
 
     case req @ POST -> Root / "router" / "routes" =>
-      val Seq(xnodes, xchans, froms, tos) = extract(req.params, hex2Ascii, "xn", "xc", "froms", "tos")
-      val paths = Router.finder.findPaths(xNodes = to[StringSet](xnodes) take 250 map string2PublicKey,
-        xChans = to[ShortChannelIdSet](xchans) take 250, to[StringSet](froms) take 8 map string2PublicKey,
-        destination = to[StringSet](tos).head)
-
+      val InRoutes(badNodes, badChans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutes] apply "params"
+      val paths = Router.finder.findPaths(badNodes take 160, badChans take 160, from take 8, destination = dest)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>

@@ -1,10 +1,11 @@
 package com.lightning.wallet.lnutils
 
 import spray.json._
+import fr.acinq.bitcoin._
 import com.lightning.olympus._
 import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi, Transaction}
+import com.lightning.wallet.ln.wire.InRoutes
+import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.BitVector
 import java.math.BigInteger
 import scodec.Codec
@@ -47,6 +48,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
     def write(internal: Transaction): JsValue = Transaction.write(internal).toString.toJson
   }
 
+  implicit object PublicKeyFmt extends JsonFormat[PublicKey] {
+    def read(json: JsValue): PublicKey = PublicKey(me json2String json)
+    def write(internal: PublicKey): JsValue = internal.toString.toJson
+  }
+
   implicit val lightningMessageFmt = sCodecJsonFmt(lightningMessageCodec)
   implicit val nodeAnnouncementFmt = sCodecJsonFmt(nodeAnnouncementCodec)
   implicit val updateFailHtlcFmt = sCodecJsonFmt(updateFailHtlcCodec)
@@ -61,16 +67,13 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   implicit val hopFmt = sCodecJsonFmt(hopCodec)
   implicit val pointFmt = sCodecJsonFmt(point)
 
-  implicit val scalarFmt = jsonFormat[BigInteger, Scalar](Scalar.apply, "value")
-  implicit val privateKeyFmt = jsonFormat[Scalar, Boolean, PrivateKey](PrivateKey.apply, "value", "compressed")
-  implicit val publicKeyFmt = jsonFormat[Point, Boolean, PublicKey](PublicKey.apply, "value", "compressed")
   implicit val milliSatoshiFmt = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "amount")
   implicit val satoshiFmt = jsonFormat[Long, Satoshi](Satoshi.apply, "amount")
 
   implicit val chargeFmt = jsonFormat[String, String, String, Boolean,
     Charge](Charge.apply, "payment_hash", "id", "payment_request", "paid")
 
-  implicit object HasCommitmentsFmt
+  implicit object PaymentProviderFmt
   extends JsonFormat[PaymentProvider] {
 
     def read(json: JsValue) = json.asJsObject fields "tag" match {
@@ -100,4 +103,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
     jsonFormat[String, String, String, String, Int, String, Int, String, PaymentProvider, Int,
       Vals](Vals.apply, "privKey", "btcApi", "zmqApi", "eclairSockIp", "eclairSockPort",
       "eclairNodeId", "rewindRange", "ip", "paymentProvider", "minChannels")
+
+  implicit val routeRequestFmt = jsonFormat[Set[PublicKey], Set[Long], Set[PublicKey], PublicKey,
+    InRoutes](InRoutes.apply, "badNodes", "badChans", "from", "to")
 }

@@ -2,11 +2,9 @@ package com.lightning.wallet.ln.wire
 
 import java.net._
 import scodec.codecs._
-
-import com.lightning.wallet.ln.crypto.Sphinx
-import fr.acinq.eclair.UInt64
 import java.math.BigInteger
-
+import fr.acinq.eclair.UInt64
+import com.lightning.wallet.ln.crypto.Sphinx
 import com.lightning.wallet.ln.{Hop, LightningException}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
@@ -25,14 +23,14 @@ object LightningMessageCodecs { me =>
     serialize(lightningMessageCodec encode msg)
 
   def serialize(attempt: BitVectorAttempt) = attempt match {
-    case Attempt.Failure(some) => throw new LightningException
-    case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
+    case Attempt.Successful(binary) => BinaryData(binary.toByteArray)
+    case Attempt.Failure(err) => throw new LightningException(err.message)
   }
 
   def deserialize(raw: BinaryData): LightningMessage =
     lightningMessageCodec decode BitVector(raw.data) match {
-      case Attempt.Failure(some) => throw new LightningException
-      case Attempt.Successful(result) => result.value
+      case Attempt.Successful(decodedResult) => decodedResult.value
+      case Attempt.Failure(err) => throw new LightningException(err.message)
     }
 
   // RGB <-> ByteVector
@@ -70,22 +68,22 @@ object LightningMessageCodecs { me =>
 
   val signature = Codec[BinaryData] (
     encoder = (der: BinaryData) => bytes(64) encode bin2Vec(me der2wire der),
-    decoder = (wire: BitVector) => bytes(64) decode wire map (_ map vec2Bin map wire2der)
+    decoder = (wire: BitVector) => bytes(64).decode(wire).map(_ map vec2Bin map wire2der)
   )
 
   val scalar = Codec[Scalar] (
     encoder = (scalar: Scalar) => bytes(32) encode bin2Vec(scalar.toBin),
-    decoder = (wire: BitVector) => bytes(32) decode wire map (_ map vec2Bin map Scalar.apply)
+    decoder = (wire: BitVector) => bytes(32).decode(wire).map(_ map vec2Bin map Scalar.apply)
   )
 
   val point = Codec[Point] (
     encoder = (point: Point) => bytes(33) encode bin2Vec(point toBin true),
-    decoder = (wire: BitVector) => bytes(33) decode wire map (_ map vec2Bin map Point.apply)
+    decoder = (wire: BitVector) => bytes(33).decode(wire).map(_ map vec2Bin map Point.apply)
   )
 
   val publicKey = Codec[PublicKey] (
     encoder = (publicKey: PublicKey) => bytes(33) encode bin2Vec(publicKey.value toBin true),
-    decoder = (wire: BitVector) => bytes(33) decode wire map (_ map vec2Bin map PublicKey.apply)
+    decoder = (wire: BitVector) => bytes(33).decode(wire).map(_ map vec2Bin map PublicKey.apply)
   )
 
   val uint64: Codec[Long] = int64.narrow(long =>

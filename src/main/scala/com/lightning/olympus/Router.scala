@@ -5,10 +5,6 @@ import com.lightning.olympus.Utils._
 import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.googlecode.concurrenttrees.radix.node.concrete._
-
-import scala.util.{Success, Try}
-import rx.lang.scala.{Observable => Obs}
-import com.lightning.wallet.ln.Tools.{random, wrap}
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.ScriptPubKey
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
@@ -21,6 +17,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.BinaryData
 import scala.util.Random.shuffle
 import scala.collection.mutable
+
+import com.lightning.wallet.ln.Tools.{random, wrap}
+import rx.lang.scala.{Observable => Obs}
+import scala.util.{Success, Try}
 
 
 case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)

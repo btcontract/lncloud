@@ -46,7 +46,9 @@ object Features {
       bitset.get(OPTION_DATA_LOSS_PROTECT_MANDATORY)
 }
 
-class LightningException extends RuntimeException
+// General exception for all Lightning-related errors
+class LightningException(reason: String = "LN error")
+  extends RuntimeException(reason)
 
 // STATE MACHINE
 
