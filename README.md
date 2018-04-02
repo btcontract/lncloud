@@ -37,17 +37,20 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 $ mongo
 
 > use olympus
-> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 } )
+> db.spentTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 180 } )
+> db.spentTxs.createIndex( { "prefix": 1 }, { unique: true } )
 > db.spentTxs.createIndex( { "txids": 1 } )
 
-> db.scheduledTxs.createIndex( { "txid": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 14 } )
+> db.scheduledTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 14 } )
 > db.scheduledTxs.createIndex( { "cltv": 1 } )
 
-> db.userData.createIndex( { "prefix": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
+> db.userData.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
 > db.userData.createIndex( { "key": 1 } )
 
 > use blindSignatures
-> db.blindTokens.createIndex( { "seskey": 1 }, { unique: true }, { expireAfterSeconds: 3600 * 24 * 365 } )
+> db.blindTokens.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 } )
+> db.blindTokens.createIndex( { "seskey": 1 }, { unique: true } )
+
 > "0123456789".split('').forEach(function(v) { db["clearTokens" + v].createIndex( { "token": 1 }, { unique: true } ) })
 ```
 
