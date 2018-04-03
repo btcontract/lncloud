@@ -25,8 +25,8 @@ abstract class Database {
   def isClearTokenUsed(clearToken: String): Boolean
   def putClearToken(clearToken: String)
 
-  // Storing arbitrary data in Olympus database
-  def putData(key: String, prefix: String, data: String)
+  // Storing arbitrary data in database
+  def putData(key: String, data: String)
   def getData(key: String): List[String]
 }
 
@@ -37,18 +37,16 @@ class MongoDatabase extends Database {
   val createdAt = "createdAt"
 
   def putTx(txids: Seq[String], prefix: String, hex: String) =
-    olympus("spentTxs").update("hex" $eq hex, $set("txids" -> txids,
-      "prefix" -> prefix, "hex" -> hex, createdAt -> new Date),
-      upsert = true, multi = false, WriteConcern.Safe)
+    olympus("spentTxs").update("prefix" $eq prefix, $set("prefix" -> prefix, "txids" -> txids,
+      "hex" -> hex, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getTxs(txids: StringVec) =
     olympus("spentTxs").find("txids" $in txids)
       .map(_ as[String] "hex").toVector
 
   def putScheduled(tx: Transaction) =
-    olympus("scheduledTxs").update("txid" $eq tx.txid.toString, $set("txid" -> tx.txid.toString,
-      "tx" -> Transaction.write(tx).toString, "cltv" -> cltvBlocks(tx), createdAt -> new Date),
-      upsert = true, multi = false, WriteConcern.Safe)
+    olympus("scheduledTxs") insert MongoDBObject("cltv" -> cltvBlocks(tx),
+      "tx" -> Transaction.write(tx).toString, createdAt -> new Date)
 
   def getScheduled(depth: Int) = {
     val res = olympus("scheduledTxs").find("cltv" $lt depth).map(_ as[String] "tx")
@@ -56,13 +54,13 @@ class MongoDatabase extends Database {
   }
 
   // Storing arbitrary data
-  def putData(key: String, prefix: String, data: String) =
-    olympus("userData").update("prefix" $eq prefix, $set("key" -> key, "prefix" -> prefix,
-      "data" -> data, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+  def putData(key: String, encryptedData: String) =
+    olympus("userData") insert MongoDBObject("key" -> key,
+      "data" -> encryptedData, createdAt -> new Date)
 
   def getData(key: String) = {
-    val allResults = olympus("userData").find("key" $eq key)
-    val firstOne = allResults sort DBObject(createdAt -> -1) take 8
+    val results = olympus("userData").find("key" $eq key)
+    val firstOne = results sort DBObject(createdAt -> -1) take 8
     firstOne.map(_ as[String] "data").toList
   }
 
@@ -71,13 +69,12 @@ class MongoDatabase extends Database {
     blindSignatures("blindTokens").update("seskey" $eq seskey, $set("seskey" -> seskey,
       "paymentHash" -> data.paymentHash.toString, "id" -> data.id, "k" -> data.k.toString,
       "tokens" -> data.tokens, createdAt -> new Date), upsert = true, multi = false,
-      WriteConcern.Safe)
+        WriteConcern.Safe)
 
   def getPendingTokens(seskey: String) = for {
     result <- blindSignatures("blindTokens").findOne("seskey" $eq seskey)
-    tokens = result.get("tokens").asInstanceOf[BasicDBList].map(_.toString).toVector
-  } yield BlindData(paymentHash = BinaryData(result get "paymentHash"), result get "id",
-    new BigInteger(result get "k"), tokens)
+    tokens = result.get("tokens").asInstanceOf[BasicDBList].map(item => item.toString).toVector
+  } yield BlindData(BinaryData(result get "paymentHash"), result get "id", new BigInteger(result get "k"), tokens)
 
   // Many collections in total to store clear tokens because we have to keep every token
   def putClearToken(clear: String) = blindSignatures("clearTokens" + clear.head).insert("token" $eq clear)

@@ -13,6 +13,7 @@ import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.zmq.ZMQSupervisor
 import com.lightning.olympus.JsonHttpUtils.to
+import org.http4s.server.SSLSupport.StoreInfo
 import scala.concurrent.duration.DurationInt
 import org.http4s.server.blaze.BlazeBuilder
 import com.lightning.wallet.ln.Tools.random
@@ -21,6 +22,7 @@ import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import java.math.BigInteger
+import java.nio.file.Paths
 
 import java.net.{InetAddress, InetSocketAddress}
 import org.http4s.{HttpService, Response}
@@ -39,7 +41,8 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
           eclairSockPort = 9092, eclairNodeId = "0255db5af4e8fc682ccd185c3c445da05f8569e98352ab7891ef126040bc5bf3f6",
-          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5)
+          rewindRange = 1, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 5,
+          sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -48,7 +51,8 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    BlazeBuilder.bindHttp(9003, values.ip).mountService(postLift).start
+    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(9003, values.ip).mountService(postLift).start
   }
 }
 
@@ -134,7 +138,7 @@ class Responder { me =>
 
     case req @ POST -> Root / "txs" / "schedule" => verify(req.params) {
       val txs = req.params andThen hex2Ascii andThen to[StringVec] apply bODY
-      for (raw <- txs) db.putScheduled(Transaction read raw)
+      for (raw <- txs take 16) db.putScheduled(Transaction read raw)
       Tuple2(oK, "done").toJson
     }
 
@@ -142,7 +146,7 @@ class Responder { me =>
 
     case req @ POST -> Root / "data" / "put" => verify(req.params) {
       val Seq(key, userDataHex) = extract(req.params, identity, "key", bODY)
-      db.putData(key, prefix = userDataHex take 32, userDataHex)
+      db.putData(key, userDataHex)
       Tuple2(oK, "done").toJson
     }
 
@@ -159,7 +163,9 @@ class Responder { me =>
       Tuple2(oK, response).toJson
 
     case GET -> Root / "rates" / "state" =>
-      Ok(exchangeRates.displayState mkString "\r\n\r\n")
+      val fiat = exchangeRates.displayState mkString "\r\n\r\n"
+      val bitcoin = feeRates.rates.toString
+      Ok(s"$bitcoin\r\n\r\n$fiat")
   }
 
   def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
@@ -183,6 +189,7 @@ object LNConnector {
     override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg
     override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Eclair socket is operational"
     override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
+    override def onIncompatible(ann: NodeAnnouncement) = onTerminalError(ann)
 
     override def onDisconnect(announce: NodeAnnouncement) =
       Obs.just(Tools log "Restarting socket").delay(5.seconds)

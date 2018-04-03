@@ -26,14 +26,11 @@ object ConnectionManager {
     override def onDisconnect(ann: NodeAnnouncement) = for (lst <- listeners) lst.onDisconnect(ann)
   }
 
-  def disconnectOrCallback(w: Worker, ann: NodeAnnouncement) =
-  // If it is still connected but has no Init we assume failure
-    if (null != w.savedInit) events.onOperational(ann, w.savedInit)
-    else w.disconnect
-
   def connectTo(ann: NodeAnnouncement) = connections get ann match {
-    case Some(worker) if !worker.work.isCompleted => disconnectOrCallback(worker, ann)
-    case _ => connections = connections.updated(value = new Worker(ann), key = ann)
+    case Some(doneWorker) if doneWorker.work.isCompleted => connections += ann -> new Worker(ann)
+    case Some(strangeWorker) if strangeWorker.savedInit == null => strangeWorker.disconnect
+    case Some(okWorker) => events.onOperational(ann, okWorker.savedInit)
+    case None => connections += ann -> new Worker(ann)
   }
 
   class Worker(ann: NodeAnnouncement, val buffer: Bytes = new Bytes(1024), val socket: Socket = new Socket) {
@@ -61,10 +58,10 @@ object ConnectionManager {
       }
     }
 
-    // Listener may trigger a reconnect
+    // Listener may trigger a reconnect after this
     work onComplete { _ => events onDisconnect ann }
-    def disconnect = try socket.close catch none
 
+    def disconnect = try socket.close catch none
     def intercept(message: LightningMessage) = {
       // Update liveness on each incoming message
       lastMsg = System.currentTimeMillis
