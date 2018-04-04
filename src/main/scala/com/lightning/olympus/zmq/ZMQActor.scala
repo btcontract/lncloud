@@ -38,19 +38,16 @@ class ZMQActor(db: Database) extends Actor {
   }
 
   val recordTransactions = new ZMQListener {
-    override def onNewTx(twr: TransactionWithRaw) = {
-      val parents = twr.tx.txIn.map(_.outPoint.txid.toString)
-      db.putTx(parents, twr.tx.txid.toString, twr.raw.toString)
-    }
-
     override def onNewBlock(block: Block) = for {
       // We need to save which txids this one spends from
       // since clients will need this to extract preimages
 
       txid <- block.tx.asScala.par
       binary <- Blockchain getRawTxData txid
+
       twr = TransactionWithRaw(binary)
-    } onNewTx(twr)
+      parents = twr.tx.txIn.map(_.outPoint.txid.toString)
+    } db.putTx(parents, twr.tx.txid.toString, twr.raw.toString)
   }
 
   val sendScheduled = new ZMQListener {
