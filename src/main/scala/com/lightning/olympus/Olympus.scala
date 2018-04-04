@@ -41,7 +41,7 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
           eclairSockPort = 9092, eclairNodeId = "02baaab9be679031e30afa6199194c06e8eb928e55bcddd3601e0974248d7ab6c2",
-          rewindRange = 144, ip = "127.0.0.1", paymentProvider = eclairProvider, minChannels = 3,
+          rewindRange = 144, ip = "127.0.0.1", port = 9103, paymentProvider = eclairProvider, minChannels = 3,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
       case List("production", rawVals) =>
@@ -52,7 +52,7 @@ object Olympus extends ServerApp {
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
     val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(9103, values.ip).mountService(postLift).start
+    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 

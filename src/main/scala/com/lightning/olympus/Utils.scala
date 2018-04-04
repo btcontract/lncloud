@@ -51,7 +51,7 @@ case class BlindData(paymentHash: BinaryData, id: String, k: BigInteger, tokens:
 case class CacheItem[T](data: T, stamp: Long)
 case class Vals(privKey: String, btcApi: String, zmqApi: String, eclairSockIp: String,
                 eclairSockPort: Int, eclairNodeId: String, rewindRange: Int, ip: String,
-                paymentProvider: PaymentProvider, minChannels: Int,
+                port: Int, paymentProvider: PaymentProvider, minChannels: Int,
                 sslFile: String, sslPass: String) {
 
   lazy val bigIntegerPrivKey = new BigInteger(privKey)
