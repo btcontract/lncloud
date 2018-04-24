@@ -145,12 +145,6 @@ public interface BitcoindRpcClient {
     }
   }
 
-  /*
-   * Use BitcoinRawTxBuilder , which is more convenient
-   *
-   */
-  public String createRawTransaction(List<TxInput> inputs, List<TxOutput> outputs) throws BitcoinRpcException;
-
   public String dumpPrivKey(String address) throws BitcoinRpcException;
 
   public String getAccount(String address) throws BitcoinRpcException;

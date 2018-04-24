@@ -233,31 +233,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   @Override
-  public String createRawTransaction(List<TxInput> inputs, List<TxOutput> outputs) throws BitcoinRpcException {
-    List<Map> pInputs = new ArrayList<>();
-
-    for (final TxInput txInput : inputs) {
-      pInputs.add(new LinkedHashMap() {
-        {
-          put("txid", txInput.txid());
-          put("vout", txInput.vout());
-        }
-      });
-    }
-
-    Map<String, Double> pOutputs = new LinkedHashMap();
-
-    Double oldValue;
-    for (TxOutput txOutput : outputs) {
-      if ((oldValue = pOutputs.put(txOutput.address(), txOutput.amount())) != null)
-        pOutputs.put(txOutput.address(), BitcoinUtil.normalizeAmount(oldValue + txOutput.amount()));
-//                throw new BitcoinRpcException("Duplicate output");
-    }
-
-    return (String) query("createrawtransaction", pInputs, pOutputs);
-  }
-
-  @Override
   public String dumpPrivKey(String address) throws BitcoinRpcException {
     return (String) query("dumpprivkey", address);
   }

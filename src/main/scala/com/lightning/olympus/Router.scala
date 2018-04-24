@@ -164,9 +164,9 @@ object Router { me =>
         case false => ChanDirection(cu.feeEstimate, cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
       }
 
-      val isFresh = finder.updates.get(direction).forall(existing => existing.timestamp < cu.timestamp)
-      val updates1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
-      if (isFresh) finder = finder.copy(updates = updates1)
+      val upd1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
+      val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
+      if (isFresh) finder = finder.copy(updates = upd1)
 
     case _ =>
   }
