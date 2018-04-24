@@ -1,7 +1,7 @@
-package com.lightning.wallet.ln
+package com.lightning.walletapp.ln
 
-import com.lightning.wallet.ln.wire._
-import com.lightning.wallet.ln.wire.LightningMessageCodecs._
+import com.lightning.walletapp.ln.wire._
+import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, hash256, verifySignature}
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
 import scodec.bits.BitVector
@@ -13,7 +13,7 @@ object Announcements { me =>
   private def channelAnnouncementWitnessEncode(chainHash: BinaryData, shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData) =
     me hashTwice LightningMessageCodecs.channelAnnouncementWitness.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: HNil)
 
-  private def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String, features: BinaryData, addresses: InetSocketAddressList) =
+  private def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String, features: BinaryData, addresses: NodeAddressList) =
     me hashTwice LightningMessageCodecs.nodeAnnouncementWitness.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: HNil)
 
   private def channelUpdateWitnessEncode(chainHash: BinaryData, shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) =
@@ -44,12 +44,6 @@ object Announcements { me =>
       case false => ChannelAnnouncement(remoteNodeSignature, localNodeSignature, remoteBitcoinSignature, localBitcoinSignature,
         features = "", chainHash, shortChannelId, nodeId1 = remoteNodeId, nodeId2 = localNodeId, remoteFundingKey, localFundingKey)
     }
-
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: RGB, addresses: InetSocketAddressList, timestamp: Long): NodeAnnouncement = {
-    val sig = Crypto encodeSignature Crypto.sign(nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, "", addresses), nodeSecret)
-    NodeAnnouncement(signature = sig :+ 1.toByte, timestamp = timestamp, nodeId = nodeSecret.publicKey, rgbColor = color, alias = alias take 32,
-      features = "", addresses = addresses)
-  }
 
   // The creating node MUST set node-id-1 and node-id-2 to the public keys of the
   // two nodes who are operating the channel, such that node-id-1 is the numerically-lesser

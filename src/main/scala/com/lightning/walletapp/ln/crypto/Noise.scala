@@ -1,4 +1,4 @@
-package com.lightning.wallet.ln.crypto
+package com.lightning.walletapp.ln.crypto
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.bitcoin.Protocol.writeUInt64
@@ -93,7 +93,7 @@ object Noise {
 
   object SHA256HashFunctions extends HashFunctions {
     def hmacHash(key: BinaryData, data: BinaryData) = Digests.hmacSha256(key, data)
-    def hash(source: BinaryData) = Crypto.sha256(source)
+    def hash(hashingSource: BinaryData) = Crypto sha256 hashingSource
 
     val name = "SHA256"
     val blockLen = 64

@@ -1,7 +1,7 @@
-package com.lightning.wallet.ln.crypto
+package com.lightning.walletapp.ln.crypto
 
 import java.io.{ByteArrayOutputStream, InputStream}
-import com.lightning.wallet.ln.Tools.Bytes
+import com.lightning.walletapp.ln.Tools.Bytes
 import java.security.SecureRandom
 
 

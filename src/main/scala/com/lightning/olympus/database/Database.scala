@@ -2,7 +2,7 @@ package com.lightning.olympus.database
 
 import com.mongodb.casbah.Imports._
 import fr.acinq.bitcoin.{BinaryData, Transaction}
-import com.lightning.wallet.ln.Scripts.cltvBlocks
+import com.lightning.walletapp.ln.Scripts.cltvBlocks
 import com.lightning.olympus.Utils.StringVec
 import com.lightning.olympus.BlindData
 import language.implicitConversions

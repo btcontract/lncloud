@@ -3,13 +3,13 @@ package com.lightning.olympus.zmq
 import scala.collection.JavaConverters._
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import scala.concurrent.ExecutionContext.Implicits.global
-import com.lightning.wallet.ln.LightningException
+import com.lightning.walletapp.ln.LightningException
 import com.lightning.olympus.database.Database
 import scala.concurrent.duration.DurationInt
 import org.zeromq.ZMQ.Event
 import akka.actor.Actor
 
-import com.lightning.wallet.ln.Tools.{log, none, runAnd}
+import com.lightning.walletapp.ln.Tools.{log, none, runAnd}
 import com.lightning.olympus.Utils.{bitcoin, values}
 import com.lightning.olympus.{Blockchain, Router}
 import fr.acinq.bitcoin.{BinaryData, Transaction}

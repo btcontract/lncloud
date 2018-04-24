@@ -1,10 +1,10 @@
-package com.lightning.wallet.lnutils
+package com.lightning.walletapp.lnutils
 
 import spray.json._
 import fr.acinq.bitcoin._
 import com.lightning.olympus._
-import com.lightning.wallet.ln.wire.LightningMessageCodecs._
-import com.lightning.wallet.ln.wire.InRoutes
+import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
+import com.lightning.walletapp.ln.wire.InRoutes
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.BitVector
 import java.math.BigInteger
@@ -57,7 +57,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   implicit val nodeAnnouncementFmt = sCodecJsonFmt(nodeAnnouncementCodec)
   implicit val updateFailHtlcFmt = sCodecJsonFmt(updateFailHtlcCodec)
   implicit val acceptChannelFmt = sCodecJsonFmt(acceptChannelCodec)
-  implicit val updateAddHtlcFmt = sCodecJsonFmt(updateAddHtlcCodec)
   implicit val closingSignedFmt = sCodecJsonFmt(closingSignedCodec)
   implicit val fundingLockedFmt = sCodecJsonFmt(fundingLockedCodec)
   implicit val channelUpdateFmt = sCodecJsonFmt(channelUpdateCodec)
@@ -104,7 +103,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
       Vals](Vals.apply, "privKey", "btcApi", "zmqApi", "eclairSockIp", "eclairSockPort", "eclairNodeId", "rewindRange",
       "ip", "port", "paymentProvider", "minChannels", "minAmount", "sslFile", "sslPass")
 
-  implicit val routeRequestFmt =
+  implicit val inRoutesFmt =
     jsonFormat[Set[PublicKey], Set[Long], Set[PublicKey], PublicKey,
       InRoutes](InRoutes.apply, "badNodes", "badChans", "from", "to")
 }

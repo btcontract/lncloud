@@ -1,14 +1,16 @@
 package com.lightning.olympus
 
+import com.lightning.walletapp.ln._
+import com.lightning.walletapp.ln.wire._
+import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
+import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
+import com.lightning.walletapp.ln.Tools.random
+
 import spray.json._
 import org.http4s.dsl._
 import fr.acinq.bitcoin._
-import com.lightning.wallet.ln._
 import com.lightning.olympus.Utils._
-import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
-import com.lightning.wallet.lnutils.ImplicitJsonFormats._
-import com.lightning.wallet.ln.wire.LightningMessageCodecs._
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.zmq.ZMQSupervisor
@@ -16,7 +18,6 @@ import com.lightning.olympus.JsonHttpUtils.to
 import org.http4s.server.SSLSupport.StoreInfo
 import scala.concurrent.duration.DurationInt
 import org.http4s.server.blaze.BlazeBuilder
-import com.lightning.wallet.ln.Tools.random
 import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
@@ -182,8 +183,8 @@ class Responder { me =>
 
 object LNConnector {
   def connect = ConnectionManager connectTo announce
-  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing source",
-    new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort) :: Nil)
+  val inetSockAddress = new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort)
+  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing source", NodeAddress(inetSockAddress) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
     override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg

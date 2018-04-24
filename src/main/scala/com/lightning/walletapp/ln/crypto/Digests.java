@@ -1,4 +1,4 @@
-package com.lightning.wallet.ln.crypto;
+package com.lightning.walletapp.ln.crypto;
 
 import org.spongycastle.crypto.digests.SHA256Digest;
 import org.spongycastle.crypto.params.KeyParameter;

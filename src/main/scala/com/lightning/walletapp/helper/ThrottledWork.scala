@@ -1,4 +1,4 @@
-package com.lightning.wallet.helper
+package com.lightning.walletapp.helper
 
 
 abstract class ThrottledWork[T, V] {

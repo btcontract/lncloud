@@ -1,4 +1,4 @@
-package com.lightning.wallet.ln
+package com.lightning.walletapp.ln
 
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.DeterministicWallet._

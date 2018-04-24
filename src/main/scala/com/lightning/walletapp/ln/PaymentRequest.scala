@@ -1,13 +1,13 @@
-package com.lightning.wallet.ln
+package com.lightning.walletapp.ln
 
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Bech32._
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin.Protocol._
 import fr.acinq.eclair.crypto.BitStream._
-import com.lightning.wallet.ln.PaymentRequest._
-import com.lightning.wallet.ln.RoutingInfoTag._
-import com.lightning.wallet.ln.crypto.MultiStreamUtils._
+import com.lightning.walletapp.ln.PaymentRequest._
+import com.lightning.walletapp.ln.RoutingInfoTag._
+import com.lightning.walletapp.ln.crypto.MultiStreamUtils._
 
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
@@ -120,20 +120,19 @@ object PaymentRequest {
   type Int5Seq = Seq[Int5]
   type AmountOption = Option[MilliSatoshi]
 
+  val prefixes =
+    Map(Block.RegtestGenesisBlock.hash -> "lnbcrt",
+      Block.TestnetGenesisBlock.hash -> "lntb",
+      Block.LivenetGenesisBlock.hash -> "lnbc")
+
   def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
             privateKey: PrivateKey, description: String, fallbackAddress: Option[String],
             routes: PaymentRouteVec): PaymentRequest = {
 
     val paymentHashTag = PaymentHashTag(paymentHash)
     val tags = routes.map(RoutingInfoTag.apply) ++ Vector(DescriptionTag(description), ExpiryTag(3600), paymentHashTag)
-    val pr = PaymentRequest(getPrefix(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey, tags, BinaryData.empty)
+    val pr = PaymentRequest(prefixes(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey, tags, BinaryData.empty)
     pr sign privateKey
-  }
-
-  def getPrefix(chain: BinaryData) = chain match {
-    case Block.RegtestGenesisBlock.hash => "lntb"
-    case Block.TestnetGenesisBlock.hash => "lntb"
-    case Block.LivenetGenesisBlock.hash => "lnbc"
   }
 
   object Amount {
@@ -165,7 +164,7 @@ object PaymentRequest {
   object Timestamp {
     def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
     def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
-    else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
+      else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {
@@ -292,8 +291,10 @@ object PaymentRequest {
     val (pub1, pub2) = Crypto.recoverPublicKey(r -> s, messageHash)
     val pub = if (recid % 2 != 0) pub2 else pub1
 
-    val prefix = hrp take 4
-    val amountOpt = Amount decode hrp.drop(4)
+    // Will throw on unknown prefix, this is fine
+    val prefix = prefixes.values.find(hrp.startsWith).get
+    val amountOpt = Amount decode hrp.drop(prefix.length)
+
     val pr = PaymentRequest(prefix, amountOpt, Timestamp decode data0, pub, tags.toVector, signature)
     require(Crypto.verifySignature(messageHash, r -> s, pub), "Invalid payment request signature")
     pr

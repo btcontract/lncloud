@@ -1,13 +1,13 @@
-package com.lightning.wallet.ln
+package com.lightning.walletapp.ln
 
 import TransportHandler._
-import com.lightning.wallet.ln.crypto.Noise._
+import com.lightning.walletapp.ln.crypto.Noise._
 import scala.concurrent.ExecutionContextExecutor
-import com.lightning.wallet.ln.Tools.random
+import com.lightning.walletapp.ln.Tools.random
 import java.util.concurrent.Executors
 import java.nio.ByteOrder
 
-import com.lightning.wallet.ln.wire.{LightningMessage, LightningMessageCodecs}
+import com.lightning.walletapp.ln.wire.{LightningMessage, LightningMessageCodecs}
 import scala.concurrent.{ExecutionContext, Future}
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 

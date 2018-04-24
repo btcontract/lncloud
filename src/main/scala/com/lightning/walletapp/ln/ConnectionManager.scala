@@ -1,14 +1,14 @@
-package com.lightning.wallet.ln
+package com.lightning.walletapp.ln
 
 import scala.concurrent._
 import scala.concurrent.duration._
-import com.lightning.wallet.ln.wire._
-import com.lightning.wallet.ln.LNParams._
-import com.lightning.wallet.ln.Features._
+import com.lightning.walletapp.ln.wire._
+import com.lightning.walletapp.ln.LNParams._
+import com.lightning.walletapp.ln.Features._
 
 import rx.lang.scala.{Observable => Obs}
-import com.lightning.wallet.ln.Tools.{Bytes, none}
-import com.lightning.wallet.ln.crypto.Noise.KeyPair
+import com.lightning.walletapp.ln.Tools.{Bytes, none}
+import com.lightning.walletapp.ln.crypto.Noise.KeyPair
 import java.util.concurrent.Executors
 import fr.acinq.bitcoin.BinaryData
 import java.net.Socket
@@ -48,7 +48,7 @@ object ConnectionManager {
 
     val work = Future {
       // First blocking connect, then send data
-      socket.connect(ann.addresses.head, 7500)
+      socket.connect(ann.socketAddresses.head, 7500)
       handler.init
 
       while (true) {

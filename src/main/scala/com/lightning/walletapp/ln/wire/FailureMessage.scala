@@ -1,4 +1,4 @@
-package com.lightning.wallet.ln.wire
+package com.lightning.walletapp.ln.wire
 
 import scodec.codecs._
 import LightningMessageCodecs._
@@ -73,4 +73,3 @@ object FailureMessageCodecs {
     .typecase(cr = disabled.as[ChannelDisabled], tag = UPDATE | 20)
     .typecase(cr = provide(ExpiryTooFar), tag = 21)
 }
-

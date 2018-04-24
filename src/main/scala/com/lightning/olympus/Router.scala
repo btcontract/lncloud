@@ -1,29 +1,27 @@
 package com.lightning.olympus
 
-import com.lightning.wallet.ln._
+import com.lightning.walletapp.ln._
+import com.lightning.walletapp.ln.wire._
+import com.lightning.walletapp.ln.RoutingInfoTag.PaymentRoute
+import com.lightning.walletapp.ln.Tools.{random, wrap, runAnd}
+import rx.lang.scala.{Observable => Obs}
+import scala.util.{Success, Try}
+
 import com.lightning.olympus.Utils._
-import com.lightning.wallet.ln.wire._
 import scala.collection.JavaConverters._
 import com.googlecode.concurrenttrees.radix.node.concrete._
-import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.ScriptPubKey
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
-import com.lightning.wallet.ln.RoutingInfoTag.PaymentRoute
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DirectedWeightedPseudograph
 import scala.concurrent.duration.DurationInt
-import com.lightning.wallet.ln.Tools.runAnd
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.BinaryData
 import scala.util.Random.shuffle
 import scala.collection.mutable
 
-import com.lightning.wallet.ln.Tools.{random, wrap}
-import rx.lang.scala.{Observable => Obs}
-import scala.util.{Success, Try}
 
-
-case class ChanInfo(txid: String, key: ScriptPubKey, ca: ChannelAnnouncement)
+case class ChanInfo(txid: String, capacity: Long, ca: ChannelAnnouncement)
 case class ChanDirection(fee: Double, shortId: Long, from: PublicKey, to: PublicKey)
 
 object Router { me =>

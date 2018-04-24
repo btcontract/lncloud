@@ -1,10 +1,12 @@
-package com.lightning.wallet.ln.wire
+package com.lightning.walletapp.ln.wire
 
-import com.lightning.wallet.ln.wire.LightningMessageCodecs._
+import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
+import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
+import com.lightning.walletapp.ln.{Hop, LightningException}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
-import com.lightning.wallet.ln.Tools.fromShortId
-import com.lightning.wallet.ln.Hop
+import com.lightning.walletapp.ln.Tools.fromShortId
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.UInt64
 
 
@@ -12,9 +14,6 @@ trait LightningMessage
 trait RoutingMessage extends LightningMessage
 trait ChannelSetupMessage extends LightningMessage
 trait ChannelMessage extends LightningMessage { val channelId: BinaryData }
-
-// BASIC MESSAGES: channels never get these
-
 case class Init(globalFeatures: BinaryData, localFeatures: BinaryData) extends LightningMessage
 case class Ping(pongLength: Int, data: BinaryData) extends LightningMessage
 case class Pong(data: BinaryData) extends LightningMessage
@@ -50,6 +49,7 @@ case class UpdateAddHtlc(channelId: BinaryData, id: Long,
                          amountMsat: Long, paymentHash: BinaryData, expiry: Long,
                          onionRoutingPacket: BinaryData) extends ChannelMessage {
 
+  lazy val hash160 = Crypto ripemd160 paymentHash
   val amount = MilliSatoshi(amountMsat)
 }
 
@@ -57,7 +57,7 @@ case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) e
 case class UpdateFailMalformedHtlc(channelId: BinaryData, id: Long, onionHash: BinaryData, failureCode: Int) extends ChannelMessage
 case class UpdateFulfillHtlc(channelId: BinaryData, id: Long, paymentPreimage: BinaryData) extends ChannelMessage {
 
-  val paymentHash = fr.acinq.bitcoin.Crypto sha256 paymentPreimage.data
+  val paymentHash = Crypto sha256 paymentPreimage.data
 }
 
 case class UpdateFee(channelId: BinaryData, feeratePerKw: Long) extends ChannelMessage
@@ -65,7 +65,14 @@ case class CommitSig(channelId: BinaryData, signature: BinaryData, htlcSignature
 case class RevokeAndAck(channelId: BinaryData, perCommitmentSecret: Scalar, nextPerCommitmentPoint: Point) extends ChannelMessage
 
 case class Error(channelId: BinaryData, data: BinaryData) extends ChannelMessage {
-  def humanText = new String(data, "UTF-8") match { case txt if txt.isEmpty => "no details" case txt => txt }
+  // Error from remote peer means we need to close a channel, may contain some details
+
+  def exception = {
+    val text = new String(data, "UTF-8")
+    val default = "Remote peer has sent an error"
+    val finalText = if (text.isEmpty) default else text
+    new LightningException(finalText)
+  }
 }
 
 case class ChannelReestablish(channelId: BinaryData, nextLocalCommitmentNumber: Long,
@@ -86,13 +93,6 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: Binar
   lazy val nodes = Set(nodeId1, nodeId2)
 }
 
-case class NodeAnnouncement(signature: BinaryData, features: BinaryData,
-                            timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String,
-                            addresses: InetSocketAddressList) extends RoutingMessage {
-
-  val identifier = (alias + nodeId.toString).toLowerCase
-}
-
 case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChannelId: Long,
                          timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long,
                          feeBaseMsat: Long, feeProportionalMillionths: Long) extends RoutingMessage {
@@ -102,8 +102,42 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
     htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
 }
 
-// Not in a spec
+case class NodeAnnouncement(signature: BinaryData,
+                            features: BinaryData, timestamp: Long,
+                            nodeId: PublicKey, rgbColor: RGB, alias: String,
+                            addresses: NodeAddressList) extends RoutingMessage {
 
+  lazy val socketAddresses = addresses collect {
+    case IPv4(addr, port) => new InetSocketAddress(addr, port)
+    case IPv6(addr, port) => new InetSocketAddress(addr, port)
+  }
+
+  val identifier = (alias + nodeId.toString).toLowerCase
+}
+
+sealed trait NodeAddress
+case object Padding extends NodeAddress
+
+case object NodeAddress {
+  def apply(isa: InetSocketAddress) = isa.getAddress match {
+    case inet4Address: Inet4Address => IPv4(inet4Address, isa.getPort)
+    case inet6Address: Inet6Address => IPv6(inet6Address, isa.getPort)
+    case otherwise => throw new LightningException(otherwise.toString)
+  }
+}
+
+case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress
+case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress
+
+case class Tor2(tor2: BinaryData, port: Int) extends NodeAddress {
+  require(tor2.size == 10, "Invalid Tor2 address length, should be 10")
+}
+
+case class Tor3(tor3: BinaryData, port: Int) extends NodeAddress {
+  require(tor3.size == 35, "Invalid Tor2 address length, should be 35")
+}
+
+// Not in a spec
 case class InRoutes(badNodes: Set[PublicKey], badChans: Set[Long], from: Set[PublicKey], to: PublicKey)
 case class WalletZygote(v: Int, db: BinaryData, wallet: BinaryData, chain: BinaryData)
 case class AESZygote(v: Int, iv: BinaryData, ciphertext: BinaryData)

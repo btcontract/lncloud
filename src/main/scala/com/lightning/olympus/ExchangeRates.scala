@@ -1,12 +1,12 @@
 package com.lightning.olympus
 
-import com.lightning.wallet.ln._
+import com.lightning.walletapp.ln._
 import scala.collection.JavaConverters._
 import com.lightning.olympus.JsonHttpUtils._
 import org.knowm.xchange.currency.CurrencyPair._
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
-import com.lightning.wallet.ln.Tools.none
+import com.lightning.walletapp.ln.Tools.none
 import org.knowm.xchange.ExchangeFactory
 import scala.util.Try
 
@@ -73,7 +73,7 @@ class ExchangeRates {
   } yield s"${average.pair} $exchange \r\n-- $humanHistory"
 
   val currencies = List(usd, eur, jpy, cny)
-  retry(obsOnIO.map(_ => for (average <- currencies) average.update), pickInc, 4 to 6)
-    .repeatWhen(_ delay 30.minutes).doOnNext(_ => Tools log "Exchange rates updated")
-    .subscribe(none)
+  def update(some: Any) = for (average <- currencies) average.update
+  retry(obsOnIO map update, pickInc, 4 to 6).repeatWhen(_ delay 30.minutes)
+    .doOnNext(_ => Tools log "Exchange rates were updated").subscribe(none)
 }

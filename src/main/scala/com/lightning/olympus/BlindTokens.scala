@@ -1,7 +1,7 @@
 package com.lightning.olympus
 
-import com.lightning.wallet.ln._
 import collection.JavaConverters._
+import com.lightning.walletapp.ln._
 import rx.lang.scala.{Observable => Obs}
 import com.lightning.olympus.crypto.ECBlindSign
 import java.util.concurrent.ConcurrentHashMap

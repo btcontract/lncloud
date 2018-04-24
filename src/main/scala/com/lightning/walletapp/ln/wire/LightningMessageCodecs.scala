@@ -1,21 +1,21 @@
-package com.lightning.wallet.ln.wire
+package com.lightning.walletapp.ln.wire
 
 import java.net._
 import scodec.codecs._
 import java.math.BigInteger
 import fr.acinq.eclair.UInt64
-import com.lightning.wallet.ln.crypto.Sphinx
-import com.lightning.wallet.ln.{Hop, LightningException}
+import com.lightning.walletapp.ln.{Hop, LightningException}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
+import scala.util.{Failure, Success, Try}
 import scodec.{Attempt, Codec, Err}
 
 
 object LightningMessageCodecs { me =>
   type BitVectorAttempt = Attempt[BitVector]
   type LNMessageVector = Vector[LightningMessage]
-  type InetSocketAddressList = List[InetSocketAddress]
+  type NodeAddressList = List[NodeAddress]
   type AddressPort = (InetAddress, Int)
   type RGB = (Byte, Byte, Byte)
 
@@ -33,6 +33,11 @@ object LightningMessageCodecs { me =>
       case Attempt.Failure(err) => throw new LightningException(err.message)
     }
 
+  def attemptFromTry[T](run: => T): Attempt[T] = Try(run) match {
+    case Failure(reason) => Attempt failure Err(reason.getMessage)
+    case Success(result) => Attempt successful result
+  }
+
   // RGB <-> ByteVector
   private val bv2Rgb: PartialFunction[ByteVector, RGB] = {
     case ByteVector(red, green, blue, _*) => (red, green, blue)
@@ -45,11 +50,6 @@ object LightningMessageCodecs { me =>
   // BinaryData <-> ByteVector
   private val vec2Bin = (vec: ByteVector) => BinaryData(vec.toArray)
   private val bin2Vec = (bin: BinaryData) => ByteVector(bin.data)
-
-  // IP v4/6 <-> ByteVector
-  private val inet2Bv = (a: InetAddress) => ByteVector(a.getAddress)
-  private val bv2Inet6 = (bv: ByteVector) => InetAddress.getByAddress(bv.toArray).asInstanceOf[Inet6Address]
-  private val bv2Inet4 = (bv: ByteVector) => InetAddress.getByAddress(bv.toArray).asInstanceOf[Inet4Address]
 
   def der2wire(signature: BinaryData): BinaryData =
     Crypto decodeSignature signature match { case (r, s) =>
@@ -90,25 +90,30 @@ object LightningMessageCodecs { me =>
     if (long < 0) Attempt failure Err(s"Overflow $long")
     else Attempt successful long, identity)
 
-  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.toArray),
-    a => ByteVector(a.underlying.toByteArray) takeRight 8 padLeft 8)
-
-  private val ipv6address: Codec[Inet6Address] = bytes(16).xmap(bv2Inet6, inet2Bv)
-  private val ipv4address: Codec[Inet4Address] = bytes(4).xmap(bv2Inet4, inet2Bv)
-
-  private val addressport: Codec[AddressPort] = discriminated[InetAddress]
-    .by(uint8).typecase(1, ipv4address).typecase(2, ipv6address) ~ uint16
-
-  val socketaddress: Codec[InetSocketAddress] = addressport.xmap(
-    addressAndPort => new InetSocketAddress(addressAndPort._1, addressAndPort._2),
-    inetSockAddress => (inetSockAddress.getAddress, inetSockAddress.getPort)
+  val ipv6address: Codec[Inet6Address] = bytes(16).exmap(
+    bv => me attemptFromTry Inet6Address.getByAddress(null, bv.toArray, null),
+    inet6Address => me attemptFromTry ByteVector(inet6Address.getAddress)
   )
 
-  val rgb: Codec[RGB] = bytes(3).xmap(bv2Rgb, rgb2Bv)
+  private val ipv4address: Codec[Inet4Address] = bytes(4).xmap(
+    bv => InetAddress.getByAddress(bv.toArray).asInstanceOf[Inet4Address],
+    inet4Address => ByteVector(inet4Address.getAddress)
+  )
+
+  def nodeaddress: Codec[NodeAddress] =
+    discriminated[NodeAddress].by(uint8)
+      .typecase(cr = provide(Padding), tag = 0)
+      .typecase(cr = (ipv4address ~ uint16).xmap[IPv4](x => IPv4(x._1, x._2), x => x.ipv4 -> x.port), tag = 1)
+      .typecase(cr = (ipv6address ~ uint16).xmap[IPv6](x => IPv6(x._1, x._2), x => x.ipv6 -> x.port), tag = 2)
+      .typecase(cr = (binarydata(10) ~ uint16).xmap[Tor2](x => Tor2(x._1, x._2), x => x.tor2 -> x.port), tag = 3)
+      .typecase(cr = (binarydata(35) ~ uint16).xmap[Tor3](x => Tor3(x._1, x._2), x => x.tor3 -> x.port), tag = 4)
+
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(vec2Bin, bin2Vec)
   val varsizebinarydata: Codec[BinaryData] = variableSizeBytes(value = bytes.xmap(vec2Bin, bin2Vec), size = uint16)
   val varsizebinarydataLong: Codec[BinaryData] = variableSizeBytesLong(value = bytes.xmap(vec2Bin, bin2Vec), size = uint32)
+  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.toArray), a => ByteVector(a.underlying.toByteArray) takeRight 8 padLeft 8)
   val zeropaddedstring: Codec[String] = fixedSizeBytes(32, utf8).xmap(_.takeWhile(_ != '\u0000'), identity)
+  val rgb: Codec[RGB] = bytes(3).xmap(bv2Rgb, rgb2Bv)
 
   // Data formats
 
@@ -205,17 +210,6 @@ object LightningMessageCodecs { me =>
   val closingSignedCodec: Codec[ClosingSigned] =
     closingSigned.as[ClosingSigned]
 
-  private val updateAddHtlc =
-    (binarydata(32) withContext "channelId") ::
-      (uint64 withContext "id") ::
-      (uint64 withContext "amountMsat") ::
-      (binarydata(32) withContext "paymentHash") ::
-      (uint32 withContext "expiry") ::
-      (binarydata(Sphinx.PacketLength) withContext "onionRoutingPacket")
-
-  val updateAddHtlcCodec: Codec[UpdateAddHtlc] =
-    updateAddHtlc.as[UpdateAddHtlc]
-
   private val updateFulfillHtlc =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "id") ::
@@ -283,7 +277,7 @@ object LightningMessageCodecs { me =>
       (publicKey withContext "nodeId") ::
       (rgb withContext "rgbColor") ::
       (zeropaddedstring withContext "alias") ::
-      (variableSizeBytes(value = list(socketaddress), size = uint16) withContext "addresses")
+      (variableSizeBytes(value = list(nodeaddress), size = uint16) withContext "addresses")
 
   val channelUpdateWitness =
     (binarydata(32) withContext "chainHash") ::
@@ -302,6 +296,13 @@ object LightningMessageCodecs { me =>
       (uint64 withContext "htlcMinimumMsat") ::
       (uint32 withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths")
+
+  private val perHopPayload =
+    (constant(ByteVector fromByte 0) withContext "realm") ::
+      (uint64 withContext "shortChannelId") ::
+      (uint64 withContext "amtToForward") ::
+      (uint32 withContext "outgoingCltv") ::
+      (ignore(8 * 12) withContext "unusedWithV0VersionOnHeader")
 
   private val channelUpdate = (signature withContext "signature") :: channelUpdateWitness
   private val nodeAnnouncement = (signature withContext "signature") :: nodeAnnouncementWitness
@@ -322,7 +323,6 @@ object LightningMessageCodecs { me =>
       .typecase(cr = fundingLockedCodec, tag = 36)
       .typecase(cr = shutdownCodec, tag = 38)
       .typecase(cr = closingSignedCodec, tag = 39)
-      .typecase(cr = updateAddHtlcCodec, tag = 128)
       .typecase(cr = updateFulfillHtlcCodec, tag = 130)
       .typecase(cr = updateFailHtlcCodec, tag = 131)
       .typecase(cr = commitSigCodec, tag = 132)

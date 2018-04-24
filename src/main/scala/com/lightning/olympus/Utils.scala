@@ -4,10 +4,10 @@ import spray.json._
 import scala.concurrent.duration._
 import com.lightning.olympus.Utils._
 import com.lightning.olympus.JsonHttpUtils._
-import com.lightning.wallet.lnutils.ImplicitJsonFormats._
+import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
 import scala.collection.JavaConverters.mapAsJavaMapConverter
+import com.lightning.walletapp.ln.PaymentRequest
 import com.github.kevinsawicki.http.HttpRequest
-import com.lightning.wallet.ln.PaymentRequest
 import rx.lang.scala.schedulers.IOScheduler
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
