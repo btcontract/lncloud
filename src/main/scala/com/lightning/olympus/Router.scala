@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 
 case class ChanInfo(txid: String, capacity: Long, ca: ChannelAnnouncement)
-case class ChanDirection(fee: Double, shortId: Long, from: PublicKey, to: PublicKey)
+case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 
 object Router { me =>
   type NodeIdSet = Set[PublicKey]
@@ -103,7 +103,7 @@ object Router { me =>
 
     def findPaths(xNodes: NodeIdSet, xChans: ShortChannelIdSet, sources: NodeIdSet, destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = ds => for (dir <- ds) yield updates(dir) toHop dir.from
-      val toNeighborhood = getNeighbours(Set(destination), Set.empty, reach = 2)
+      val toNeighborhood = getNeighbours(Set(destination), Set.empty, reach = 1)
       val fromNeighborhood = getNeighbours(sources, Set.empty, reach = 1)
       val singleChanTarget = nodeId2Chans.dict(destination).size == 1
       val baseGraph = new Graph(chanDirectionClass)
@@ -117,16 +117,16 @@ object Router { me =>
           case _ => acc
         }
 
-      updates.keys foreach { case dir @ ChanDirection(fee, shortId, fromNode, toNode) =>
-        val ok1 = fromNeighborhood.contains(fromNode) || nodeId2Chans.dict(fromNode).size >= values.minChannels
-        val ok2 = toNeighborhood.contains(toNode) || nodeId2Chans.dict(toNode).size >= values.minChannels
+      updates foreach { case Tuple2(dir @ ChanDirection(shortId, fromNode, toNode), u) =>
+        val ok1 = fromNeighborhood.contains(fromNode) || nodeId2Chans.dict(fromNode).size > values.minChannels
+        val ok2 = toNeighborhood.contains(toNode) || nodeId2Chans.dict(toNode).size > values.minChannels
         val nope = xChans.contains(shortId) || xNodes.contains(fromNode) || xNodes.contains(toNode)
 
         if (ok1 && ok2 && !nope) {
           baseGraph addVertex toNode
           baseGraph addVertex fromNode
           baseGraph.addEdge(fromNode, toNode, dir)
-          baseGraph.setEdgeWeight(dir, fee)
+          baseGraph.setEdgeWeight(dir, u.feeEstimate)
         }
       }
 
@@ -134,7 +134,7 @@ object Router { me =>
         sourceNodeKey <- sources
         clone = baseGraph.clone.asInstanceOf[Graph]
         // Create a separate graph for each source node
-      } yield find(Vector.empty, clone, 4, sourceNodeKey)
+      } yield find(Vector.empty, clone, 2, sourceNodeKey)
 
       results.flatten
     }
@@ -158,8 +158,8 @@ object Router { me =>
       val info = chanId2Info(cu.shortChannelId)
       val isDisabled = Announcements isDisabled cu.flags
       val direction = Announcements isNode1 cu.flags match {
-        case true => ChanDirection(cu.feeEstimate, cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
-        case false => ChanDirection(cu.feeEstimate, cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
+        case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
+        case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
       }
 
       val upd1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)

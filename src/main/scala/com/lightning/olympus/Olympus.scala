@@ -42,7 +42,7 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
           eclairSockPort = 9092, eclairNodeId = "02baaab9be679031e30afa6199194c06e8eb928e55bcddd3601e0974248d7ab6c2",
-          rewindRange = 144, ip = "127.0.0.1", port = 9103, eclairProvider, minChannels = 3, minAmount = BigDecimal(50000),
+          rewindRange = 7, ip = "127.0.0.1", port = 9003, eclairProvider, minChannels = 5,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
       case List("production", rawVals) =>
@@ -112,7 +112,7 @@ class Responder { me =>
 
     case req @ POST -> Root / "router" / "routes" =>
       val InRoutes(badNodes, badChans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutes] apply "params"
-      val paths = Router.finder.findPaths(badNodes take 160, badChans take 160, from take 8, destination = dest)
+      val paths = Router.finder.findPaths(badNodes take 160, badChans take 160, from take 4, destination = dest)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
@@ -192,8 +192,8 @@ object LNConnector {
     override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
     override def onIncompatible(ann: NodeAnnouncement) = onTerminalError(ann)
 
-    override def onDisconnect(announce: NodeAnnouncement) =
+    override def onDisconnect(ann: NodeAnnouncement) =
       Obs.just(Tools log "Restarting socket").delay(5.seconds)
-        .subscribe(_ => connect, _.printStackTrace)
+        .subscribe(in5Seconds => connect, _.printStackTrace)
   }
 }
