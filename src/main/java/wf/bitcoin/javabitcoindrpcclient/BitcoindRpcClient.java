@@ -189,8 +189,6 @@ public interface BitcoindRpcClient {
 
   public MultiSig createMultiSig(int nRequired, List<String> keys) throws BitcoinRpcException;
 
-  public NetworkInfo getNetworkInfo() throws BitcoinRpcException;
-
   public static interface Info extends Serializable {
 
     public long version();
@@ -301,58 +299,6 @@ public interface BitcoindRpcClient {
     public List<String> addresses();
 
     public String p2sh();
-  }
-
-  public TxOutSetInfo getTxOutSetInfo();
-
-  public WalletInfo getWalletInfo();
-
-  public static interface WalletInfo extends Serializable {
-
-    public long walletVersion();
-
-    public BigDecimal balance();
-
-    public BigDecimal unconfirmedBalance();
-
-    public BigDecimal immatureBalance();
-
-    public long txCount();
-
-    public long keyPoolOldest();
-
-    public long keyPoolSize();
-
-    public long unlockedUntil();
-
-    public BigDecimal payTxFee();
-
-    public String hdMasterKeyId();
-  }
-
-  public static interface NetworkInfo extends Serializable {
-
-    public long version();
-
-    public String subversion();
-
-    public long protocolVersion();
-
-    public String localServices();
-
-    public boolean localRelay();
-
-    public long timeOffset();
-
-    public long connections();
-
-    public List<Network> networks();
-
-    public BigDecimal relayFee();
-
-    public List<String> localAddresses();
-
-    public String warnings();
   }
 
   public static interface Network extends Serializable {

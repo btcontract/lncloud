@@ -350,171 +350,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
 
   }
 
-  private class TxOutSetInfoWrapper extends MapWrapper implements TxOutSetInfo, Serializable {
-
-    public TxOutSetInfoWrapper(Map m) {
-      super(m);
-    }
-
-    @Override
-    public long height() {
-      return mapInt("height");
-    }
-
-    @Override
-    public String bestBlock() {
-      return mapStr("bestBlock");
-    }
-
-    @Override
-    public long transactions() {
-      return mapInt("transactions");
-    }
-
-    @Override
-    public long txouts() {
-      return mapInt("txouts");
-    }
-
-    @Override
-    public long bytesSerialized() {
-      return mapInt("bytes_serialized");
-    }
-
-    @Override
-    public String hashSerialized() {
-      return mapStr("hash_serialized");
-    }
-
-    @Override
-    public BigDecimal totalAmount() {
-      return mapBigDecimal("total_amount");
-    }
-  }
-
-  private class WalletInfoWrapper extends MapWrapper implements WalletInfo, Serializable {
-
-    public WalletInfoWrapper(Map m) { super(m);}
-
-    @Override
-    public long walletVersion() {
-      return mapLong("walletversion");
-    }
-
-    @Override
-    public BigDecimal balance() {
-      return mapBigDecimal("balance");
-    }
-
-    @Override
-    public BigDecimal unconfirmedBalance() {
-      return mapBigDecimal("unconfirmed_balance");
-    }
-
-    @Override
-    public BigDecimal immatureBalance() {
-      return mapBigDecimal("immature_balance");
-    }
-
-    @Override
-    public long txCount() {
-      return mapLong("txcount");
-    }
-
-    @Override
-    public long keyPoolOldest() {
-      return mapLong("keypoololdest");
-    }
-
-    @Override
-    public long keyPoolSize() {
-      return mapLong("keypoolsize");
-    }
-
-    @Override
-    public long unlockedUntil() {
-      return mapLong("unlocked_until");
-    }
-
-    @Override
-    public BigDecimal payTxFee() {
-      return mapBigDecimal("paytxfee");
-    }
-
-    @Override
-    public String hdMasterKeyId() {
-      return mapStr("hdmasterkeyid");
-    }
-  }
-
-  private class NetworkInfoWrapper extends MapWrapper implements NetworkInfo, Serializable {
-
-    public NetworkInfoWrapper(Map m) {
-      super(m);
-    }
-
-    @Override
-    public long version() {
-      return mapLong("version");
-    }
-
-    @Override
-    public String subversion() {
-      return mapStr("subversion");
-    }
-
-    @Override
-    public long protocolVersion() {
-      return mapLong("protocolversion");
-    }
-
-    @Override
-    public String localServices() {
-      return mapStr("localservices");
-    }
-
-    @Override
-    public boolean localRelay() {
-      return mapBool("localrelay");
-    }
-
-    @Override
-    public long timeOffset() {
-      return mapLong("timeoffset");
-    }
-
-    @Override
-    public long connections() {
-      return mapLong("connections");
-    }
-
-    @Override
-    public List<Network> networks() {
-      List<Map> maps = (List<Map>) m.get("networks");
-      List<Network> networks = new LinkedList<Network>();
-      for(Map m: maps) {
-        Network net = new NetworkWrapper(m);
-        networks.add(net);
-      }
-      return networks;
-    }
-
-    @Override
-    public BigDecimal relayFee() {
-      return mapBigDecimal("relayfee");
-    }
-
-    @Override
-    public List<String> localAddresses() {
-      return (List<String>) m.get("localaddresses");
-    }
-
-    @Override
-    public String warnings() {
-      return mapStr("warnings");
-    }
-  }
-
   private class NetworkWrapper extends MapWrapper implements Network, Serializable {
 
     public NetworkWrapper(Map m) {
@@ -870,16 +705,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   @Override
-  public TxOutSetInfo getTxOutSetInfo() throws BitcoinRpcException {
-    return new TxOutSetInfoWrapper((Map) query("gettxoutsetinfo"));
-  }
-
-  @Override
-  public NetworkInfo getNetworkInfo() throws BitcoinRpcException {
-    return new NetworkInfoWrapper((Map) query("getnetworkinfo"));
-  }
-
-  @Override
   public MiningInfo getMiningInfo() throws BitcoinRpcException {
     return new MiningInfoWrapper((Map) query("getmininginfo"));
   }
@@ -898,11 +723,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public MultiSig createMultiSig(int nRequired, List<String> keys) throws BitcoinRpcException {
     return new MultiSigWrapper ((Map) query("createmultisig", nRequired, keys));
-  }
-
-  @Override
-  public WalletInfo getWalletInfo() {
-    return new WalletInfoWrapper((Map) query("getwalletinfo"));
   }
 
   @Override
