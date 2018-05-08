@@ -142,8 +142,11 @@ object Router { me =>
 
   def receive(m: LightningMessage) = me synchronized doReceive(m)
   private def doReceive(message: LightningMessage) = message match {
-    case ca: ChannelAnnouncement if removedChannels.contains(ca.shortChannelId) =>
-    case ca: ChannelAnnouncement => Blockchain getChanInfo ca foreach addChanInfo
+    case ca: ChannelAnnouncement => Blockchain getChanInfo ca foreach {
+      case _ if removedChannels contains ca.shortChannelId => Tools log "Ignoring already removed chan"
+      case small if small.capacity < values.minCapacity => Tools log "Ignoring chan with low capacity"
+      case chanInfo => addChanInfo(chanInfo)
+    }
 
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
     case node: NodeAnnouncement if nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
