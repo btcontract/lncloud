@@ -41,7 +41,7 @@ $ mongo
 > db.spentTxs.createIndex( { "prefix": 1 }, { unique: true } )
 > db.spentTxs.createIndex( { "txids": 1 } )
 
-> db.scheduledTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 14 } )
+> db.scheduledTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 30 } )
 > db.scheduledTxs.createIndex( { "cltv": 1 } )
 
 > db.userData.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
