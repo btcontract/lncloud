@@ -68,11 +68,6 @@ object Router { me =>
     nodeId2Announce(node.nodeId) = node
   }
 
-  def getNeighbours(nodeIds: NodeIdSet, acc: NodeIdSet, reach: Int): NodeIdSet = if (reach < 1) acc else {
-    val neighborhood = nodeIds.flatMap(nodeId2Chans.dict).flatMap(shortId => chanId2Info(shortId).ca.nodes)
-    getNeighbours(neighborhood -- nodeIds, neighborhood ++ acc, reach - 1)
-  }
-
   case class Node2Channels(dict: mutable.Map[PublicKey, ShortChannelIdSet] = mutable.Map.empty) {
     // Too big nodes have a 50% change to get dampened down, relatively well connected nodes have a 10% chance to pop up
     def between(size: Long, min: Long, max: Long, chance: Double) = random.nextDouble < chance && size > min & size < max
@@ -100,29 +95,30 @@ object Router { me =>
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
     def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
     def rmRandomEdge(ds: Seq[ChanDirection], graph: Graph) = rmEdge(graph, shuffle(ds).head)
+    // This works because every map update also replaces a GraphFinder object
+    lazy val mixed = shuffle(updates)
 
     def findPaths(xNodes: NodeIdSet, xChans: ShortChannelIdSet, sources: NodeIdSet, destination: PublicKey) = {
       val toHops: Vector[ChanDirection] => PaymentRoute = ds => for (dir <- ds) yield updates(dir) toHop dir.from
-      val toNeighborhood = getNeighbours(Set(destination), Set.empty, reach = 1)
-      val fromNeighborhood = getNeighbours(sources, Set.empty, reach = 1)
       val singleChanTarget = nodeId2Chans.dict(destination).size == 1
       val baseGraph = new Graph(chanDirectionClass)
 
-      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int, key: PublicKey): Vector[PaymentRoute] =
-        Try apply DijkstraShortestPath.findPathBetween(graph, key, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if limit > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
-          case Success(way) if limit > 0 && way.size <= 2 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, key)
-          case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1, key)
+      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int, source: PublicKey): Vector[PaymentRoute] =
+        Try apply DijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
+          case Success(way) if limit > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, source)
+          case Success(way) if limit > 0 && way.size <= 2 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, source)
+          case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1, source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
 
-      updates foreach { case Tuple2(dir @ ChanDirection(shortId, fromNode, toNode), u) =>
-        val ok1 = fromNeighborhood.contains(fromNode) || nodeId2Chans.dict(fromNode).size > values.minChannels
-        val ok2 = toNeighborhood.contains(toNode) || nodeId2Chans.dict(toNode).size > values.minChannels
+      mixed foreach { case Tuple2(dir @ ChanDirection(shortId, fromNode, toNode), u) =>
         val nope = xChans.contains(shortId) || xNodes.contains(fromNode) || xNodes.contains(toNode)
+        // We are not interested in non-routing nodes unless they are sources or destinations
+        val ok1 = sources.contains(fromNode) || nodeId2Chans.dict(fromNode).size > 1
+        val ok2 = destination == toNode || nodeId2Chans.dict(toNode).size > 1
 
-        if (ok1 && ok2 && !nope) {
+        if (ok1 & ok2 & !nope) {
           baseGraph addVertex toNode
           baseGraph addVertex fromNode
           baseGraph.addEdge(fromNode, toNode, dir)
@@ -134,7 +130,7 @@ object Router { me =>
         sourceNodeKey <- sources
         clone = baseGraph.clone.asInstanceOf[Graph]
         // Create a separate graph for each source node
-      } yield find(Vector.empty, clone, 2, sourceNodeKey)
+      } yield find(Vector.empty, clone, 3, sourceNodeKey)
 
       results.flatten
     }
@@ -167,7 +163,7 @@ object Router { me =>
 
       val upd1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
-      if (isFresh) finder = finder.copy(updates = upd1)
+      if (isFresh) finder = GraphFinder(upd1)
 
     case _ =>
   }
@@ -179,8 +175,8 @@ object Router { me =>
     // Removal may result in lost nodes so all nodes with now zero channels are removed
     nodeId2Announce.filterKeys(nodeId => nodeId2Chans.dict(nodeId).isEmpty).values foreach rmNode
     // And finally we need to remove all the lost updates which have no channel announcements left
-    val updates1 = finder.updates filter { case direction \ _ => chanId2Info contains direction.shortId }
-    finder = GraphFinder(updates1)
+    val upd1 = finder.updates filter { case direction \ _ => chanId2Info contains direction.shortId }
+    finder = GraphFinder(upd1)
     Tools log what
   }
 
@@ -189,9 +185,9 @@ object Router { me =>
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
   Obs.interval(5.minutes) foreach { _ =>
-    // Affects the next check: removing channels will render affected nodes outdated
-    val updates1 = finder.updates filterNot { case _ \ upd => me isOutdated upd }
-    finder = GraphFinder(updates1)
+    // Affects the next check: removing channels renders affected nodes outdated
+    val upd1 = finder.updates filterNot { case _ \ update => me isOutdated update }
+    finder = GraphFinder(upd1)
   }
 
   Obs interval 15.minutes foreach { _ =>

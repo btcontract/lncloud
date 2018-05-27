@@ -100,10 +100,10 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
 
   implicit val valsFmt =
     jsonFormat[String, String, String, String, Int,
-      String, Int, String, Int, PaymentProvider, Int, Long, String, String,
-      Vals](Vals.apply, "privKey", "btcApi", "zmqApi", "eclairSockIp", "eclairSockPort",
-      "eclairNodeId", "rewindRange", "ip", "port", "paymentProvider", "minChannels",
-      "minCapacity", "sslFile", "sslPass")
+      String, Int, String, Int, PaymentProvider, Long, String, String,
+      Vals](Vals.apply, "privKey", "btcApi", "zmqApi", "eclairSockIp",
+      "eclairSockPort", "eclairNodeId", "rewindRange", "ip", "port",
+      "paymentProvider", "minCapacity", "sslFile", "sslPass")
 
   implicit val inRoutesFmt =
     jsonFormat[Set[PublicKey], Set[Long], Set[PublicKey], PublicKey,
