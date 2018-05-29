@@ -93,8 +93,7 @@ object Router { me =>
   }
 
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
-    def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
-    def rmRandomEdge(ds: Seq[ChanDirection], graph: Graph) = rmEdge(graph, shuffle(ds).head)
+    def rmRandEdge(ds: Seq[ChanDirection], gr: Graph) = runAnd(gr)(gr removeEdge shuffle(ds).head)
     val toHops: Vector[ChanDirection] => PaymentRoute = _.map(dir => updates(dir) toHop dir.from)
     // This works because every map update also replaces a GraphFinder object
     lazy val mixed = shuffle(updates)
@@ -107,9 +106,9 @@ object Router { me =>
 
       def find(acc: PaymentRouteVec, graph: Graph, stop: Int, source: PublicKey): PaymentRouteVec =
         Try(DijkstraShortestPath.findPathBetween(graph, source, to).getEdgeList.asScala.toVector) match {
-          case Success(way) if stop > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), stop - 1, source)
-          case Success(way) if stop > 0 && way.size <= 2 => find(acc :+ toHops(way), rmEdge(graph, way.head), stop - 1, source)
-          case Success(way) if stop > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), stop - 1, source)
+          case Success(way) if stop > 0 && singleChanTarget => find(acc :+ toHops(way), rmRandEdge(way dropRight 1, graph), stop - 1, source)
+          case Success(way) if stop > 0 && way.size == 1 => find(acc :+ toHops(way), rmRandEdge(way, graph), stop - 1, source)
+          case Success(way) if stop > 0 => find(acc :+ toHops(way), rmRandEdge(way.tail, graph), stop - 1, source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
@@ -131,7 +130,7 @@ object Router { me =>
       val results = for {
         sourceNodeKey <- from
         clone = baseGraph.clone.asInstanceOf[Graph]
-        // Create a separate graph for each source node
+      // Create a separate graph for each source node
       } yield find(Vector.empty, clone, 3, sourceNodeKey)
 
       results.flatten
@@ -183,7 +182,7 @@ object Router { me =>
   }
 
   def isOutdated(cu: ChannelUpdate) =
-    // Considered outdated if it older than two weeks
+  // Considered outdated if it older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
   Obs.interval(5.minutes) foreach { _ =>
@@ -194,7 +193,7 @@ object Router { me =>
 
   Obs interval 15.minutes foreach { _ =>
     val twoWeeksBehind = bitcoin.getBlockCount - 2016 // ~2 weeks
-    val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
+  val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
     val oldChanInfos = chanId2Info.values.filter(_.ca.blockHeight < twoWeeksBehind)
     val outdatedChanInfos = oldChanInfos.filterNot(shortId2Updates contains _.ca.shortChannelId)
     complexRemove(outdatedChanInfos, "Removed possible present outdated nodes and channels")
