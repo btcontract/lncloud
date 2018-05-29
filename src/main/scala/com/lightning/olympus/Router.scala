@@ -106,8 +106,8 @@ object Router { me =>
 
       def find(acc: PaymentRouteVec, graph: Graph, stop: Int, source: PublicKey): PaymentRouteVec =
         Try(DijkstraShortestPath.findPathBetween(graph, source, to).getEdgeList.asScala.toVector) match {
-          case Success(way) if stop > 0 && singleChanTarget => find(acc :+ toHops(way), rmRandEdge(way dropRight 1, graph), stop - 1, source)
           case Success(way) if stop > 0 && way.size == 1 => find(acc :+ toHops(way), rmRandEdge(way, graph), stop - 1, source)
+          case Success(way) if stop > 0 && singleChanTarget => find(acc :+ toHops(way), rmRandEdge(way dropRight 1, graph), stop - 1, source)
           case Success(way) if stop > 0 => find(acc :+ toHops(way), rmRandEdge(way.tail, graph), stop - 1, source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
@@ -193,7 +193,7 @@ object Router { me =>
 
   Obs interval 15.minutes foreach { _ =>
     val twoWeeksBehind = bitcoin.getBlockCount - 2016 // ~2 weeks
-  val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
+    val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
     val oldChanInfos = chanId2Info.values.filter(_.ca.blockHeight < twoWeeksBehind)
     val outdatedChanInfos = oldChanInfos.filterNot(shortId2Updates contains _.ca.shortChannelId)
     complexRemove(outdatedChanInfos, "Removed possible present outdated nodes and channels")
