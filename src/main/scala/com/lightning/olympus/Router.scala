@@ -2,14 +2,14 @@ package com.lightning.olympus
 
 import com.lightning.walletapp.ln._
 import com.lightning.walletapp.ln.wire._
-import com.lightning.walletapp.ln.RoutingInfoTag.PaymentRoute
-import com.lightning.walletapp.ln.Tools.{random, wrap, runAnd}
-import rx.lang.scala.{Observable => Obs}
-import scala.util.{Success, Try}
-
-import com.lightning.olympus.Utils._
-import scala.collection.JavaConverters._
+import com.lightning.walletapp.ln.Tools._
+import com.lightning.walletapp.ln.RoutingInfoTag._
 import com.googlecode.concurrenttrees.radix.node.concrete._
+import scala.collection.JavaConverters._
+import com.lightning.olympus.Utils._
+
+import scala.util.{Success, Try}
+import rx.lang.scala.{Observable => Obs}
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DirectedWeightedPseudograph
@@ -95,39 +95,41 @@ object Router { me =>
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
     def rmEdge(graph: Graph, dir: ChanDirection) = runAnd(graph)(graph removeEdge dir)
     def rmRandomEdge(ds: Seq[ChanDirection], graph: Graph) = rmEdge(graph, shuffle(ds).head)
+    val toHops: Vector[ChanDirection] => PaymentRoute = _.map(dir => updates(dir) toHop dir.from)
     // This works because every map update also replaces a GraphFinder object
     lazy val mixed = shuffle(updates)
 
-    def findPaths(xNodes: NodeIdSet, xChans: ShortChannelIdSet, sources: NodeIdSet, destination: PublicKey) = {
-      val toHops: Vector[ChanDirection] => PaymentRoute = ds => for (dir <- ds) yield updates(dir) toHop dir.from
-      val singleChanTarget = nodeId2Chans.dict(destination).size == 1
+    def findPaths(xn: NodeIdSet, xc: ShortChannelIdSet, from: NodeIdSet, to: PublicKey, sat: Long) = {
+      // Filter out chans with insufficient capacity, user excluded nodes and chans, not useful nodes and chans
+      // We can't use rmRandomEdge if destination node has only one channel since it can possibly be removed
+      val singleChanTarget = nodeId2Chans.dict(to).size == 1
       val baseGraph = new Graph(chanDirectionClass)
 
-      def find(acc: Vector[PaymentRoute], graph: Graph, limit: Int, source: PublicKey): Vector[PaymentRoute] =
-        Try apply DijkstraShortestPath.findPathBetween(graph, source, destination).getEdgeList.asScala.toVector match {
-          case Success(way) if limit > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, source)
-          case Success(way) if limit > 0 && way.size <= 2 => find(acc :+ toHops(way), rmEdge(graph, way.head), limit - 1, source)
-          case Success(way) if limit > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), limit - 1, source)
+      def find(acc: PaymentRouteVec, graph: Graph, stop: Int, source: PublicKey): PaymentRouteVec =
+        Try(DijkstraShortestPath.findPathBetween(graph, source, to).getEdgeList.asScala.toVector) match {
+          case Success(way) if stop > 0 && singleChanTarget => find(acc :+ toHops(way), rmEdge(graph, way.head), stop - 1, source)
+          case Success(way) if stop > 0 && way.size <= 2 => find(acc :+ toHops(way), rmEdge(graph, way.head), stop - 1, source)
+          case Success(way) if stop > 0 => find(acc :+ toHops(way), rmRandomEdge(way.tail, graph), stop - 1, source)
           case Success(way) => acc :+ toHops(way)
           case _ => acc
         }
 
-      mixed foreach { case Tuple2(dir @ ChanDirection(shortId, fromNode, toNode), u) =>
-        val nope = xChans.contains(shortId) || xNodes.contains(fromNode) || xNodes.contains(toNode)
-        // We are not interested in non-routing nodes unless they are sources or destinations
-        val ok1 = sources.contains(fromNode) || nodeId2Chans.dict(fromNode).size > 1
-        val ok2 = destination == toNode || nodeId2Chans.dict(toNode).size > 1
+      mixed foreach {
+        // Use sequence of guards for lazy evaluation
+        case dir \ _ if chanId2Info(dir.shortId).capacity < sat =>
+        case dir \ _ if xc.contains(dir.shortId) || xn.contains(dir.from) || xn.contains(dir.to) =>
+        case dir \ _ if !from.contains(dir.from) && nodeId2Chans.dict(dir.from).size < 2 =>
+        case dir \ _ if to != dir.to && nodeId2Chans.dict(dir.to).size < 2 =>
 
-        if (ok1 & ok2 & !nope) {
-          baseGraph addVertex toNode
-          baseGraph addVertex fromNode
-          baseGraph.addEdge(fromNode, toNode, dir)
+        case dir \ u =>
+          baseGraph.addVertex(dir.to)
+          baseGraph.addVertex(dir.from)
+          baseGraph.addEdge(dir.from, dir.to, dir)
           baseGraph.setEdgeWeight(dir, u.feeEstimate)
-        }
       }
 
       val results = for {
-        sourceNodeKey <- sources
+        sourceNodeKey <- from
         clone = baseGraph.clone.asInstanceOf[Graph]
         // Create a separate graph for each source node
       } yield find(Vector.empty, clone, 3, sourceNodeKey)
