@@ -60,8 +60,8 @@ class MongoDatabase extends Database {
 
   def getData(key: String) = {
     val results = olympus("userData").find("key" $eq key)
-    val firstOne = results sort DBObject(createdAt -> -1) take 8
-    firstOne.map(_ as[String] "data").toList
+    val newest = results sort DBObject(createdAt -> -1) take 8
+    newest.map(_ as[String] "data").toList
   }
 
   // Blind tokens management, k is sesPrivKey
