@@ -36,7 +36,7 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 ```
 $ mongo
 
-> use olympus
+> use btc-olympus
 > db.spentTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 180 } )
 > db.spentTxs.createIndex( { "prefix": 1 }, { unique: true } )
 > db.spentTxs.createIndex( { "txids": 1 } )
@@ -47,7 +47,7 @@ $ mongo
 > db.userData.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
 > db.userData.createIndex( { "key": 1 } )
 
-> use blindSignatures
+> use btc-blindSignatures
 > db.blindTokens.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 } )
 > db.blindTokens.createIndex( { "seskey": 1 }, { unique: true } )
 
