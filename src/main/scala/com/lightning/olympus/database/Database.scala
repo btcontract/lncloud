@@ -32,8 +32,8 @@ abstract class Database {
 
 class MongoDatabase extends Database {
   implicit def obj2String(source: Object): String = source.toString
-  val blindSignatures: MongoDB = MongoClient("localhost")("blindSignatures")
-  val olympus: MongoDB = MongoClient("localhost")("olympus")
+  val blindSignatures: MongoDB = MongoClient("localhost")("btc-blindSignatures")
+  val olympus: MongoDB = MongoClient("localhost")("btc-olympus")
   val createdAt = "createdAt"
 
   def putTx(txids: Seq[String], prefix: String, hex: String) =
