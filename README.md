@@ -37,7 +37,7 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 $ mongo
 
 > use btc-olympus
-> db.spentTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 180 } )
+> db.spentTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 90 } )
 > db.spentTxs.createIndex( { "prefix": 1 }, { unique: true } )
 > db.spentTxs.createIndex( { "txids": 1 } )
 
