@@ -109,11 +109,6 @@ class Responder { me =>
 
     // ROUTER
 
-    case req @ POST -> Root / "router" / "routes" =>
-      val InRoutes(badNodes, badChans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutes] apply "params"
-      val paths = Router.finder.findPaths(badNodes take 160, badChans take 160, from take 4, dest, sat = 0L)
-      Tuple2(oK, paths).toJson
-
     case req @ POST -> Root / "router" / "routesplus" =>
       val InRoutesPlus(sat, badNodes, badChans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutesPlus] apply "params"
       val paths = Router.finder.findPaths(badNodes take 160, badChans take 160, from take 4, dest, sat = (sat * 1.2).toLong)
