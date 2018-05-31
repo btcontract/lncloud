@@ -53,7 +53,7 @@ object Olympus extends ServerApp {
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
     val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder/*.withSSL(sslInfo, values.sslPass)*/.bindHttp(values.port, values.ip).mountService(postLift).start
+    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
