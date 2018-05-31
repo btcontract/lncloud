@@ -74,7 +74,7 @@ case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
                           url: String, privKey: String) extends PaymentProvider {
 
   def generateInvoice = {
-    val parameters = Map("amount" -> priceMsat.toString, "currency" -> "btc", "description" -> "payment").asJava
+    val parameters = Map("amount_satoshi" -> (priceMsat / 1000L).toString, "currency" -> "btc", "description" -> "payment").asJava
     to[Charge](HttpRequest.post(url).basic(privKey, "").userAgent("curl/7.47.0").form(parameters).connectTimeout(10000).body)
   }
 
