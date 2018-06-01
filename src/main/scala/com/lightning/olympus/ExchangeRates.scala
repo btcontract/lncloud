@@ -22,7 +22,7 @@ import org.knowm.xchange.gdax.GDAXExchange
 
 class AveragePrice(val pair: CurrencyPair, val code: String) {
   val history = new ConcurrentHashMap[String, PriceHistory].asScala
-  val exchanges: List[String] = List.empty
+  val exchanges = List.empty[String]
   type PriceTry = Try[BigDecimal]
 
   def update: Unit = for (exchangeName <- exchanges)
@@ -37,7 +37,7 @@ class AveragePrice(val pair: CurrencyPair, val code: String) {
   } getOrElse BigDecimal(0)
 
   class PriceHistory {
-    var prices: List[PriceTry] = Nil
+    var prices = List.empty[PriceTry]
     def recentValue = prices.find(_.isSuccess)
     def add(item: PriceTry) = prices = item :: prices take 5
   }
