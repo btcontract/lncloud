@@ -67,37 +67,23 @@ trait PaymentProvider {
   val url: String
 }
 
-case class Charge(paymentHash: String, id: String,
-                  paymentRequest: String, paid: Boolean)
-
-case class StrikeProvider(priceMsat: Long, quantity: Int, description: String,
-                          url: String, privKey: String) extends PaymentProvider {
-
-  def generateInvoice = {
-    val parameters = Map("amount" -> (priceMsat / 1000L).toString, "currency" -> "btc", "description" -> description).asJava
-    to[Charge](HttpRequest.post(url).basic(privKey, "").userAgent("curl/7.47.0").form(parameters).connectTimeout(10000).body)
-  }
-
-  def isPaid(data: BlindData) = {
-    val request = HttpRequest.get(url + "/" + data.id).basic(privKey, "")
-    to[Charge](request.userAgent("curl/7.47.0").connectTimeout(10000).body).paid
-  }
+case class Charge(paymentHash: String, id: String, paymentRequest: String, paid: Boolean)
+case class StrikeProvider(priceMsat: Long, quantity: Int, description: String, url: String, privKey: String) extends PaymentProvider {
+  def isPaid(bd: BlindData) = to[Charge](HttpRequest.get(url + "/" + bd.id).basic(privKey, "").userAgent("curl/7.47.0").connectTimeout(10000).body).paid
+  def generateInvoice = to[Charge](HttpRequest.post(url).basic(privKey, "").userAgent("curl/7.47.0").form(parameters).connectTimeout(10000).body)
+  val parameters = Map("amount" -> (priceMsat / 1000L).toString, "currency" -> "btc", "description" -> description).asJava
 }
 
-case class EclairProvider(priceMsat: Long, quantity: Int, description: String,
-                          url: String, pass: String) extends PaymentProvider {
-
-  def request =
-    HttpRequest.post(url).basic("eclair-cli", pass)
-      .contentType("application/json").connectTimeout(5000)
+case class EclairProvider(priceMsat: Long, quantity: Int, description: String, url: String, pass: String) extends PaymentProvider {
+  def request = HttpRequest.post(url).basic("eclair-cli", pass).contentType("application/json").connectTimeout(5000)
 
   def generateInvoice = {
     val content = s"""{ "params": [$priceMsat, "$description"], "method": "receive" }"""
-    val rawPr = request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
+    val raw = request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
 
-    val pr = PaymentRequest read rawPr
+    val pr = PaymentRequest read raw
     val payHash = pr.paymentHash.toString
-    Charge(payHash, payHash, rawPr, paid = false)
+    Charge(payHash, payHash, raw, paid = false)
   }
 
   def isPaid(data: BlindData) = {
