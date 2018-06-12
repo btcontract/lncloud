@@ -37,13 +37,20 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
-        val description = "Storage tokens for backup Olympus server at 10.0.2.2"
-        val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
+        val description = "Storage tokens for backup Olympus server at b.lightning-wallet.com"
+        val eclairProvider = EclairProvider(500000L, 50, description, "http://5.9.138.164:8080", "pass")
+//        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
+//          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
+//          eclairSockPort = 9735, eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375",
+//          rewindRange = 1, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
+//          sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
+
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
-          eclairSockPort = 9735, eclairNodeId = "0218bc75cba78d378d864a0f41d4ccd67eb1eaa829464d37706702003069c003f8",
-          rewindRange = 7, ip = "127.0.0.1", port = 9003, eclairProvider, minCapacity = 100000L,
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "192.210.203.16",
+          eclairSockPort = 9735, eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375",
+          rewindRange = 1, ip = "127.0.0.1", port = 9003, eclairProvider, minCapacity = 50000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
+
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -52,8 +59,9 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -81,27 +89,23 @@ class Responder { me =>
       Tuple2(oK, res).toJson
     }
 
-    // Record tokens and send an Invoice
     case req @ POST -> Root / "blindtokens" / "buy" =>
+      // Record tokens and send a payment request if we still have data in cache
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
-      val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.paymentProvider.quantity
 
       blindTokens.cache get sesKey map { item =>
-        val Charge(hash, id, serializedPR, false) = values.paymentProvider.generateInvoice
-        db.putPendingTokens(data = BlindData(hash, id, item.data, pruned), sesKey)
-        serializedPR
-      } match {
-        case Some(invoice) => Tuple2(oK, invoice).toJson
-        case None => Tuple2(eRROR, "notfound").toJson
-      }
+        val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.paymentProvider.quantity
+        val Charge(hash, id, serializedPaymentRequest, false) = values.paymentProvider.generateInvoice
+        db.putPendingTokens(BlindData(hash, id, item.data, pruned), sesKey)
+        js2Task(Tuple2(oK, serializedPaymentRequest).toJson)
+      } getOrElse js2Task(Tuple2(eRROR, "notfound").toJson)
 
     // Provide signed blind tokens
     case req @ POST -> Root / "blindtokens" / "redeem" =>
-      // We only sign tokens if the request has been fulfilled
       val tokens = db.getPendingTokens(req params "seskey")
-      val isOk = tokens map values.paymentProvider.isPaid
+      val isPaid = tokens map values.paymentProvider.isPaid
 
-      isOk -> tokens match {
+      isPaid -> tokens match {
         case Some(true) \ Some(data) => Tuple2(oK, blindTokens sign data).toJson
         case Some(false) \ _ => Tuple2(eRROR, "notfulfilled").toJson
         case _ => Tuple2(eRROR, "notfound").toJson
@@ -110,8 +114,8 @@ class Responder { me =>
     // ROUTER
 
     case req @ POST -> Root / "router" / "routesplus" =>
-      val InRoutesPlus(sat, badNodes, badChans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutesPlus] apply "params"
-      val paths = Router.finder.findPaths(badNodes take 160, badChans take 160, from take 4, dest, sat = (sat * 1.2).toLong)
+      val InRoutesPlus(sat, nodes, chans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutesPlus] apply "params"
+      val paths = Router.finder.findPaths(nodes take 160, chans take 160, from take 4, dest, sat = (sat * 1.2).toLong)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
@@ -164,8 +168,13 @@ class Responder { me =>
 
     case GET -> Root / "rates" / "state" =>
       val fiat = exchangeRates.displayState mkString "\r\n\r\n"
-      val bitcoin = feeRates.rates.toString
-      Ok(s"$bitcoin\r\n\r\n$fiat")
+      Ok(s"${feeRates.rates.toString}\r\n======\r\n$fiat")
+
+    case GET -> Root / "risk" / "state" =>
+      val res = for (nodeId \ CacheItem(data, stamp) <- Router.nodeIdRisk)
+        yield s"${nodeId.toString}: $data, ${System.currentTimeMillis - stamp}"
+
+      Ok(res mkString "\r\n")
   }
 
   def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {
@@ -183,7 +192,7 @@ class Responder { me =>
 object LNConnector {
   def connect = ConnectionManager connectTo announce
   val inetSockAddress = new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort)
-  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing source", NodeAddress(inetSockAddress) :: Nil)
+  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing", NodeAddress(inetSockAddress) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
     override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg
@@ -191,8 +200,8 @@ object LNConnector {
     override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
     override def onIncompatible(ann: NodeAnnouncement) = onTerminalError(ann)
 
-    override def onDisconnect(ann: NodeAnnouncement) =
+    override def onDisconnect(announce: NodeAnnouncement) =
       Obs.just(Tools log "Restarting socket").delay(5.seconds)
-        .subscribe(in5Seconds => connect, _.printStackTrace)
+        .subscribe(_ => connect, _.printStackTrace)
   }
 }

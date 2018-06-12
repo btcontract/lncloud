@@ -17,7 +17,7 @@ class BlindTokens { me =>
   type SesKeyCacheItem = CacheItem[BigInteger]
   val signer = new ECBlindSign(values.bigIntegerPrivKey)
   val cache = new ConcurrentHashMap[String, SesKeyCacheItem].asScala
-  def decodeECPoint(raw: String): ECPoint = ECKey.CURVE.getCurve.decodePoint(HEX decode raw)
+  def decodeECPoint(rawPoint: String): ECPoint = ECKey.CURVE.getCurve.decodePoint(HEX decode rawPoint)
   def sign(data: BlindData) = for (tn <- data.tokens) yield signer.blindSign(new BigInteger(tn), data.k).toString
 
   // Periodically remove used and outdated requests

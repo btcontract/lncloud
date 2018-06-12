@@ -33,5 +33,3 @@ object Blockchain {
     bitcoin sendRawTransaction binary.toString
   }
 }
-
-

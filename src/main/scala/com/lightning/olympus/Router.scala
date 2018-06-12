@@ -27,6 +27,7 @@ case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 object Router { me =>
   type NodeIdSet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
+  type RiskCacheItem = CacheItem[Long]
   type DefFactory = DefaultCharArrayNodeFactory
   type Graph = DirectedWeightedPseudograph[PublicKey, ChanDirection]
   private[this] val chanDirectionClass = classOf[ChanDirection]
@@ -34,10 +35,21 @@ object Router { me =>
   val removedChannels = mutable.Set.empty[Long]
   val chanId2Info = mutable.Map.empty[Long, ChanInfo]
   val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
+  val nodeIdRisk = mutable.Map.empty[PublicKey, RiskCacheItem]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
   val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefFactory)
   var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
   var finder = GraphFinder(Map.empty)
+
+  val hour = 3600000L
+  def addRisk(outs: Long, info: ChanInfo) = {
+    val risk1 = (outs / (nodeId2Chans.dict(info.ca.nodeId1).size + 1D) * 400L).toLong
+    val risk2 = (outs / (nodeId2Chans.dict(info.ca.nodeId2).size + 1D) * 400L).toLong
+    val upd1Risk = for (CacheItem(risk, stamp) <- nodeIdRisk get info.ca.nodeId1) yield CacheItem(risk + risk1, stamp + hour)
+    val upd2Risk = for (CacheItem(risk, stamp) <- nodeIdRisk get info.ca.nodeId2) yield CacheItem(risk + risk2, stamp + hour)
+    nodeIdRisk(info.ca.nodeId1) = upd1Risk getOrElse CacheItem(risk1, System.currentTimeMillis)
+    nodeIdRisk(info.ca.nodeId2) = upd2Risk getOrElse CacheItem(risk2, System.currentTimeMillis)
+  }
 
   def rmChanInfo(info: ChanInfo) = {
     // Make sure it can't be added again
@@ -87,6 +99,7 @@ object Router { me =>
     def minusShortChanId(info: ChanInfo) = {
       dict(info.ca.nodeId1) -= info.ca.shortChannelId
       dict(info.ca.nodeId2) -= info.ca.shortChannelId
+      // Remove empty mappings to not acumulate useless data
       val dict1 = dict filter { case _ \ set => set.nonEmpty }
       Node2Channels(dict1)
     }
@@ -182,13 +195,14 @@ object Router { me =>
   }
 
   def isOutdated(cu: ChannelUpdate) =
-  // Considered outdated if it older than two weeks
+    // Considered outdated if it older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
-  Obs.interval(5.minutes) foreach { _ =>
-    // Affects the next check: removing channels renders affected nodes outdated
-    val upd1 = finder.updates filterNot { case _ \ update => me isOutdated update }
-    finder = GraphFinder(upd1)
+  Obs.interval(5.minutes).map(_ => System.currentTimeMillis) foreach { now =>
+    // Removing chan directions also affects the next check since it makes nodes without channels
+    nodeIdRisk foreach { case key \ item => if (item.stamp < now - hour * 24) nodeIdRisk remove key }
+    val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
+    finder = GraphFinder(updates1)
   }
 
   Obs interval 15.minutes foreach { _ =>
