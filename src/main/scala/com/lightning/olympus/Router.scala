@@ -25,7 +25,6 @@ case class ChanInfo(txid: String, capacity: Long, ca: ChannelAnnouncement)
 case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 
 object Router { me =>
-  type NodeIdSet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
   type RiskCacheItem = CacheItem[Long]
   type DefFactory = DefaultCharArrayNodeFactory
@@ -111,8 +110,8 @@ object Router { me =>
     // This works because every map update also replaces a GraphFinder object
     lazy val mixed = shuffle(updates)
 
-    def findPaths(xn: NodeIdSet, xc: ShortChannelIdSet, from: NodeIdSet, to: PublicKey, sat: Long) = {
-      // Filter out chans with insufficient capacity, user excluded nodes and chans, not useful nodes and chans
+    def findPaths(xn: Set[PublicKey], xc: ShortChannelIdSet, from: Set[PublicKey], to: PublicKey, sat: Long) = {
+      // Filter out chans with insufficient capacity, nodes and chans excluded by user, not useful nodes and chans
       // We can't use rmRandomEdge if destination node has only one channel since it can possibly be removed
       val singleChanTarget = nodeId2Chans.dict(to).size == 1
       val baseGraph = new Graph(chanDirectionClass)
@@ -141,9 +140,9 @@ object Router { me =>
       }
 
       val results = for {
-        sourceNodeKey <- from
+        sourceNodeKey <- from.toVector
         clone = baseGraph.clone.asInstanceOf[Graph]
-      // Create a separate graph for each source node
+        // Create a separate graph for each source node
       } yield find(Vector.empty, clone, 3, sourceNodeKey)
 
       results.flatten
