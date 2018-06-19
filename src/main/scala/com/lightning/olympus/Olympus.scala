@@ -169,12 +169,6 @@ class Responder { me =>
     case GET -> Root / "rates" / "state" =>
       val fiat = exchangeRates.displayState mkString "\r\n\r\n"
       Ok(s"${feeRates.rates.toString}\r\n======\r\n$fiat")
-
-    case GET -> Root / "risk" / "state" =>
-      val res = for (nodeId \ CacheItem(data, stamp) <- Router.nodeIdRisk)
-        yield s"${nodeId.toString}: $data, ${System.currentTimeMillis - stamp}"
-
-      Ok(res mkString "\r\n")
   }
 
   def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {

@@ -26,7 +26,6 @@ case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
 
 object Router { me =>
   type ShortChannelIdSet = Set[Long]
-  type RiskCacheItem = CacheItem[Long]
   type DefFactory = DefaultCharArrayNodeFactory
   type Graph = DirectedWeightedPseudograph[PublicKey, ChanDirection]
   private[this] val chanDirectionClass = classOf[ChanDirection]
@@ -34,21 +33,10 @@ object Router { me =>
   val removedChannels = mutable.Set.empty[Long]
   val chanId2Info = mutable.Map.empty[Long, ChanInfo]
   val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
-  val nodeIdRisk = mutable.Map.empty[PublicKey, RiskCacheItem]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
   val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefFactory)
   var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
   var finder = GraphFinder(Map.empty)
-
-  val hour = 3600000L
-  def addRisk(outs: Long, info: ChanInfo) = {
-    val risk1 = (outs / (nodeId2Chans.dict(info.ca.nodeId1).size + 1D) * 400L).toLong
-    val risk2 = (outs / (nodeId2Chans.dict(info.ca.nodeId2).size + 1D) * 400L).toLong
-    val upd1Risk = for (CacheItem(risk, stamp) <- nodeIdRisk get info.ca.nodeId1) yield CacheItem(risk + risk1, stamp + hour)
-    val upd2Risk = for (CacheItem(risk, stamp) <- nodeIdRisk get info.ca.nodeId2) yield CacheItem(risk + risk2, stamp + hour)
-    nodeIdRisk(info.ca.nodeId1) = upd1Risk getOrElse CacheItem(risk1, System.currentTimeMillis)
-    nodeIdRisk(info.ca.nodeId2) = upd2Risk getOrElse CacheItem(risk2, System.currentTimeMillis)
-  }
 
   def rmChanInfo(info: ChanInfo) = {
     // Make sure it can't be added again
@@ -198,8 +186,7 @@ object Router { me =>
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
   Obs.interval(5.minutes).map(_ => System.currentTimeMillis) foreach { now =>
-    // Removing chan directions also affects the next check since it makes nodes without channels
-    nodeIdRisk foreach { case key \ item => if (item.stamp < now - hour * 24) nodeIdRisk remove key }
+    // Removing directions also affects the next check since it makes nodes without chans
     val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
     finder = GraphFinder(updates1)
   }

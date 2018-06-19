@@ -21,18 +21,6 @@ class ZMQActor(db: Database) extends Actor {
   // should be restarted from outside in case of disconnect
 
   val rmSpent = "Removed spent channels"
-  val updateNodeRisk = new ZMQListener {
-    override def onNewTx(twr: TransactionWithRaw) = for {
-      // We catch uncooperative on-chain closings and assign
-      // risk values to related channel keys
-
-      input <- twr.tx.txIn.headOption
-      if input.sequence != 0xffffffffL && twr.tx.lockTime != 0
-      chanInfo <- Router.txId2Info get input.outPoint.txid
-      if chanInfo.ca.outputIndex == input.outPoint.index
-    } Router.addRisk(twr.tx.txOut.size, chanInfo)
-  }
-
   val removeSpentChannels = new ZMQListener {
     override def onNewTx(twr: TransactionWithRaw) = for {
       // We need to check if any input spends a channel output
@@ -76,8 +64,7 @@ class ZMQActor(db: Database) extends Actor {
 
   val ctx = new ZContext
   val subscriber = ctx.createSocket(ZMQ.SUB)
-  // updateNodeRisk should go before removeSpentChannels because the latter gets data deleted
-  val listeners = Set(updateNodeRisk, removeSpentChannels, recordTransactions, sendScheduled)
+  val listeners = Set(removeSpentChannels, recordTransactions, sendScheduled)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.subscribe("hashblock" getBytes ZMQ.CHARSET)
   subscriber.subscribe("rawtx" getBytes ZMQ.CHARSET)
