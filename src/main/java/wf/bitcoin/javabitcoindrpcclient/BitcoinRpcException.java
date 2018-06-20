@@ -41,10 +41,6 @@ public class BitcoinRpcException extends RuntimeException {
         super(msg);
     }
 
-    public BitcoinRpcException(Throwable cause) {
-        super(cause);
-    }
-
     public BitcoinRpcException(String message, Throwable cause) {
         super(message, cause);
     }

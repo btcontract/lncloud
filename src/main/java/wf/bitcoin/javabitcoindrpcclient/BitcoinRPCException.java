@@ -66,21 +66,4 @@ public class BitcoinRPCException extends BitcoinRpcException {
   public BitcoinRPCException(String msg) {
     super(msg);
   }
-
-  public BitcoinRPCException(String message, Throwable cause) {
-    super(message, cause);
-  }
-
-  public int getResponseCode() {
-    return responseCode;
-  }
-
-  public String getRpcMethod() {
-    return rpcMethod;
-  }
-
-  public String getRpcParams() {
-    return rpcParams;
-  }
-
 }

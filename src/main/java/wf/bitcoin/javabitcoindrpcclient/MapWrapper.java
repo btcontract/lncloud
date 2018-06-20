@@ -38,10 +38,6 @@ class MapWrapper {
         return mapBool(m, key);
     }
 
-    public float mapFloat(String key) {
-        return mapFloat(m, key);
-    }
-
     public double mapDouble(String key) {
         return mapDouble(m, key);
     }
@@ -72,10 +68,6 @@ class MapWrapper {
 
     public static BigDecimal mapBigDecimal(Map m, String key) {
       return new BigDecimal((Double) m.get(key));
-    }
-
-    public static float mapFloat(Map m, String key) {
-        return ((Number)m.get(key)).floatValue();
     }
 
     public static double mapDouble(Map m, String key) {

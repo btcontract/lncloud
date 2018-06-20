@@ -350,38 +350,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
 
   }
 
-  private class NetworkWrapper extends MapWrapper implements Network, Serializable {
-
-    public NetworkWrapper(Map m) {
-      super(m);
-    }
-
-    @Override
-    public String name() {
-      return mapStr("name");
-    }
-
-    @Override
-    public boolean limited() {
-      return mapBool("limited");
-    }
-
-    @Override
-    public boolean reachable() {
-      return mapBool("reachable");
-    }
-
-    @Override
-    public String proxy() {
-      return mapStr("proxy");
-    }
-
-    @Override
-    public boolean proxyRandomizeCredentials() {
-      return mapBool("proxy_randomize_credentials");
-    }
-  }
-
   private class MultiSigWrapper extends MapWrapper implements MultiSig, Serializable {
 
     public MultiSigWrapper(Map m) { super(m);}
@@ -1547,38 +1515,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     return (List<String>) query("generate", numBlocks);
   }
 
-//    static {
-//        logger.setLevel(Level.ALL);
-//        for (Handler handler : logger.getParent().getHandlers())
-//            handler.setLevel(Level.ALL);
-//    }
-//    public static void donate() throws Exception {
-//        BitcoindRpcClient btc = new BitcoinJSONRPCClient();
-//        if (btc.getBalance() > 10)
-//            btc.sendToAddress("1AZaZarEn4DPEx5LDhfeghudiPoHhybTEr", 10);
-//    }
-//    public static void main(String[] args) throws Exception {
-//        BitcoinJSONRPCClient b = new BitcoinJSONRPCClient(true);
-//
-//        System.out.println(b.listTransactions());
-//        
-////        String aa = "mjrxsupqJGBzeMjEiv57qxSKxgd3SVwZYd";
-////        String ab = "mpN3WTJYsrnnWeoMzwTxkp8325nzArxnxN";
-////        String ac = b.getNewAddress("TEST");
-////        
-////        System.out.println(b.getBalance("", 0));
-////        System.out.println(b.sendFrom("", ab, 0.1));
-////        System.out.println(b.sendToAddress(ab, 0.1, "comment", "tocomment"));
-////        System.out.println(b.getReceivedByAddress(ab));
-////        System.out.println(b.sendToAddress(ac, 0.01));
-////        
-////        System.out.println(b.validateAddress(ac));
-////        
-//////        b.importPrivKey(b.dumpPrivKey(aa));
-////        
-////        System.out.println(b.getAddressesByAccount("TEST"));
-////        System.out.println(b.listReceivedByAddress());
-//    }
   @Override
   public double getEstimateFee(int nBlocks) throws BitcoinRpcException {
     return ((Number) query("estimatefee", nBlocks)).doubleValue();
@@ -1890,6 +1826,4 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   public TxOut getTxOut(String txId, long vout, boolean includemempool) throws BitcoinRpcException {
     return new TxOutWrapper((Map) query("gettxout", txId, vout, includemempool));
   }
-
-
 }
