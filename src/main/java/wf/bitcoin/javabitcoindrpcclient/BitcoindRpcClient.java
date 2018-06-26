@@ -33,19 +33,6 @@ import java.util.Map;
  */
 public interface BitcoindRpcClient {
 
-  /* Missing methods:
-   getblocktemplate ( "jsonrequestobject" )
-   *getgenerate
-   *gethashespersec
-   *getwork ( "data" )
-   help ( "command" )
-   *listaddressgroupings
-   *listlockunspent
-   (DEPRECATED) listreceivedbyaccount ( minconf includeempty )
-   lockunspent unlock [{"txid":"txid","vout":n},...]
-   sendmany "fromaccount" {"address":amount,...} ( minconf "comment" )
-   (DEPRECATED) setaccount "bitcoinaddress" "account"
-   */
   public static interface TxInput extends Serializable {
 
     public String txid();
@@ -88,35 +75,6 @@ public interface BitcoindRpcClient {
 
   }
 
-  public static class ExtendedTxInput extends BasicTxInput {
-
-    public String redeemScript;
-    public BigDecimal amount;
-
-    public ExtendedTxInput(String txid, int vout) {
-      super(txid, vout);
-    }
-
-    public ExtendedTxInput(String txid, int vout, String scriptPubKey) {
-      super(txid, vout, scriptPubKey);
-    }
-
-    public ExtendedTxInput(String txid, int vout, String scriptPubKey, String redeemScript, BigDecimal amount) {
-      super(txid, vout, scriptPubKey);
-      this.redeemScript = redeemScript;
-      this.amount = amount;
-    }
-
-    public String redeemScript() {
-      return redeemScript;
-    }
-
-    public BigDecimal amount() {
-      return amount;
-    }
-
-  }
-
   public static interface TxOutput extends Serializable {
 
     public String address();
@@ -124,34 +82,11 @@ public interface BitcoindRpcClient {
     public double amount();
   }
 
-  public static class BasicTxOutput implements TxOutput {
-
-    public String address;
-    public double amount;
-
-    public BasicTxOutput(String address, double amount) {
-      this.address = address;
-      this.amount = amount;
-    }
-
-    @Override
-    public String address() {
-      return address;
-    }
-
-    @Override
-    public double amount() {
-      return amount;
-    }
-  }
-
   public String dumpPrivKey(String address) throws BitcoinRpcException;
 
   public String getAccount(String address) throws BitcoinRpcException;
 
   public String getAccountAddress(String address) throws BitcoinRpcException;
-
-  public List<String> getAddressesByAccount(String account) throws BitcoinRpcException;
 
   /**
    * @return returns the server's total available balance
@@ -173,103 +108,6 @@ public interface BitcoindRpcClient {
    * @throws BitcoinRpcException
    */
   public double getBalance(String account, int minConf) throws BitcoinRpcException;
-
-  /**
-   * @return infos about the bitcoind instance
-   * @throws BitcoinRpcException
-   */
-  public Info getInfo() throws BitcoinRpcException;
-
-  /**
-   *
-   * @return miningInfo about the bitcoind instance
-   * @throws BitcoinRpcException
-   */
-  public MiningInfo getMiningInfo() throws BitcoinRpcException;
-
-  public MultiSig createMultiSig(int nRequired, List<String> keys) throws BitcoinRpcException;
-
-  public static interface Info extends Serializable {
-
-    public long version();
-
-    public long protocolVersion();
-
-    public long walletVersion();
-
-    public double balance();
-
-    public int blocks();
-
-    public int timeOffset();
-
-    public int connections();
-
-    public String proxy();
-
-    public double difficulty();
-
-    public boolean testnet();
-
-    public long keyPoolOldest();
-
-    public long keyPoolSize();
-
-    public double payTxFee();
-
-    public double relayFee();
-
-    public String errors();
-  }
-
-  public static interface MiningInfo extends Serializable {
-
-    public int blocks();
-
-    public int currentBlockSize();
-
-    public int currentBlockWeight();
-
-    public int currentBlockTx();
-
-    public double difficulty();
-
-    public String errors();
-
-    public double networkHashps();
-
-    public int pooledTx();
-
-    public boolean testNet();
-
-    public String chain();
-  }
-
-  public static interface NetTotals extends Serializable {
-
-    public long totalBytesRecv();
-
-    public long totalBytesSent();
-
-    public long timeMillis();
-
-    public interface uploadTarget extends Serializable {
-
-      public long timeFrame();
-
-      public int target();
-
-      public boolean targetReached();
-
-      public boolean serveHistoricalBlocks();
-
-      public long bytesLeftInCycle();
-
-      public long timeLeftInCycle();
-    }
-
-    public uploadTarget uploadTarget();
-  }
 
   public static interface BlockChainInfo extends Serializable {
 
@@ -299,36 +137,6 @@ public interface BitcoindRpcClient {
     public List<String> addresses();
 
     public String p2sh();
-  }
-
-  public static interface Network extends Serializable {
-
-    public String name();
-
-    public boolean limited();
-
-    public boolean reachable();
-
-    public String proxy();
-
-    public boolean proxyRandomizeCredentials();
-  }
-
-  public static interface MultiSig extends Serializable {
-
-    public String address();
-
-    public String redeemScript();
-  }
-
-  public static interface NodeInfo extends Serializable {
-
-    public String addedNode();
-
-    public boolean connected();
-
-    public List<Address> addresses();
-
   }
 
   public static interface Address extends Serializable {
@@ -391,23 +199,6 @@ public interface BitcoindRpcClient {
     public Block next() throws BitcoinRpcException;
   }
 
-  public static interface TxOutSetInfo extends Serializable {
-
-    public long height();
-
-    public String bestBlock();
-
-    public long transactions();
-
-    public long txouts();
-
-    public long bytesSerialized();
-
-    public String hashSerialized();
-
-    public BigDecimal totalAmount();
-  }
-
   public Block getBlock(int height) throws BitcoinRpcException;
 
   public Block getBlock(String blockHash) throws BitcoinRpcException;
@@ -421,8 +212,6 @@ public interface BitcoindRpcClient {
   public String getNewAddress() throws BitcoinRpcException;
 
   public String getNewAddress(String account) throws BitcoinRpcException;
-
-  public List<String> getRawMemPool() throws BitcoinRpcException;
 
   public String getBestBlockHash() throws BitcoinRpcException;
 
@@ -592,19 +381,6 @@ public interface BitcoindRpcClient {
     public RawTransaction raw();
   }
 
-  public static interface TransactionsSinceBlock extends Serializable {
-
-    public List<Transaction> transactions();
-
-    public String lastBlock();
-  }
-
-  public TransactionsSinceBlock listSinceBlock() throws BitcoinRpcException;
-
-  public TransactionsSinceBlock listSinceBlock(String blockHash) throws BitcoinRpcException;
-
-  public TransactionsSinceBlock listSinceBlock(String blockHash, int targetConfirmations) throws BitcoinRpcException;
-
   public List<Transaction> listTransactions() throws BitcoinRpcException;
 
   public List<Transaction> listTransactions(String account) throws BitcoinRpcException;
@@ -685,7 +461,7 @@ public interface BitcoindRpcClient {
    */
   public String sendToAddress(String toAddress, double amount, String comment, String commentTo) throws BitcoinRpcException;
 
-  public String signRawTransaction(String hex, List<ExtendedTxInput> inputs, List<String> privateKeys) throws BitcoinRpcException;
+  public String signRawTransaction(String hex) throws BitcoinRpcException;
 
   public static interface AddressValidationResult extends Serializable {
 
@@ -704,92 +480,11 @@ public interface BitcoindRpcClient {
     public String account();
   }
 
-  /**
-   * @param doGenerate a boolean indicating if blocks must be generated with the
-   * cpu
-   * @throws BitcoinRPCException
-   */
-  public void setGenerate(boolean doGenerate) throws BitcoinRPCException;
-
-  /**
-   * Used in regtest mode to generate an arbitrary number of blocks
-   *
-   * @param numBlocks a boolean indicating if blocks must be generated with the
-   * cpu
-   * @return the list of hashes of the generated blocks
-   * @throws BitcoinRPCException
-   */
-  public List<String> generate(int numBlocks) throws BitcoinRPCException;
-
-  public AddressValidationResult validateAddress(String address) throws BitcoinRpcException;
-
   public double getEstimateFee(int nBlocks) throws BitcoinRpcException;
 
   public double getEstimateSmartFee(int nBlocks) throws BitcoinRpcException;
 
   public double getEstimatePriority(int nBlocks) throws BitcoinRpcException;
-
-  /**
-   * In regtest mode, invalidates a block to create an orphan chain
-   *
-   * @param hash
-   * @throws BitcoinRpcException
-   */
-  public void invalidateBlock(String hash) throws BitcoinRpcException;
-
-  /**
-   * In regtest mode, undo the invalidation of a block, possibly making it on
-   * the top of the chain
-   *
-   * @param hash
-   * @throws BitcoinRpcException
-   */
-  public void reconsiderBlock(String hash) throws BitcoinRpcException;
-
-  public static interface PeerInfoResult extends Serializable {
-
-    long getId();
-
-    String getAddr();
-
-    String getAddrLocal();
-
-    String getServices();
-
-    long getLastSend();
-
-    long getLastRecv();
-
-    long getBytesSent();
-
-    long getBytesRecv();
-
-    long getConnTime();
-
-    int getTimeOffset();
-
-    double getPingTime();
-
-    long getVersion();
-
-    String getSubVer();
-
-    boolean isInbound();
-
-    int getStartingHeight();
-
-    long getBanScore();
-
-    int getSyncedHeaders();
-
-    int getSyncedBlocks();
-
-    boolean isWhiteListed();
-  }
-
-  List<PeerInfoResult> getPeerInfo();
-
-  void stop();
 
   String getRawChangeAddress();
 
@@ -799,23 +494,11 @@ public interface BitcoindRpcClient {
 
   double getDifficulty();
 
-  void ping();
-
   DecodedScript decodeScript(String hex);
-
-  NetTotals getNetTotals();
-
-  boolean getGenerate();
-
-  double getNetworkHashPs();
 
   boolean setTxFee(BigDecimal amount);
 
-  void addNode(String node, String command);
-
   void backupWallet(String destination);
-
-  String signMessage(String bitcoinAdress, String message);
 
   void dumpWallet(String filename);
 
@@ -828,18 +511,6 @@ public interface BitcoindRpcClient {
   void encryptWallet(String passPhrase);
 
   void walletPassPhrase(String passPhrase, long timeOut);
-
-  boolean verifyMessage(String bitcoinAddress, String signature, String message);
-
-  String addMultiSigAddress(int nRequired, List<String> keyObject);
-
-  String addMultiSigAddress(int nRequired, List<String> keyObject, String account);
-
-  boolean verifyChain();
-
-  List<NodeInfo> getAddedNodeInfo(boolean dummy, String node);
-
-  void submitBlock(String hexData);
 
   TxOut getTxOut(String txId, long vout);
 

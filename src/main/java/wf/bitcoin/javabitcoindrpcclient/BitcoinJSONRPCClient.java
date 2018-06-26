@@ -124,32 +124,8 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
   }
 
-  public BitcoinJSONRPCClient(boolean testNet) {
-    this(testNet ? DEFAULT_JSONRPC_TESTNET_URL : DEFAULT_JSONRPC_URL);
-  }
-
-  public BitcoinJSONRPCClient() {
-    this(DEFAULT_JSONRPC_TESTNET_URL);
-  }
-
   private HostnameVerifier hostnameVerifier = null;
   private SSLSocketFactory sslSocketFactory = null;
-
-  public HostnameVerifier getHostnameVerifier() {
-    return hostnameVerifier;
-  }
-
-  public void setHostnameVerifier(HostnameVerifier hostnameVerifier) {
-    this.hostnameVerifier = hostnameVerifier;
-  }
-
-  public SSLSocketFactory getSslSocketFactory() {
-    return sslSocketFactory;
-  }
-
-  public void setSslSocketFactory(SSLSocketFactory sslSocketFactory) {
-    this.sslSocketFactory = sslSocketFactory;
-  }
 
   public static final Charset QUERY_CHARSET = Charset.forName("ISO8859-1");
 
@@ -248,11 +224,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   @Override
-  public List<String> getAddressesByAccount(String account) throws BitcoinRpcException {
-    return (List<String>) query("getaddressesbyaccount", account);
-  }
-
-  @Override
   public double getBalance() throws BitcoinRpcException {
     return ((Number) query("getbalance")).doubleValue();
   }
@@ -265,131 +236,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public double getBalance(String account, int minConf) throws BitcoinRpcException {
     return ((Number) query("getbalance", account, minConf)).doubleValue();
-  }
-
-  private class InfoWrapper extends MapWrapper implements Info, Serializable {
-
-    public InfoWrapper(Map m) {
-      super(m);
-    }
-
-    @Override
-    public double balance() {
-      return mapDouble("balance");
-    }
-
-    @Override
-    public int blocks() {
-      return mapInt("blocks");
-    }
-
-    @Override
-    public int connections() {
-      return mapInt("connections");
-    }
-
-    @Override
-    public double difficulty() {
-      return mapDouble("difficulty");
-    }
-
-    @Override
-    public String errors() {
-      return mapStr("errors");
-    }
-
-    @Override
-    public long keyPoolOldest() {
-      return mapLong("keypoololdest");
-    }
-
-    @Override
-    public long keyPoolSize() {
-      return mapLong("keypoolsize");
-    }
-
-    @Override
-    public double payTxFee() {
-      return mapDouble("paytxfee");
-    }
-
-    @Override
-    public long protocolVersion() {
-      return mapLong("protocolversion");
-    }
-
-    @Override
-    public String proxy() {
-      return mapStr("proxy");
-    }
-
-    @Override
-    public double relayFee() {
-      return mapDouble("relayfee");
-    }
-
-    @Override
-    public boolean testnet() {
-      return mapBool("testnet");
-    }
-
-    @Override
-    public int timeOffset() {
-      return mapInt("timeoffset");
-    }
-
-    @Override
-    public long version() {
-      return mapLong("version");
-    }
-
-    @Override
-    public long walletVersion() {
-      return mapLong("walletversion");
-    }
-
-  }
-
-  private class MultiSigWrapper extends MapWrapper implements MultiSig, Serializable {
-
-    public MultiSigWrapper(Map m) { super(m);}
-
-
-    @Override
-    public String address() {
-      return mapStr("address");
-    }
-
-    @Override
-    public String redeemScript() {
-      return mapStr("redeemScript");
-    }
-  }
-
-  private class NodeInfoWrapper extends MapWrapper implements NodeInfo, Serializable {
-
-    public NodeInfoWrapper(Map m) { super(m); }
-
-    @Override
-    public String addedNode() {
-      return mapStr("addednode");
-    }
-
-    @Override
-    public boolean connected() {
-      return mapBool("connected");
-    }
-
-    @Override
-    public List<Address> addresses() {
-        List<Map> maps = (List<Map>) m.get("addresses");
-        List<Address> addresses = new LinkedList<Address>();
-        for(Map m: maps) {
-          Address add = new AddressWrapper(m);
-          addresses.add(add);
-        }
-        return addresses;
-      }
   }
 
   private class AddressWrapper extends MapWrapper implements Address, Serializable {
@@ -452,63 +298,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     @Override
     public boolean coinBase() {
       return mapBool("coinbase");
-    }
-  }
-
-  private class MiningInfoWrapper extends MapWrapper implements MiningInfo, Serializable {
-
-    public MiningInfoWrapper(Map m) {
-      super(m);
-    }
-
-    @Override
-    public int blocks() {
-      return mapInt("blocks");
-    }
-
-    @Override
-    public int currentBlockSize() {
-      return mapInt("currentblocksize");
-    }
-
-    @Override
-    public int currentBlockWeight() {
-      return mapInt("currentblockweight");
-    }
-
-    @Override
-    public int currentBlockTx() {
-      return mapInt("currentblocktx");
-    }
-
-    @Override
-    public double difficulty() {
-      return mapDouble("difficulty");
-    }
-
-    @Override
-    public String errors() {
-      return mapStr("errors");
-    }
-
-    @Override
-    public double networkHashps() {
-      return Double.valueOf(mapStr("networkhashps"));
-    }
-
-    @Override
-    public int pooledTx() {
-      return mapInt("pooledtx");
-    }
-
-    @Override
-    public boolean testNet() {
-      return mapBool("testnet");
-    }
-
-    @Override
-    public String chain() {
-      return mapStr("chain");
     }
   }
 
@@ -668,32 +457,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   @Override
-  public Info getInfo() throws BitcoinRpcException {
-    return new InfoWrapper((Map) query("getinfo"));
-  }
-
-  @Override
-  public MiningInfo getMiningInfo() throws BitcoinRpcException {
-    return new MiningInfoWrapper((Map) query("getmininginfo"));
-  }
-
-  @Override
-  public List<NodeInfo> getAddedNodeInfo(boolean dummy, String node) throws BitcoinRpcException {
-    List<Map> list = ((List<Map>) query("getaddednodeinfo", dummy, node));
-    List<NodeInfo> nodeInfoList = new LinkedList<NodeInfo>();
-    for(Map m: list){
-      NodeInfoWrapper niw = new NodeInfoWrapper(m);
-      nodeInfoList.add(niw);
-    }
-    return nodeInfoList;
-  }
-
-  @Override
-  public MultiSig createMultiSig(int nRequired, List<String> keys) throws BitcoinRpcException {
-    return new MultiSigWrapper ((Map) query("createmultisig", nRequired, keys));
-  }
-
-  @Override
   public String getNewAddress() throws BitcoinRpcException {
     return (String) query("getnewaddress");
   }
@@ -701,11 +464,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public String getNewAddress(String account) throws BitcoinRpcException {
     return (String) query("getnewaddress", account);
-  }
-
-  @Override
-  public List<String> getRawMemPool() throws BitcoinRpcException {
-    return (List<String>) query("getrawmempool");
   }
 
   @Override
@@ -966,71 +724,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
   }
 
-  public class NetTotalsImpl extends MapWrapper implements NetTotals, Serializable {
-
-    public NetTotalsImpl(Map m) {
-      super(m);
-    }
-
-    @Override
-    public long totalBytesRecv() {
-      return mapLong("totalbytesrecv");
-    }
-
-    @Override
-    public long totalBytesSent() {
-      return mapLong("totalbytessent");
-    }
-
-    @Override
-    public long timeMillis() {
-      return mapLong("timemillis");
-    }
-
-    public class uploadTargetImpl extends MapWrapper implements uploadTarget, Serializable {
-
-      public uploadTargetImpl(Map m) {
-        super(m);
-      }
-
-
-      @Override
-      public long timeFrame() {
-        return mapLong("timeframe");
-      }
-
-      @Override
-      public int target() {
-        return mapInt("target");
-      }
-
-      @Override
-      public boolean targetReached() {
-        return mapBool("targetreached");
-      }
-
-      @Override
-      public boolean serveHistoricalBlocks() {
-        return mapBool("servehistoricalblocks");
-      }
-
-      @Override
-      public long bytesLeftInCycle() {
-        return mapLong("bytesleftincycle");
-      }
-
-      @Override
-      public long timeLeftInCycle() {
-        return mapLong("timeleftincycle");
-      }
-    }
-
-    @Override
-    public NetTotals.uploadTarget uploadTarget() {
-      return new uploadTargetImpl((Map) m.get("uploadtarget"));
-    }
-  }
-
   @Override
   public RawTransaction getRawTransaction(String txId) throws BitcoinRpcException {
     return new RawTransactionImpl((Map) query("getrawtransaction", txId, 1));
@@ -1236,43 +929,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
 
   }
 
-  private class TransactionsSinceBlockImpl implements TransactionsSinceBlock, Serializable {
-
-    public final List<Transaction> transactions;
-    public final String lastBlock;
-
-    public TransactionsSinceBlockImpl(Map r) {
-      this.transactions = new TransactionListMapWrapper((List) r.get("transactions"));
-      this.lastBlock = (String) r.get("lastblock");
-    }
-
-    @Override
-    public List<Transaction> transactions() {
-      return transactions;
-    }
-
-    @Override
-    public String lastBlock() {
-      return lastBlock;
-    }
-
-  }
-
-  @Override
-  public TransactionsSinceBlock listSinceBlock() throws BitcoinRpcException {
-    return new TransactionsSinceBlockImpl((Map) query("listsinceblock"));
-  }
-
-  @Override
-  public TransactionsSinceBlock listSinceBlock(String blockHash) throws BitcoinRpcException {
-    return new TransactionsSinceBlockImpl((Map) query("listsinceblock", blockHash));
-  }
-
-  @Override
-  public TransactionsSinceBlock listSinceBlock(String blockHash, int targetConfirmations) throws BitcoinRpcException {
-    return new TransactionsSinceBlockImpl((Map) query("listsinceblock", blockHash, targetConfirmations));
-  }
-
   @Override
   public List<Transaction> listTransactions() throws BitcoinRpcException {
     return new TransactionListMapWrapper((List) query("listtransactions"));
@@ -1418,37 +1074,24 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   public String signRawTransaction(String hex) throws BitcoinRpcException {
-    return signRawTransaction(hex, null, null, "ALL");
-  }
-
-  @Override
-  public String signRawTransaction(String hex, List<ExtendedTxInput> inputs, List<String> privateKeys) throws BitcoinRpcException{
-    return signRawTransaction(hex, inputs, privateKeys, "ALL");
-  }
-
-  public String signRawTransaction(String hex, List<ExtendedTxInput> inputs, List<String> privateKeys, String sigHashType) {
-    List<Map> pInputs = null;
-
-    if (inputs != null) {
-      pInputs = new ArrayList<>();
-      for (final ExtendedTxInput txInput : inputs) {
-        pInputs.add(new LinkedHashMap() {
-          {
-            put("txid", txInput.txid());
-            put("vout", txInput.vout());
-            put("scriptPubKey", txInput.scriptPubKey());
-            put("redeemScript", txInput.redeemScript());
-            put("amount", txInput.amount());
-          }
-        });
-      }
-    }
-
-    Map result = (Map) query("signrawtransaction", hex, pInputs, privateKeys, sigHashType); //if sigHashType is null it will return the default "ALL"
+    Map result = (Map) query("signrawtransaction", hex, null, null, "ALL");
     if ((Boolean) result.get("complete"))
       return (String) result.get("hex");
     else
       throw new BitcoinRpcException("Incomplete");
+  }
+
+  public String fundRawTransaction(String hex) {
+    Map options = new LinkedHashMap() {
+      {
+        put("change_type", "bech32");
+        put("lockUnspents", true);
+        put("replaceable", true);
+      }
+    };
+
+    Map result = (Map) query("fundrawtransaction", hex, options);
+    return (String) result.get("hex");
   }
 
   public RawTransaction decodeRawTransaction(String hex) throws BitcoinRpcException {
@@ -1457,62 +1100,24 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     return rawTransaction.vOut().get(0).transaction();
   }
 
-  @Override
-  public AddressValidationResult validateAddress(String address) throws BitcoinRpcException {
-    final Map validationResult = (Map) query("validateaddress", address);
-    return new AddressValidationResult() {
+  public Boolean lockUnspent(RawTransaction rawTx, boolean unlock) {
+    List<Map> unspents = new ArrayList<>();
+    int i = 0;
 
-      @Override
-      public boolean isValid() {
-        return ((Boolean) validationResult.get("isvalid"));
-      }
+    for (RawTransaction.In in : rawTx.vIn()) {
 
-      @Override
-      public String address() {
-        return (String) validationResult.get("address");
-      }
+      final int temp = i;
+      unspents.add(new LinkedHashMap() {
+        {
+          put("txid", in.getTransaction().txId());
+          put("vout", temp);
+        }
+      });
 
-      @Override
-      public boolean isMine() {
-        return ((Boolean) validationResult.get("ismine"));
-      }
+      i++;
+    }
 
-      @Override
-      public boolean isScript() {
-        return ((Boolean) validationResult.get("isscript"));
-      }
-
-      @Override
-      public String pubKey() {
-        return (String) validationResult.get("pubkey");
-      }
-
-      @Override
-      public boolean isCompressed() {
-        return ((Boolean) validationResult.get("iscompressed"));
-      }
-
-      @Override
-      public String account() {
-        return (String) validationResult.get("account");
-      }
-
-      @Override
-      public String toString() {
-        return validationResult.toString();
-      }
-
-    };
-  }
-
-  @Override
-  public void setGenerate(boolean b) throws BitcoinRPCException {
-    query("setgenerate", b);
-  }
-
-  @Override
-  public List<String> generate(int numBlocks) throws BitcoinRPCException {
-    return (List<String>) query("generate", numBlocks);
+    return (Boolean) query("lockunspent", unlock, unspents);
   }
 
   @Override
@@ -1528,145 +1133,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public double getEstimatePriority(int nBlocks) throws BitcoinRpcException {
     return ((Number) query("estimatepriority", nBlocks)).doubleValue();
-  }
-
-  @Override
-  public void invalidateBlock(String hash) throws BitcoinRpcException {
-    query("invalidateblock", hash);
-  }
-
-  @Override
-  public void reconsiderBlock(String hash) throws BitcoinRpcException {
-    query("reconsiderblock", hash);
-  }
-
-  private class PeerInfoWrapper extends MapWrapper implements PeerInfoResult, Serializable {
-
-    public PeerInfoWrapper(Map m) {
-      super(m);
-    }
-
-    @Override
-    public long getId() {
-      return mapLong("id");
-    }
-
-    @Override
-    public String getAddr() {
-      return mapStr("addr");
-    }
-
-    @Override
-    public String getAddrLocal() {
-      return mapStr("addrlocal");
-    }
-
-    @Override
-    public String getServices() {
-      return mapStr("services");
-    }
-
-    @Override
-    public long getLastSend() {
-      return mapLong("lastsend");
-    }
-
-    @Override
-    public long getLastRecv() {
-      return mapLong("lastrecv");
-    }
-
-    @Override
-    public long getBytesSent() {
-      return mapLong("bytessent");
-    }
-
-    @Override
-    public long getBytesRecv() {
-      return mapLong("bytesrecv");
-    }
-
-    @Override
-    public long getConnTime() {
-      return mapLong("conntime");
-    }
-
-    @Override
-    public int getTimeOffset() {
-      return mapInt("timeoffset");
-    }
-
-    @Override
-    public double getPingTime() {
-      return mapDouble("pingtime");
-    }
-
-    @Override
-    public long getVersion() {
-      return mapLong("version");
-    }
-
-    @Override
-    public String getSubVer() {
-      return mapStr("subver");
-    }
-
-    @Override
-    public boolean isInbound() {
-      return mapBool("inbound");
-    }
-
-    @Override
-    public int getStartingHeight() {
-      return mapInt("startingheight");
-    }
-
-    @Override
-    public long getBanScore() {
-      return mapLong("banscore");
-    }
-
-    @Override
-    public int getSyncedHeaders() {
-      return mapInt("synced_headers");
-    }
-
-    @Override
-    public int getSyncedBlocks() {
-      return mapInt("synced_blocks");
-    }
-
-    @Override
-    public boolean isWhiteListed() {
-      return mapBool("whitelisted");
-    }
-
-  }
-
-  @Override
-  public List<PeerInfoResult> getPeerInfo() throws BitcoinRpcException {
-    final List<Map> l = (List<Map>) query("getpeerinfo");
-//    final List<PeerInfoResult> res = new ArrayList<>(l.size());
-//    for (Map m : l)
-//      res.add(new PeerInfoWrapper(m));
-//    return res;
-    return new AbstractList<PeerInfoResult>() {
-
-      @Override
-      public PeerInfoResult get(int index) {
-        return new PeerInfoWrapper(l.get(index));
-      }
-
-      @Override
-      public int size() {
-        return l.size();
-      }
-    };
-  }
-
-  @Override
-  public void stop() {
-    query("stop");
   }
 
   @Override
@@ -1694,30 +1160,8 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   }
 
   @Override
-  public NetTotals getNetTotals() throws BitcoinRpcException {
-    return new NetTotalsImpl((Map) query("getnettotals"));
-  }
-
-  @Override
   public DecodedScript decodeScript(String hex) throws BitcoinRpcException {
     return new DecodedScriptImpl((Map) query("decodescript", hex));
-  }
-
-  @Override
-  public void ping() throws BitcoinRpcException {
-    query("ping");
-  }
-
-  //It doesn't work!
-  @Override
-  public boolean getGenerate() throws BitcoinRPCException {
-    return (boolean) query("getgenerate");
-  }
-
-
-  @Override
-  public double getNetworkHashPs() throws BitcoinRpcException {
-    return (Double)query("getnetworkhashps");
   }
 
   @Override
@@ -1725,25 +1169,9 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     return (boolean) query("settxfee", amount);
   }
 
-  /**
-   *
-   * @param node example: "192.168.0.6:8333"
-   * @param command must be either "add", "remove" or "onetry"
-   * @throws BitcoinRpcException
-   */
-  @Override
-  public void addNode(String node, String command) throws BitcoinRpcException {
-    query("addnode", node, command);
-  }
-
   @Override
   public void backupWallet(String destination) throws BitcoinRpcException {
     query("backupwallet", destination);
-  }
-
-  @Override
-  public String signMessage(String bitcoinAdress, String message) throws BitcoinRpcException {
-    return (String) query("signmessage", bitcoinAdress, message);
   }
 
   @Override
@@ -1782,40 +1210,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
   @Override
   public void walletPassPhrase(String passPhrase, long timeOut) throws BitcoinRpcException {
     query("walletpassphrase", passPhrase, timeOut);
-  }
-
-  @Override
-  public boolean verifyMessage(String bitcoinAddress, String signature, String message) throws BitcoinRpcException {
-    return (boolean) query("verifymessage", bitcoinAddress, signature, message);
-  }
-
-  @Override
-  public String addMultiSigAddress(int nRequired, List<String> keyObject) throws BitcoinRpcException {
-    return (String) query("addmultisigaddress", nRequired, keyObject);
-  }
-
-  @Override
-  public String addMultiSigAddress(int nRequired, List<String> keyObject, String account) throws BitcoinRpcException {
-    return (String) query("addmultisigaddress", nRequired, keyObject, account);
-  }
-
-  @Override
-  public boolean verifyChain() {
-    return verifyChain(3, 6); //3 and 6 are the default values
-  }
-
-  public boolean verifyChain(int checklevel, int numblocks) {
-    return (boolean)query("verifychain", checklevel, numblocks);
-  }
-
-  /**
-   * Attempts to submit new block to network.
-   * The 'jsonparametersobject' parameter is currently ignored, therefore left out.
-   * @param hexData
-   */
-  @Override
-  public void submitBlock(String hexData) {
-    query("submitblock", hexData);
   }
 
   @Override

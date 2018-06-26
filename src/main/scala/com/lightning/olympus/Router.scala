@@ -128,7 +128,7 @@ object Router { me =>
       }
 
       val results = for {
-        sourceNodeKey <- from.toVector
+        sourceNodeKey <- from
         clone = baseGraph.clone.asInstanceOf[Graph]
         // Create a separate graph for each source node
       } yield find(Vector.empty, clone, 3, sourceNodeKey)
