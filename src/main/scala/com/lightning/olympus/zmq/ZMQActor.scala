@@ -3,7 +3,6 @@ package com.lightning.olympus.zmq
 import scala.collection.JavaConverters._
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import scala.concurrent.ExecutionContext.Implicits.global
-import com.lightning.walletapp.ln.LightningException
 import com.lightning.olympus.database.Database
 import scala.concurrent.duration.DurationInt
 import org.zeromq.ZMQ.Event
@@ -90,10 +89,6 @@ class ZMQActor(db: Database) extends Actor {
   checkMsg
 
   def receive: Receive = {
-    case ZMQ.EVENT_DISCONNECTED =>
-      log("ZMQ connection is lost")
-      throw new LightningException
-
     case msg: ZMsg => msg.popString match {
       case "hashblock" => gotBlockHash(msg.pop.getData)
       case "rawtx" => gotRawTx(msg.pop.getData)
