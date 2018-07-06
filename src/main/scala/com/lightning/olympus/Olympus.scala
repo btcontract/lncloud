@@ -59,9 +59,9 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
-    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
+    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+//    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -94,7 +94,7 @@ class Responder { me =>
       val Seq(sesKey, tokens) = extract(req.params, identity, "seskey", "tokens")
 
       blindTokens.cache get sesKey map { item =>
-        val pruned = hex2Ascii andThen to[StringVec] apply tokens take values.paymentProvider.quantity
+        val pruned = hex2String andThen to[StringVec] apply tokens take values.paymentProvider.quantity
         val Charge(hash, id, serializedPaymentRequest, false) = values.paymentProvider.generateInvoice
         db.putPendingTokens(BlindData(hash, id, item.data, pruned), sesKey)
         js2Task(Tuple2(oK, serializedPaymentRequest).toJson)
@@ -114,7 +114,7 @@ class Responder { me =>
     // ROUTER
 
     case req @ POST -> Root / "router" / "routesplus" =>
-      val InRoutesPlus(sat, nodes, chans, from, dest) = req.params andThen hex2Ascii andThen to[InRoutesPlus] apply "params"
+      val InRoutesPlus(sat, nodes, chans, from, dest) = req.params andThen hex2String andThen to[InRoutesPlus] apply "params"
       val paths = Router.finder.findPaths(nodes take 160, chans take 160, from take 4, dest, sat = (sat * 1.2).toLong)
       Tuple2(oK, paths).toJson
 
@@ -138,11 +138,11 @@ class Responder { me =>
 
     case req @ POST -> Root / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
-      val txIds = req.params andThen hex2Ascii andThen to[StringVec] apply "txids" take 24
+      val txIds = req.params andThen hex2String andThen to[StringVec] apply "txids" take 24
       Tuple2(oK, db getTxs txIds).toJson
 
     case req @ POST -> Root / "txs" / "schedule" => verify(req.params) {
-      val txs = req.params andThen hex2Ascii andThen to[StringVec] apply bODY
+      val txs = req.params andThen hex2String andThen to[StringVec] apply bODY
       for (raw <- txs take 16) db.putScheduled(Transaction read raw)
       Tuple2(oK, "done").toJson
     }

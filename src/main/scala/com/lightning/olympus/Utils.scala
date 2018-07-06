@@ -22,7 +22,7 @@ object Utils {
   type StringSet = Set[String]
   type StringVec = Vector[String]
 
-  val hex2Ascii: String => String = raw => new String(HEX decode raw, "UTF-8")
+  val hex2String: String => String = raw => new String(HEX decode raw, "UTF-8")
   lazy val bitcoin = new javabitcoindrpcclient.BitcoinJSONRPCClient(values.btcApi)
   implicit def arg2Apply[T](argument: T): ArgumentRunner[T] = new ArgumentRunner(argument)
   class ArgumentRunner[T](wrap: T) { def >>[V](fs: (T => V)*): Seq[V] = for (fun <- fs) yield fun apply wrap }
