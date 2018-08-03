@@ -3,9 +3,22 @@ package com.lightning.olympus.crypto
 import org.bitcoinj.core.ECKey.CURVE.{getG, getN}
 import com.lightning.walletapp.ln.Tools.{Bytes, random}
 import org.spongycastle.math.ec.ECPoint
+import org.bitcoinj.core.Utils.HEX
 import org.bitcoinj.core.ECKey
 import java.math.BigInteger
 
+
+case class BlindMemo(params: List[BlindParam], clears: List[BigInteger], key: String) {
+  def makeBlindTokens = params zip clears map { case (param, token) => param.blind(token).toString }
+  def makeClearSigs(blind: BigInteger*) = params zip blind map { case (param, sig) => param unblind sig }
+
+  def packEverything(clearSigs: BigInteger*) = {
+    val clearSigStrings = for (clearSig <- clearSigs) yield clearSig.toString
+    val clearTokenStrings = for (clearToken <- clears) yield clearToken.toString
+    val blindPoints = for (param <- params) yield HEX encode param.point
+    (blindPoints, clearTokenStrings, clearSigStrings).zipped.toList
+  }
+}
 
 // As seen on http://arxiv.org/pdf/1304.2094.pdf
 class ECBlind(signerQ: ECPoint, signerR: ECPoint) {

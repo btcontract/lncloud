@@ -59,8 +59,9 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -132,7 +133,7 @@ class Responder { me =>
     case req @ POST -> Root / "block" / "get" =>
       val block = bitcoin.getBlock(req params "hash")
       val data = block.height -> block.tx.asScala.toVector
-      if (block.confirmations > 0) Tuple2(oK, data).toJson
+      if (block.confirmations > 1) Tuple2(oK, data).toJson
       else Tuple2(eRROR, "invalidblock").toJson
 
     case req @ POST -> Root / "txs" / "get" =>

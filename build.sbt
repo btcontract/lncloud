@@ -1,3 +1,4 @@
+
 name := "olympus"
 
 version := "1.0"
@@ -19,6 +20,7 @@ libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.12"
 // Misc
 libraryDependencies += "com.googlecode.concurrent-trees" % "concurrent-trees" % "2.6.0"
 libraryDependencies += "com.typesafe.akka" % "akka-actor_2.11" % "2.5.11"
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.5" % "test"
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.10.3"
 libraryDependencies += "org.bitcoinj" % "bitcoinj-core" % "0.14.5"
 libraryDependencies += "fr.acinq" % "bitcoin-lib_2.11" % "0.9.13"
