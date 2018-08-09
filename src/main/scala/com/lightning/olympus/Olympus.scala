@@ -128,13 +128,13 @@ class Responder { me =>
       val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
       Tuple2(oK, encoded zip sizes).toJson
 
-    // TRANSACTIONS AND BLOCKS
+    // TRANSACTIONS AND SHORT ID
 
-    case req @ POST -> Root / "block" / "get" =>
-      val block = bitcoin.getBlock(req params "hash")
-      val data = block.height -> block.tx.asScala.toVector
-      if (block.confirmations > 1) Tuple2(oK, data).toJson
-      else Tuple2(eRROR, "invalidblock").toJson
+    case req @ POST -> Root / "shortid" / "get" =>
+      val txInfo = bitcoin.getRawTransaction(req params "txid")
+      val fundingTxParentBlock = bitcoin.getBlock(txInfo.blockHash)
+      if (fundingTxParentBlock.confirmations < 1) Tuple2(eRROR, "immature").toJson
+      else Tuple2(oK, fundingTxParentBlock.height -> txInfo.blockindex).toJson
 
     case req @ POST -> Root / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs

@@ -97,9 +97,9 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
                          timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long,
                          feeBaseMsat: Long, feeProportionalMillionths: Long) extends RoutingMessage {
 
-  lazy val feeEstimate = math.max(feeBaseMsat + feeProportionalMillionths * 10, 0).toDouble
-  def toHop(nodeId: PublicKey) = Hop(nodeId, shortChannelId, cltvExpiryDelta, htlcMinimumMsat,
-    feeBaseMsat, feeProportionalMillionths)
+  lazy val feeEstimate = feeBaseMsat + feeProportionalMillionths * 10
+  def toHop(nodeId: PublicKey) = Hop(nodeId, shortChannelId, cltvExpiryDelta,
+    htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
 }
 
 case class NodeAnnouncement(signature: BinaryData,

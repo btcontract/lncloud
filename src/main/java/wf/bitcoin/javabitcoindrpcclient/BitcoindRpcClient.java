@@ -238,6 +238,8 @@ public interface BitcoindRpcClient {
 
     public int version();
 
+    public int blockindex();
+
     public long lockTime();
 
     public long size();
