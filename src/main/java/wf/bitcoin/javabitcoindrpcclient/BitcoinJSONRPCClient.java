@@ -531,11 +531,6 @@ public class BitcoinJSONRPCClient implements BitcoindRpcClient {
     }
 
     @Override
-    public int blockindex() {
-      return mapInt("blockindex");
-    }
-
-    @Override
     public long lockTime() {
       return mapLong("locktime");
     }

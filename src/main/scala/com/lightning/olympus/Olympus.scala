@@ -11,6 +11,7 @@ import org.http4s.dsl._
 import fr.acinq.bitcoin._
 import com.lightning.olympus.Utils._
 import scala.collection.JavaConverters._
+import scala.collection.JavaConverters._
 import com.lightning.olympus.database.MongoDatabase
 import org.http4s.server.middleware.UrlFormLifter
 import com.lightning.olympus.zmq.ZMQSupervisor
@@ -133,8 +134,10 @@ class Responder { me =>
     case req @ POST -> Root / "shortid" / "get" =>
       val txInfo = bitcoin.getRawTransaction(req params "txid")
       val fundingTxParentBlock = bitcoin.getBlock(txInfo.blockHash)
-      if (fundingTxParentBlock.confirmations < 1) Tuple2(eRROR, "immature").toJson
-      else Tuple2(oK, fundingTxParentBlock.height -> txInfo.blockindex).toJson
+      val fundingTxOrderIndex = fundingTxParentBlock.tx.asScala.indexOf(txInfo.txId)
+      if (fundingTxParentBlock.confirmations < 1) Tuple2(eRROR, "orphanBlock").toJson
+      else if (fundingTxOrderIndex < 1) Tuple2(eRROR, "incorrectFundTxIndex").toJson
+      else Tuple2(oK, fundingTxParentBlock.height -> fundingTxOrderIndex).toJson
 
     case req @ POST -> Root / "txs" / "get" =>
       // Given a list of commit tx ids, fetch all child txs which spend their outputs
