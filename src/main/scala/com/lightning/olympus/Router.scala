@@ -30,7 +30,6 @@ object Router { me =>
   type Graph = DirectedWeightedPseudograph[PublicKey, ChanDirection]
   private[this] val chanDirectionClass = classOf[ChanDirection]
 
-  val removedChannels = mutable.Set.empty[Long]
   val chanId2Info = mutable.Map.empty[Long, ChanInfo]
   val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
@@ -39,8 +38,6 @@ object Router { me =>
   var finder = GraphFinder(Map.empty)
 
   def rmChanInfo(info: ChanInfo) = {
-    // Make sure it can't be added again
-    removedChannels += info.ca.shortChannelId
     nodeId2Chans = nodeId2Chans minusShortChanId info
     chanId2Info -= info.ca.shortChannelId
     txId2Info -= info.txid
@@ -139,8 +136,7 @@ object Router { me =>
 
   def receive(m: LightningMessage) = me synchronized doReceive(m)
   private def doReceive(message: LightningMessage) = message match {
-    case ca: ChannelAnnouncement => Blockchain getChanInfo ca foreach {
-      case _ if removedChannels contains ca.shortChannelId => Tools log "Ignoring already removed chan"
+    case channelAnnounce: ChannelAnnouncement => Blockchain getChanInfo channelAnnounce foreach {
       case small if small.capacity < values.minCapacity => Tools log "Ignoring chan with low capacity"
       case chanInfo => addChanInfo(chanInfo)
     }
