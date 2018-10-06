@@ -28,6 +28,7 @@ import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
+import scodec.bits.BitVector
 import java.math.BigInteger
 import java.nio.file.Paths
 
@@ -156,6 +157,16 @@ class Responder { me =>
       val results = db.getData(req params "key")
       Tuple2(oK, results).toJson
 
+    // WATCHDOG
+
+    case req @ POST -> Root / "cerberus" / "watch" => verify(req.params) {
+      val Seq(cerberusPayloadRaw) = extract(req.params, BinaryData.apply, bODY)
+      val cerberusPayloadDecoded = cerberusPayloadCodec decode BitVector(cerberusPayloadRaw)
+      val CerberusPayload(payloads, halfTxIds) = cerberusPayloadDecoded.require.value
+      for (aesz \ half <- payloads zip halfTxIds take 20) db.putWatched(aesz, half)
+      Tuple2(oK, "done").toJson
+    }
+
     // FEERATE AND EXCHANGE RATES
 
     case POST -> Root / "rates" / "get" =>
@@ -190,7 +201,13 @@ object LNConnector {
     override def onIncompatible(nodeId: PublicKey) = onTerminalError(nodeId)
     override def onMessage(nodeId: PublicKey, msg: LightningMessage) = Router receive msg
     override def onOperational(nodeId: PublicKey) = Tools log "Eclair socket is operational"
-    override def onTerminalError(nodeId: PublicKey) = ConnectionManager.connections.get(nodeId).foreach(_.socket.close)
-    override def onDisconnect(nodeId: PublicKey) = Obs.just(Tools log "Restarting...").delay(5.seconds).foreach(_ => connect, Tools.errlog)
+
+    override def onTerminalError(nodeId: PublicKey) =
+      ConnectionManager.connections.get(nodeId)
+        .foreach(_.socket.close)
+
+    override def onDisconnect(nodeId: PublicKey) =
+      Obs.just(Tools log "Restarting").delay(5.seconds)
+        .foreach(_ => connect, Tools.errlog)
   }
 }

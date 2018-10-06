@@ -3,6 +3,8 @@ package com.lightning.olympus.database
 import com.mongodb.casbah.Imports._
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import com.lightning.walletapp.ln.Scripts.cltvBlocks
+import com.lightning.walletapp.ln.wire.AESZygote
+import com.lightning.walletapp.ln.Tools.Bytes
 import com.lightning.olympus.Utils.StringVec
 import com.lightning.olympus.BlindData
 import language.implicitConversions
@@ -11,7 +13,7 @@ import java.util.Date
 
 
 abstract class Database {
-  // Recording on-chain transactions
+  // Recording on-chain transactions, clients may need it
   def putTx(txids: Seq[String], prefix: String, hex: String)
   def getTxs(txids: StringVec): StringVec
 
@@ -28,22 +30,29 @@ abstract class Database {
   // Storing arbitrary data in database
   def putData(key: String, data: String)
   def getData(key: String): List[String]
+
+  // Registering revoked transactions to be watched
+  def putWatched(params: AESZygote, halfTxId: String): Unit
+  def getWatched(halfTxids: StringVec): Map[String, AESZygote]
 }
 
 class MongoDatabase extends Database {
-  implicit def obj2String(stringSource: Object): String = stringSource.toString
+  implicit def obj2String(source: Object): String = source.toString
   val blindSignatures: MongoDB = MongoClient("localhost")("btc-blindSignatures")
+  val watchedTxs: MongoDB = MongoClient("localhost")("btc-watchedTxs")
   val olympus: MongoDB = MongoClient("localhost")("btc-olympus")
-  val createdAt = "createdAt"
+  final val createdAt = "createdAt"
 
   def getTxs(txids: StringVec) = olympus("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toVector
-  def putTx(txids: Seq[String], prefix: String, hex: String) = olympus("spentTxs").update("prefix" $eq prefix,
-    $set("prefix" -> prefix, "txids" -> txids, "hex" -> hex, createdAt -> new Date), upsert = true,
-    multi = false, WriteConcern.Safe)
-
   def getScheduled(depth: Int) = olympus("scheduledTxs").find("cltv" $lt depth).map(_ as[String] "tx").toList
-  def putScheduled(tx: Transaction) = olympus("scheduledTxs") insert MongoDBObject("cltv" -> cltvBlocks(tx),
-    "tx" -> Transaction.write(tx).toString, createdAt -> new Date)
+
+  def putTx(txids: Seq[String], prefix: String, hex: String) =
+    olympus("spentTxs").update("prefix" $eq prefix, $set("prefix" -> prefix, "txids" -> txids,
+      "hex" -> hex, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+
+  def putScheduled(tx: Transaction) =
+    olympus("scheduledTxs") insert MongoDBObject("cltv" -> cltvBlocks(tx),
+      "tx" -> Transaction.write(tx).toString, createdAt -> new Date)
 
   // Storing arbitrary data, typically channel backups
   def putData(key: String, data: String) = olympus("userData") insert MongoDBObject("key" -> key, "data" -> data, createdAt -> new Date)
@@ -55,11 +64,25 @@ class MongoDatabase extends Database {
       "tokens" -> data.tokens, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
   def getPendingTokens(seskey: String) = for {
-    result <- blindSignatures("blindTokens").findOne("seskey" $eq seskey)
-    tokens = result.get("tokens").asInstanceOf[BasicDBList].map(token => token.toString).toVector
-  } yield BlindData(result as[String] "paymentHash", result get "id", new BigInteger(result get "k"), tokens)
+    res <- blindSignatures("blindTokens").findOne("seskey" $eq seskey)
+    tokens = res.get("tokens").asInstanceOf[BasicDBList].map(token => token.toString).toVector
+  } yield BlindData(BinaryData(res get "paymentHash"), res get "id", new BigInteger(res get "k"), tokens)
 
+  // Clear token is transferred as BigInteger so has 0-9 in it's head
   // Many collections to store clear tokens because we have to keep every token
   def putClearToken(ct: String) = blindSignatures("clearTokens" + ct.head).insert("token" $eq ct)
   def isClearTokenUsed(ct: String) = blindSignatures("clearTokens" + ct.head).findOne("token" $eq ct).isDefined
+
+  // Store and retrieve watched revoked transactions
+  def putWatched(aesz: AESZygote, halfTxId: String) = watchedTxs("watchedTxs").update("halfTxId" $eq halfTxId,
+    $set("v" -> aesz.v, "iv" -> aesz.iv.toArray, "ciphertext" -> aesz.ciphertext.toArray, "halfTxId" -> halfTxId,
+      createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+
+  def getWatchedSequence(halfTxids: StringVec) = for {
+    res <- watchedTxs("watchedTxs").find("halfTxId" $in halfTxids)
+    easz = AESZygote(res as[Int] "v", res as[Bytes] "iv", res as[Bytes] "ciphertext")
+  } yield obj2String(res get "halfTxId") -> easz
+
+  def getWatched(halfTxids: StringVec) =
+    getWatchedSequence(halfTxids).toMap
 }

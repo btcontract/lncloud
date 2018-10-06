@@ -39,7 +39,7 @@ class ZMQActor(db: Database) extends Actor {
   val recordTransactions = new ZMQListener {
     override def onNewBlock(block: Block) = for {
       // We need to save which txids this one spends from
-      // since clients will need this to extract preimages
+      // since clients may need this to extract preimages
 
       txid <- block.tx.asScala.par
       binary <- Blockchain getRawTxData txid
