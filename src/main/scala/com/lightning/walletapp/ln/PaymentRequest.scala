@@ -8,14 +8,12 @@ import fr.acinq.eclair.crypto.BitStream._
 import com.lightning.walletapp.ln.PaymentRequest._
 import com.lightning.walletapp.ln.RoutingInfoTag._
 import com.lightning.walletapp.ln.crypto.MultiStreamUtils._
-
+import com.lightning.walletapp.ln.wire.Hop
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
 import java.math.BigInteger
+import scala.util.Try
 
-
-// Tags should be outside of PaymentRequest
-// object for serialization purposes
 
 sealed trait Tag {
   def toInt5s: Int5Seq
@@ -36,8 +34,29 @@ case class DescriptionHashTag(hash: BinaryData) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32 eight2five hash, 'h')
 }
 
-case class Hop(nodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,
-               htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long)
+case class FallbackAddressTag(version: Byte, hash: BinaryData) extends Tag {
+  def toInt5s: Int5Seq = encode(version +: Bech32.eight2five(hash), 'f')
+}
+
+object FallbackAddressTag { me =>
+  def apply(address: String): FallbackAddressTag = {
+    val base58Try = Try(me fromBase58Address address)
+    val bech32Try = Try(me fromBech32Address address)
+    bech32Try.orElse(base58Try).get
+  }
+
+  def fromBase58Address(address: String) = Base58Check decode address match {
+    case Base58.Prefix.PubkeyAddressTestnet \ hash => FallbackAddressTag(17, hash)
+    case Base58.Prefix.ScriptAddressTestnet \ hash => FallbackAddressTag(18, hash)
+    case Base58.Prefix.PubkeyAddress \ hash => FallbackAddressTag(17, hash)
+    case Base58.Prefix.ScriptAddress \ hash => FallbackAddressTag(18, hash)
+  }
+
+  def fromBech32Address(address: String): FallbackAddressTag = {
+    val Tuple3(_, version, hash) = Bech32 decodeWitnessAddress address
+    FallbackAddressTag(version, hash)
+  }
+}
 
 case class RoutingInfoTag(route: PaymentRoute) extends Tag {
   def toInt5s: Int5Seq = encode(Bech32.eight2five(route flatMap pack), 'r')
@@ -81,10 +100,20 @@ case class UnknownTag(tag: Int5, int5s: Int5Seq) extends Tag {
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long,
                           nodeId: PublicKey, tags: Vector[Tag], signature: BinaryData) {
 
+  lazy val unsafeMsat = amount.get.amount
+  lazy val adjustedMinFinalCltvExpiry = minFinalCltvExpiry.getOrElse(0L) + 10L
   lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta }
   lazy val paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
-  lazy val unsafeMsat = amount.get.amount
+
+  lazy val fallbackAddress = tags.collectFirst {
+    case FallbackAddressTag(17, hash) if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, hash)
+    case FallbackAddressTag(18, hash) if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
+    case FallbackAddressTag(17, hash) if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, hash)
+    case FallbackAddressTag(18, hash) if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
+    case FallbackAddressTag(version, hash) if prefix == "lntb" || prefix == "lnbcrt" => Bech32.encodeWitnessAddress("tb", version, hash)
+    case FallbackAddressTag(version, hash) if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, hash)
+  }
 
   def isFresh: Boolean = {
     val expiry = tags.collectFirst { case ex: ExpiryTag => ex.seconds }
@@ -130,7 +159,8 @@ object PaymentRequest {
             routes: PaymentRouteVec): PaymentRequest = {
 
     val paymentHashTag = PaymentHashTag(paymentHash)
-    val tags = routes.map(RoutingInfoTag.apply) ++ Vector(DescriptionTag(description), ExpiryTag(3600), paymentHashTag)
+    val fallbackTag = fallbackAddress.map(FallbackAddressTag.apply).toVector
+    val tags = routes.map(RoutingInfoTag.apply) ++ fallbackTag ++ Vector(DescriptionTag(description), ExpiryTag(3600 * 48), paymentHashTag)
     val pr = PaymentRequest(prefixes(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey, tags, BinaryData.empty)
     pr sign privateKey
   }
@@ -145,10 +175,11 @@ object PaymentRequest {
     }
 
     def decode(input: String): AmountOption = input.lastOption match {
-      case Some('p') => Some(MilliSatoshi apply input.dropRight(1).toLong / 10)
-      case Some('n') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100)
-      case Some('u') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100000)
-      case Some('m') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100000000)
+      case Some('p') => Some(MilliSatoshi apply input.dropRight(1).toLong / 10L)
+      case Some('n') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100L)
+      case Some('u') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100000L)
+      case Some('m') => Some(MilliSatoshi apply input.dropRight(1).toLong * 100000000L)
+      case _ if input.nonEmpty => Some(MilliSatoshi apply input.toLong * 100000000000L)
       case _ => None
     }
 
@@ -194,12 +225,16 @@ object PaymentRequest {
 
         case dTag if dTag == Bech32.map('d') =>
           val description = Bech32 five2eight input.slice(3, len + 3)
-          val text = new String(description.toArray, "UTF-8")
-          DescriptionTag(text)
+          DescriptionTag(Tools bin2readable description.toArray)
 
         case hTag if hTag == Bech32.map('h') =>
           val hash = Bech32 five2eight input.slice(3, len + 3)
           DescriptionHashTag(hash)
+
+        case fTag if fTag == Bech32.map('f') =>
+          val fallbackAddress = input.slice(4, len + 4 - 1)
+          if (input(3) < 0 || input(3) > 18) UnknownTag(input.head, fallbackAddress)
+          else FallbackAddressTag(input(3), Bech32 five2eight fallbackAddress)
 
         case rTag if rTag == Bech32.map('r') =>
           val data = Bech32 five2eight input.slice(3, len + 3)
@@ -275,7 +310,7 @@ object PaymentRequest {
         loop(data drop len, tags1)
       }
 
-    val (hrp, data) = Bech32 decode input
+    val Tuple2(hrp, data) = Bech32 decode input
     val stream = data.foldLeft(BitStream.empty)(write5)
     require(stream.bitCount >= 65 * 8, "Data is too short")
 
@@ -293,7 +328,7 @@ object PaymentRequest {
 
     // Will throw on unknown prefix, this is fine
     val prefix = prefixes.values.find(hrp.startsWith).get
-    val amountOpt = Amount decode hrp.drop(prefix.length)
+    val amountOpt = Amount.decode(hrp drop prefix.length)
 
     val pr = PaymentRequest(prefix, amountOpt, Timestamp decode data0, pub, tags.toVector, signature)
     require(Crypto.verifySignature(messageHash, r -> s, pub), "Invalid payment request signature")
@@ -303,8 +338,7 @@ object PaymentRequest {
   def write(pr: PaymentRequest): String = {
     val hrp = pr.prefix + Amount.encode(pr.amount)
     val int5s = toInt5s(pr.stream writeBytes pr.signature)
-    val checksum = Bech32.checksum(hrp, int5s)
-
+    val checksum: Int5Seq = Bech32.checksum(hrp, int5s)
     val body = (int5s ++ checksum) map Bech32.pam
     hrp + "1" + new String(body.toArray)
   }

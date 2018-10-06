@@ -3,13 +3,11 @@ package com.lightning.walletapp.ln.wire
 import scodec.codecs._
 import LightningMessageCodecs._
 import fr.acinq.bitcoin.BinaryData
+import scodec.Attempt
 
 
 sealed trait FailureMessage
 case object ExpiryTooFar extends FailureMessage
-case object FinalExpiryTooSoon extends FailureMessage
-case class FinalIncorrectCltvExpiry(expiry: Long) extends FailureMessage
-case class FinalIncorrectHtlcAmount(amountMsat: Long) extends FailureMessage
 
 sealed trait Perm extends FailureMessage
 sealed trait Node extends FailureMessage
@@ -18,6 +16,9 @@ case object UnknownPaymentHash extends Perm
 case object IncorrectPaymentAmount extends Perm
 case object PermanentChannelFailure extends Perm
 case object RequiredChannelFeatureMissing extends Perm
+case class FinalIncorrectCltvExpiry(expiry: Long) extends Perm
+case class FinalIncorrectHtlcAmount(amountMsat: Long) extends Perm
+case object FinalExpiryTooSoon extends Perm
 case object InvalidRealm extends Perm
 
 case object TemporaryNodeFailure extends Node
@@ -39,7 +40,8 @@ case class ExpiryTooSoon(update: ChannelUpdate) extends Update
 
 object FailureMessageCodecs {
   private val sha256Codec = binarydata(32) withContext "sha256Codec"
-  private val channelUpdateWithLengthCodec = variableSizeBytes(uint16, channelUpdateCodec) withContext "channelUpdate"
+  private val channelUpdateCodecWithType = lightningMessageCodec.narrow[ChannelUpdate](Attempt successful _.asInstanceOf[ChannelUpdate], identity)
+  private val channelUpdateWithLengthCodec = variableSizeBytes(value = choice(channelUpdateCodecWithType, channelUpdateCodec), size = uint16)
   private val disabled = (binarydata(2) withContext "flags") :: channelUpdateWithLengthCodec
   private val amount = (uint64 withContext "amountMsat") :: channelUpdateWithLengthCodec
   private val expiry = (uint32 withContext "expiry") :: channelUpdateWithLengthCodec

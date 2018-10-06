@@ -1,35 +1,35 @@
 package com.lightning.olympus
 
-import com.lightning.walletapp.ln._
-import com.lightning.walletapp.ln.wire._
-import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
-import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
-import com.lightning.walletapp.ln.Tools.random
-
 import spray.json._
 import org.http4s.dsl._
 import fr.acinq.bitcoin._
+import com.lightning.walletapp.ln._
 import com.lightning.olympus.Utils._
 import scala.collection.JavaConverters._
-import scala.collection.JavaConverters._
+import com.lightning.walletapp.ln.wire._
+import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
+import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
+import java.net.{InetAddress, InetSocketAddress}
+import org.http4s.{HttpService, Response}
+import rx.lang.scala.{Observable => Obs}
+import akka.actor.{ActorSystem, Props}
+
 import com.lightning.olympus.database.MongoDatabase
+import com.lightning.walletapp.lnutils.InRoutesPlus
 import org.http4s.server.middleware.UrlFormLifter
+import com.lightning.walletapp.ln.Tools.random
 import com.lightning.olympus.zmq.ZMQSupervisor
 import com.lightning.olympus.JsonHttpUtils.to
 import org.http4s.server.SSLSupport.StoreInfo
 import scala.concurrent.duration.DurationInt
 import org.http4s.server.blaze.BlazeBuilder
+import fr.acinq.bitcoin.Crypto.PublicKey
 import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
 import java.math.BigInteger
 import java.nio.file.Paths
-
-import java.net.{InetAddress, InetSocketAddress}
-import org.http4s.{HttpService, Response}
-import rx.lang.scala.{Observable => Obs}
-import akka.actor.{ActorSystem, Props}
 
 
 object Olympus extends ServerApp {
@@ -38,17 +38,11 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
-        val description = "Storage tokens for backup Olympus server at b.lightning-wallet.com"
-        val eclairProvider = EclairProvider(500000L, 50, description, "http://5.9.138.164:8080", "pass")
-//        values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-//          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
-//          eclairSockPort = 9735, eclairNodeId = "03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375",
-//          rewindRange = 1, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
-//          sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
-
+        val description = "Storage tokens for backup Olympus server at 127.0.0.1"
+        val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
-          eclairSockPort = 9735, eclairNodeId = "03db71f883201b53fbd06e03e9ff3afaa3a1b053ef5a06d6ee0717a3871e5faf15",
+          eclairSockPort = 9735, eclairNodeId = "0218bc75cba78d378d864a0f41d4ccd67eb1eaa829464d37706702003069c003f8",
           rewindRange = 1, ip = "127.0.0.1", port = 9003, eclairProvider, minCapacity = 50000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
@@ -60,9 +54,9 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
-//    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
+//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -188,18 +182,15 @@ class Responder { me =>
 }
 
 object LNConnector {
-  def connect = ConnectionManager connectTo announce
+  def connect = ConnectionManager.connectTo(announce, notify = true)
   val inetSockAddress = new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort)
   val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing", NodeAddress(inetSockAddress) :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
-    override def onMessage(ann: NodeAnnouncement, msg: LightningMessage) = Router receive msg
-    override def onOperational(ann: NodeAnnouncement, their: Init) = Tools log "Eclair socket is operational"
-    override def onTerminalError(ann: NodeAnnouncement) = ConnectionManager.connections.get(ann).foreach(_.socket.close)
-    override def onIncompatible(ann: NodeAnnouncement) = onTerminalError(ann)
-
-    override def onDisconnect(announce: NodeAnnouncement) =
-      Obs.just(Tools log "Restarting socket").delay(5.seconds)
-        .subscribe(_ => connect, _.printStackTrace)
+    override def onIncompatible(nodeId: PublicKey) = onTerminalError(nodeId)
+    override def onMessage(nodeId: PublicKey, msg: LightningMessage) = Router receive msg
+    override def onOperational(nodeId: PublicKey) = Tools log "Eclair socket is operational"
+    override def onTerminalError(nodeId: PublicKey) = ConnectionManager.connections.get(nodeId).foreach(_.socket.close)
+    override def onDisconnect(nodeId: PublicKey) = Obs.just(Tools log "Restarting...").delay(5.seconds).foreach(_ => connect, Tools.errlog)
   }
 }

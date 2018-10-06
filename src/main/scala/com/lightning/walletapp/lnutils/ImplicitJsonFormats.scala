@@ -4,7 +4,6 @@ import spray.json._
 import fr.acinq.bitcoin._
 import com.lightning.olympus._
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
-import com.lightning.walletapp.ln.wire.{InRoutes, InRoutesPlus}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import scodec.bits.BitVector
 import java.math.BigInteger
@@ -105,11 +104,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
       "eclairSockPort", "eclairNodeId", "rewindRange", "ip", "port",
       "paymentProvider", "minCapacity", "sslFile", "sslPass")
 
-  implicit val inRoutesFmt =
-    jsonFormat[Set[PublicKey], Set[Long], Set[PublicKey], PublicKey,
-      InRoutes](InRoutes.apply, "badNodes", "badChans", "from", "to")
-
   implicit val inRoutesPlusFmt =
     jsonFormat[Long, Set[PublicKey], Set[Long], Set[PublicKey], PublicKey,
       InRoutesPlus](InRoutesPlus.apply, "sat", "badNodes", "badChans", "from", "to")
 }
+
+case class InRoutesPlus(sat: Long,
+                        badNodes: Set[PublicKey], badChans: Set[Long],
+                        from: Set[PublicKey], to: PublicKey)

@@ -4,7 +4,8 @@ import java.net._
 import scodec.codecs._
 import java.math.BigInteger
 import fr.acinq.eclair.UInt64
-import com.lightning.walletapp.ln.{Hop, LightningException}
+import com.lightning.walletapp.ln.crypto.Sphinx
+import com.lightning.walletapp.ln.{LightningException, RevocationInfo}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import scodec.bits.{BitVector, ByteVector}
@@ -13,10 +14,10 @@ import scodec.{Attempt, Codec, Err}
 
 
 object LightningMessageCodecs { me =>
+  type NodeAddressList = List[NodeAddress]
   type BitVectorAttempt = Attempt[BitVector]
   type LNMessageVector = Vector[LightningMessage]
-  type NodeAddressList = List[NodeAddress]
-  type AddressPort = (InetAddress, Int)
+  type RedeemScriptAndSig = (BinaryData, BinaryData)
   type RGB = (Byte, Byte, Byte)
 
   def serialize(msg: LightningMessage): BinaryData =
@@ -48,8 +49,8 @@ object LightningMessageCodecs { me =>
   }
 
   // BinaryData <-> ByteVector
-  private val vec2Bin = (vec: ByteVector) => BinaryData(vec.toArray)
-  private val bin2Vec = (bin: BinaryData) => ByteVector(bin.data)
+  val vec2Bin = (vec: ByteVector) => BinaryData(vec.toArray)
+  val bin2Vec = (bin: BinaryData) => ByteVector(bin.data)
 
   def der2wire(signature: BinaryData): BinaryData =
     Crypto decodeSignature signature match { case (r, s) =>
@@ -96,13 +97,13 @@ object LightningMessageCodecs { me =>
     inet4Address => ByteVector(inet4Address.getAddress)
   )
 
-  def nodeaddress: Codec[NodeAddress] =
+  val nodeaddress: Codec[NodeAddress] =
     discriminated[NodeAddress].by(uint8)
       .typecase(cr = provide(Padding), tag = 0)
-      .typecase(cr = (ipv4address ~ uint16).xmap[IPv4](x => IPv4(x._1, x._2), x => x.ipv4 -> x.port), tag = 1)
-      .typecase(cr = (ipv6address ~ uint16).xmap[IPv6](x => IPv6(x._1, x._2), x => x.ipv6 -> x.port), tag = 2)
-      .typecase(cr = (binarydata(10) ~ uint16).xmap[Tor2](x => Tor2(x._1, x._2), x => x.tor2 -> x.port), tag = 3)
-      .typecase(cr = (binarydata(35) ~ uint16).xmap[Tor3](x => Tor3(x._1, x._2), x => x.tor3 -> x.port), tag = 4)
+      .typecase(cr = (ipv4address ~ uint16).xmap[IPv4](IPv4.tupled, x => x.ipv4 -> x.port), tag = 1)
+      .typecase(cr = (ipv6address ~ uint16).xmap[IPv6](IPv6.tupled, x => x.ipv6 -> x.port), tag = 2)
+      .typecase(cr = (binarydata(10) ~ uint16).xmap[Tor2](Tor2.tupled, x => x.tor2 -> x.port), tag = 3)
+      .typecase(cr = (binarydata(35) ~ uint16).xmap[Tor3](Tor3.tupled, x => x.tor3 -> x.port), tag = 4)
 
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(vec2Bin, bin2Vec)
   val varsizebinarydata: Codec[BinaryData] = variableSizeBytes(value = bytes.xmap(vec2Bin, bin2Vec), size = uint16)
@@ -207,6 +208,17 @@ object LightningMessageCodecs { me =>
   val closingSignedCodec: Codec[ClosingSigned] =
     closingSigned.as[ClosingSigned]
 
+  private val updateAddHtlc =
+    (binarydata(32) withContext "channelId") ::
+      (uint64 withContext "id") ::
+      (uint64 withContext "amountMsat") ::
+      (binarydata(32) withContext "paymentHash") ::
+      (uint32 withContext "expiry") ::
+      (binarydata(Sphinx.PacketLength) withContext "onionRoutingPacket")
+
+  val updateAddHtlcCodec: Codec[UpdateAddHtlc] =
+    updateAddHtlc.as[UpdateAddHtlc]
+
   private val updateFulfillHtlc =
     (binarydata(32) withContext "channelId") ::
       (uint64 withContext "id") ::
@@ -294,13 +306,6 @@ object LightningMessageCodecs { me =>
       (uint32 withContext "feeBaseMsat") ::
       (uint32 withContext "feeProportionalMillionths")
 
-  private val perHopPayload =
-    (constant(ByteVector fromByte 0) withContext "realm") ::
-      (uint64 withContext "shortChannelId") ::
-      (uint64 withContext "amtToForward") ::
-      (uint32 withContext "outgoingCltv") ::
-      (ignore(8 * 12) withContext "unusedWithV0VersionOnHeader")
-
   private val channelUpdate = (signature withContext "signature") :: channelUpdateWitness
   private val nodeAnnouncement = (signature withContext "signature") :: nodeAnnouncementWitness
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = nodeAnnouncement.as[NodeAnnouncement]
@@ -320,6 +325,7 @@ object LightningMessageCodecs { me =>
       .typecase(cr = fundingLockedCodec, tag = 36)
       .typecase(cr = shutdownCodec, tag = 38)
       .typecase(cr = closingSignedCodec, tag = 39)
+      .typecase(cr = updateAddHtlcCodec, tag = 128)
       .typecase(cr = updateFulfillHtlcCodec, tag = 130)
       .typecase(cr = updateFailHtlcCodec, tag = 131)
       .typecase(cr = commitSigCodec, tag = 132)
@@ -334,6 +340,18 @@ object LightningMessageCodecs { me =>
 
   // Not in a spec
 
+  private val revocationInfo =
+    (listOfN(uint16, varsizebinarydata ~ signature) withContext "redeemScriptsToSigs") ::
+      (optional(bool, signature) withContext "claimMainTxSig") ::
+      (optional(bool, signature) withContext "claimPenaltyTxSig") ::
+      (uint64 withContext "feeRate") ::
+      (uint64 withContext "dustLimit") ::
+      (varsizebinarydata withContext "finalScriptPubKey") ::
+      (uint16 withContext "toSelfDelay") ::
+      (publicKey withContext "localPubKey") ::
+      (publicKey withContext "remoteRevocationPubkey") ::
+      (publicKey withContext "remoteDelayedPaymentKey")
+
   private val walletZygote =
     (uint16 withContext "v") ::
       (varsizebinarydataLong withContext "db") ::
@@ -345,6 +363,13 @@ object LightningMessageCodecs { me =>
       (varsizebinarydataLong withContext "iv") ::
       (varsizebinarydataLong withContext "ciphertext")
 
-  val walletZygoteCodec = walletZygote.as[WalletZygote]
   val aesZygoteCodec = aesZygote.as[AESZygote]
+
+  private val cerberusPayload =
+    (vectorOfN(uint16, aesZygoteCodec) withContext "payloads") ::
+      (vectorOfN(uint16, utf8) withContext "halfTxIds")
+
+  val walletZygoteCodec = walletZygote.as[WalletZygote]
+  val revocationInfoCodec = revocationInfo.as[RevocationInfo]
+  val cerberusPayloadCodec = cerberusPayload.as[CerberusPayload]
 }
