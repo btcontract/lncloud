@@ -367,7 +367,7 @@ object LightningMessageCodecs { me =>
 
   private val cerberusPayload =
     (vectorOfN(uint16, aesZygoteCodec) withContext "payloads") ::
-      (vectorOfN(uint16, utf8) withContext "halfTxIds")
+      (vectorOfN(uint16, zeropaddedstring) withContext "halfTxIds")
 
   val walletZygoteCodec = walletZygote.as[WalletZygote]
   val revocationInfoCodec = revocationInfo.as[RevocationInfo]
