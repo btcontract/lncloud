@@ -81,10 +81,9 @@ class ZMQActor(db: Database) extends Actor {
     } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
 
     override def onNewBlock(block: Block) = {
-      val blockTransactionIds = block.tx.asScala
-      val halfTxIds = blockTransactionIds.map(_ take 16)
-      val half2Full = halfTxIds.zip(blockTransactionIds).toMap
-      // Repeatedly re-broadcast punishes and clear periodically
+      val blockTxIdAsStrings = block.tx.asScala
+      val halfTxIds = for (txid <- blockTxIdAsStrings) yield txid take 16
+      val half2Full = halfTxIds.zip(blockTxIdAsStrings).toMap
       if (block.height % 1440 == 0) publishes.clear
 
       for {
