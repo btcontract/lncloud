@@ -33,7 +33,7 @@ abstract class Database {
 
   // Registering revoked transactions to be watched
   def putWatched(params: AESZygote, halfTxId: String): Unit
-  def getWatched(halfTxids: StringVec): Map[String, AESZygote]
+  def getWatched(halfTxIds: StringVec): Map[String, AESZygote]
 }
 
 class MongoDatabase extends Database {
@@ -78,8 +78,8 @@ class MongoDatabase extends Database {
     $set("v" -> aesz.v, "iv" -> aesz.iv.toArray, "ciphertext" -> aesz.ciphertext.toArray, "halfTxId" -> halfTxId,
       createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
-  def getWatchedSequence(halfTxids: StringVec) = for {
-    res <- watchedTxs("watchedTxs").find("halfTxId" $in halfTxids)
+  def getWatchedSequence(halfTxIds: StringVec) = for {
+    res <- watchedTxs("watchedTxs").find("halfTxId" $in halfTxIds)
     easz = AESZygote(res as[Int] "v", res as[Bytes] "iv", res as[Bytes] "ciphertext")
   } yield obj2String(res get "halfTxId") -> easz
 

@@ -5,7 +5,6 @@ import com.lightning.walletapp.ln.Tools.{Bytes, bin2readable, random}
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs.aesZygoteCodec
 import com.lightning.walletapp.ln.wire.AESZygote
 import org.bitcoinj.core.Utils.HEX
-import fr.acinq.bitcoin.BinaryData
 import scodec.bits.BitVector
 import javax.crypto.Cipher
 import scala.util.Try
@@ -22,7 +21,6 @@ object AES {
   private[this] val ivLength = 16
   def dec(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.DECRYPT_MODE) doFinal data
   def enc(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.ENCRYPT_MODE) doFinal data
-  def encHex(hex: String, keyHex: String) = encBytes(BinaryData(hex).toArray, BinaryData(keyHex).toArray)
 
   // Used for Object -> Json -> Zygote -> Hex
 
@@ -42,9 +40,12 @@ object AES {
     AESZygote(v = 1, initialVector, cipher)
   }
 
-  def decBytes(raw: Bytes, key: Bytes) = Try {
-    val zygoteRes = aesZygoteCodec decode BitVector(raw)
-    val AESZygote(_, iv, cipher) = zygoteRes.require.value
-    dec(cipher, key, iv)
+  def decBytes(raw: Bytes, key: Bytes) = {
+    val aesz = aesZygoteCodec decode BitVector(raw)
+    decZygote(aesz.require.value, key)
+  }
+
+  def decZygote(aesz: AESZygote, key: Bytes) = Try {
+    dec(aesz.ciphertext, key, aesz.iv)
   }
 }

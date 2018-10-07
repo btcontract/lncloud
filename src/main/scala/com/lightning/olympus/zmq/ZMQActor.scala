@@ -1,14 +1,23 @@
 package com.lightning.olympus.zmq
 
+import com.lightning.walletapp.ln._
 import scala.collection.JavaConverters._
+import com.lightning.walletapp.ln.Tools._
+
+import com.lightning.walletapp.ln.wire.LightningMessageCodecs.revocationInfoCodec
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import scala.concurrent.ExecutionContext.Implicits.global
 import com.lightning.olympus.database.Database
+import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
+import com.lightning.walletapp.ln.Helpers
+import com.lightning.walletapp.helper.AES
+import scala.collection.mutable
+import scodec.bits.BitVector
 import org.zeromq.ZMQ.Event
+import scodec.DecodeResult
 import akka.actor.Actor
 
-import com.lightning.walletapp.ln.Tools.{log, none, runAnd}
 import com.lightning.olympus.Utils.{bitcoin, values}
 import com.lightning.olympus.{Blockchain, Router}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
@@ -54,16 +63,38 @@ class ZMQActor(db: Database) extends Actor {
       // whose parents have at least two confirmations
       // CSV timeout will be rejected by blockchain
 
-      raw <- db getScheduled block.height
-      tx = Transaction read BinaryData(raw)
-      parents = tx.txIn.map(_.outPoint.txid.toString)
+      raw <- db getScheduled block.height map BinaryData.apply
+      parents = Transaction.read(raw).txIn.map(_.outPoint.txid.toString)
       if parents forall Blockchain.isParentDeepEnough
     } Blockchain sendRawTx raw
   }
 
+  val sendWatched = new ZMQListener {
+    // A map from parent breach txid to punishing data
+    val publishes: mutable.Map[BinaryData, RevokedCommitPublished] =
+      new ConcurrentHashMap[BinaryData, RevokedCommitPublished].asScala
+
+    override def onNewBlock(block: Block) = {
+      val blockTransactionIds = block.tx.asScala
+      val halfTxIds = blockTransactionIds.map(_ take 16)
+      val half2Full = halfTxIds.zip(blockTransactionIds).toMap
+      // Repeatredly re-broadcast punishes and clear periodically
+      if (block.height % 1440 == 0) publishes.clear
+
+      for {
+        halfTxId \ aesz <- db.getWatched(halfTxIds.toVector)
+        fullTxidBin <- half2Full get halfTxId map BinaryData.apply
+        revBitVec <- AES.decZygote(aesz, fullTxidBin) map BitVector.apply
+        DecodeResult(ri, _) <- revocationInfoCodec.decode(revBitVec).toOption
+        twr <- Blockchain getRawTxData fullTxidBin.toString map TransactionWithRaw
+        rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, twr.tx)
+      } publishes.put(fullTxidBin, rcp)
+    }
+  }
+
   val ctx = new ZContext
   val subscriber = ctx.createSocket(ZMQ.SUB)
-  val listeners = Set(removeSpentChannels, recordTransactions, sendScheduled)
+  val listeners = Set(removeSpentChannels, recordTransactions, sendScheduled, sendWatched)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.subscribe("hashblock" getBytes ZMQ.CHARSET)
   subscriber.subscribe("rawtx" getBytes ZMQ.CHARSET)
