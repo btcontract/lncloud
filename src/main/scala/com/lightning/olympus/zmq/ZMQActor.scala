@@ -66,13 +66,19 @@ class ZMQActor(db: Database) extends Actor {
       raw <- db getScheduled block.height map BinaryData.apply
       parents = Transaction.read(raw).txIn.map(_.outPoint.txid.toString)
       if parents forall Blockchain.isParentDeepEnough
-    } Blockchain sendRawTx raw
+    } Blockchain.sendRawTx(raw)
   }
 
   val sendWatched = new ZMQListener {
     // A map from parent breach txid to punishing data
     val publishes: mutable.Map[BinaryData, RevokedCommitPublished] =
       new ConcurrentHashMap[BinaryData, RevokedCommitPublished].asScala
+
+    def publishPunishments = for {
+      txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
+      _ = println(s"Re-broadcasting a punishment package for breached transaction $txId")
+      transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
+    } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
 
     override def onNewBlock(block: Block) = {
       val blockTransactionIds = block.tx.asScala
@@ -89,6 +95,9 @@ class ZMQActor(db: Database) extends Actor {
         twr <- Blockchain getRawTxData fullTxidBin.toString map TransactionWithRaw
         rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, twr.tx)
       } publishes.put(fullTxidBin, rcp)
+
+      // Broadcast txs
+      publishPunishments
     }
   }
 
