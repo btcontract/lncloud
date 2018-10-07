@@ -12,7 +12,7 @@ import scala.util.Try
 
 object AES {
   def cipher(key: Bytes, initVector: Bytes, mode: Int) =
-    Cipher getInstance "AES/CBC/PKCS7Padding" match { case aesCipher =>
+    Cipher getInstance "AES/CBC/PKCS5Padding" match { case aesCipher =>
       val ivParameterSpec: IvParameterSpec = new IvParameterSpec(initVector)
       aesCipher.init(mode, new SecretKeySpec(key, "AES"), ivParameterSpec)
       aesCipher
@@ -22,7 +22,7 @@ object AES {
   def dec(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.DECRYPT_MODE) doFinal data
   def enc(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.ENCRYPT_MODE) doFinal data
 
-  // Used for Object -> Json -> Zygote -> Hex
+  // Used for Object -> Json -> Encrypted -> Zygote -> Hex
 
   def encReadable2Hex(plain: String, key: Bytes) = {
     val zygote = encBytes(plain getBytes "UTF-8", key)
@@ -32,7 +32,7 @@ object AES {
   def decHex2Readable(raw: String, key: Bytes) =
     decBytes(HEX decode raw, key) map bin2readable
 
-  // Used for Object -> Scodec -> Zygote
+  // Used for Object -> Scodec -> Encrypted -> Zygote
 
   def encBytes(plain: Bytes, key: Bytes) = {
     val initialVector = random getBytes ivLength
@@ -45,7 +45,6 @@ object AES {
     decZygote(aesz.require.value, key)
   }
 
-  def decZygote(aesz: AESZygote, key: Bytes) = Try {
-    dec(aesz.ciphertext, key, aesz.iv)
-  }
+  def decZygote(aesz: AESZygote, key: Bytes) =
+    Try apply dec(aesz.ciphertext, key, aesz.iv)
 }

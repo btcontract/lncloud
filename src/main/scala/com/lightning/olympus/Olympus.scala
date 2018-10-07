@@ -162,8 +162,8 @@ class Responder { me =>
     case req @ POST -> Root / "cerberus" / "watch" => verify(req.params) {
       val cerberusPayloadBitVec = BitVector(BinaryData(req params bODY).data)
       val cerberusPayloadDecoded = cerberusPayloadCodec decode cerberusPayloadBitVec
-      val CerberusPayload(payloads, halfTxIds) = cerberusPayloadDecoded.require.value
-      for (aesz \ half <- payloads zip halfTxIds take 20) db.putWatched(aesz, half)
+      val CerberusPayload(aesZygotes, halfTxIds) = cerberusPayloadDecoded.require.value
+      for (aesz \ half <- aesZygotes zip halfTxIds take 20) db.putWatched(aesz, half)
       Tuple2(oK, "done").toJson
     }
 
