@@ -84,7 +84,7 @@ class ZMQActor(db: Database) extends Actor {
       val blockTransactionIds = block.tx.asScala
       val halfTxIds = blockTransactionIds.map(_ take 16)
       val half2Full = halfTxIds.zip(blockTransactionIds).toMap
-      // Repeatredly re-broadcast punishes and clear periodically
+      // Repeatedly re-broadcast punishes and clear periodically
       if (block.height % 1440 == 0) publishes.clear
 
       for {
