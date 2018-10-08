@@ -81,9 +81,8 @@ class ZMQActor(db: Database) extends Actor {
     } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
 
     override def onNewBlock(block: Block) = {
-      val blockTxIdAsStrings = block.tx.asScala
-      val halfTxIds = for (txid <- blockTxIdAsStrings) yield txid take 16
-      val half2Full = halfTxIds.zip(blockTxIdAsStrings).toMap
+      val halfTxIds = for (txid <- block.tx.asScala) yield txid take 16
+      val half2Full = halfTxIds.zip(block.tx.asScala).toMap
       if (block.height % 1440 == 0) publishes.clear
 
       for {
@@ -102,7 +101,7 @@ class ZMQActor(db: Database) extends Actor {
 
   val ctx = new ZContext
   val subscriber = ctx.createSocket(ZMQ.SUB)
-  val listeners = Set(removeSpentChannels, recordTransactions, sendScheduled, sendWatched)
+  val listeners = Set(sendScheduled, sendWatched, removeSpentChannels, recordTransactions)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.subscribe("hashblock" getBytes ZMQ.CHARSET)
   subscriber.subscribe("rawtx" getBytes ZMQ.CHARSET)
