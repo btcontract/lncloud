@@ -51,6 +51,10 @@ $ mongo
 > db.blindTokens.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 } )
 > db.blindTokens.createIndex( { "seskey": 1 }, { unique: true } )
 
+> use btc-watchedTxs
+> db.watchedTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 360 * 2 } )
+> db.watchedTxs.createIndex( { "halfTxId": 1 } )
+
 > "0123456789".split('').forEach(function(v) { db["clearTokens" + v].createIndex( { "token": 1 }, { unique: true } ) })
 ```
 
