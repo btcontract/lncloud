@@ -46,15 +46,18 @@ class ZMQActor(db: Database) extends Actor {
   }
 
   val recordTransactions = new ZMQListener {
-    override def onNewBlock(block: Block) = for {
+    override def onNewBlock(block: Block) = {
       // We need to save which txids this one spends from
       // since clients may need this to extract preimages
+      log(s"Recording block #${block.height}...")
 
-      txid <- block.tx.asScala.par
-      binary <- Blockchain getRawTxData txid
-      transactionWithRaw = TransactionWithRaw(binary)
-      parents = transactionWithRaw.tx.txIn.map(_.outPoint.txid.toString)
-    } db.putTx(txids = parents, prefix = txid, hex = binary.toString)
+      for {
+        txid <- block.tx.asScala.par
+        binary <- Blockchain getRawTxData txid
+        transactionWithRaw = TransactionWithRaw(binary)
+        parents = transactionWithRaw.tx.txIn.map(_.outPoint.txid.toString)
+      } db.putTx(txids = parents, prefix = txid, hex = binary.toString)
+    }
   }
 
   val sendScheduled = new ZMQListener {
@@ -76,7 +79,7 @@ class ZMQActor(db: Database) extends Actor {
 
     def publishPunishments = for {
       txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
-      _ = println(s"Re-broadcasting a punishment package for breached transaction $txId")
+      _ = log(s"Re-broadcasting a punishment package for breached transaction $txId...")
       transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
     } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
 
@@ -147,7 +150,7 @@ class ZMQActor(db: Database) extends Actor {
   def rescanBlocks = {
     val currentPoint = bitcoin.getBlockCount
     val pastPoint = currentPoint - values.rewindRange
-    val blocks = pastPoint to currentPoint map bitcoin.getBlock
+    val blocks = pastPoint to currentPoint map Blockchain.getBlockByHeight
     for (block <- blocks) for (lst <- listeners) lst onNewBlock block
     log("Done rescanning blocks")
   }

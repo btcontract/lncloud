@@ -45,9 +45,9 @@ object Olympus extends ServerApp {
         val description = "Storage tokens for backup Olympus server at 127.0.0.1"
         val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "127.0.0.1",
-          eclairSockPort = 9735, eclairNodeId = "0218bc75cba78d378d864a0f41d4ccd67eb1eaa829464d37706702003069c003f8",
-          rewindRange = 14, ip = "127.0.0.1", port = 9003, eclairProvider, minCapacity = 50000L,
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
+          eclairSockPort = 9735, eclairNodeId = "0351e197ce9dda4cf37a228a7d5f7b3ab0f9e386ae833412fd2da5528fbc2bd037",
+          rewindRange = 0, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
 
