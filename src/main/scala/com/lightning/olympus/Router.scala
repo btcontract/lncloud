@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 
 case class ChanInfo(txid: String, capacity: Long, ca: ChannelAnnouncement)
-case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey)
+case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey, weight: Long)
 
 object Router { me =>
   type ShortChannelIdSet = Set[Long]
@@ -121,7 +121,7 @@ object Router { me =>
           baseGraph.addVertex(dir.to)
           baseGraph.addVertex(dir.from)
           baseGraph.addEdge(dir.from, dir.to, dir)
-          baseGraph.setEdgeWeight(dir, u.feeEstimate)
+          baseGraph.setEdgeWeight(dir, dir.weight)
       }
 
       val results = for {
@@ -153,11 +153,17 @@ object Router { me =>
     case cu: ChannelUpdate =>
       val info = chanId2Info(cu.shortChannelId)
       val isDisabled = Announcements isDisabled cu.flags
+      val (chainHeight, _, _) = fromShortId(cu.shortChannelId)
+      // More fee: +weight, more capacity: -weight, more height: +weight
+      val feeEstimate = cu.feeBaseMsat + cu.feeProportionalMillionths * 10
+      val weight = feeEstimate + 50000000L / info.capacity + chainHeight / 500
+
       val direction = Announcements isNode1 cu.flags match {
-        case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2)
-        case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1)
+        case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2, weight)
+        case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1, weight)
       }
 
+      // Remove if it is disabled, add if it is enabled, don't do anything if it's outdated by now
       val upd1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
       if (isFresh) finder = GraphFinder(upd1)
