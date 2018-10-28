@@ -54,8 +54,7 @@ class ZMQActor(db: Database) extends Actor {
       for {
         txid <- block.tx.asScala.par
         binary <- Blockchain getRawTxData txid
-        transactionWithRaw = TransactionWithRaw(binary)
-        parents = transactionWithRaw.tx.txIn.map(_.outPoint.txid.toString)
+        parents = TransactionWithRaw(binary).tx.txIn.map(_.outPoint.txid.toString)
       } db.putTx(txids = parents, prefix = txid, hex = binary.toString)
     }
   }
@@ -79,7 +78,7 @@ class ZMQActor(db: Database) extends Actor {
 
     def publishPunishments = for {
       txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
-      _ = log(s"Re-broadcasting a punishment package for breached transaction $txId...")
+      _ = log(s"Re-broadcasting a punishment transactions for breached transaction $txId...")
       transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
     } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
 
