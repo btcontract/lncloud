@@ -93,7 +93,7 @@ object Router { me =>
     def rmRandEdge(ds: Seq[ChanDirection], gr: Graph) = runAnd(gr)(gr removeEdge shuffle(ds).head)
     val toHops: Vector[ChanDirection] => PaymentRoute = _.map(dir => updates(dir) toHop dir.from)
     // This works because every map update also replaces a GraphFinder object
-    lazy val mixed = shuffle(updates)
+    lazy val mixed = shuffle(updates.keys)
 
     def findPaths(xn: Set[PublicKey], xc: ShortChannelIdSet, from: Set[PublicKey], to: PublicKey, sat: Long) = {
       // Filter out chans with insufficient capacity, nodes and chans excluded by user, not useful nodes and chans
@@ -112,12 +112,12 @@ object Router { me =>
 
       mixed foreach {
         // Use sequence of guards for lazy evaluation
-        case dir \ _ if chanId2Info(dir.shortId).capacity < sat =>
-        case dir \ _ if xc.contains(dir.shortId) || xn.contains(dir.from) || xn.contains(dir.to) =>
-        case dir \ _ if !from.contains(dir.from) && nodeId2Chans.dict(dir.from).size < 2 =>
-        case dir \ _ if to != dir.to && nodeId2Chans.dict(dir.to).size < 2 =>
+        case dir if chanId2Info(dir.shortId).capacity < sat =>
+        case dir if xc.contains(dir.shortId) || xn.contains(dir.from) || xn.contains(dir.to) =>
+        case dir if !from.contains(dir.from) && nodeId2Chans.dict(dir.from).size < 2 =>
+        case dir if to != dir.to && nodeId2Chans.dict(dir.to).size < 2 =>
 
-        case dir \ u =>
+        case dir =>
           baseGraph.addVertex(dir.to)
           baseGraph.addVertex(dir.from)
           baseGraph.addEdge(dir.from, dir.to, dir)
@@ -146,25 +146,24 @@ object Router { me =>
     case node: NodeAnnouncement if !nodeId2Chans.dict.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
     case node: NodeAnnouncement => wrap(me addNode node)(me rmNode node) // Might be an update
 
-    case cu: ChannelUpdate if cu.flags.data.size != 2 => Tools log s"Ignoring invalid flags length ${cu.flags.data.size}"
     case cu: ChannelUpdate if !chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
     case cu: ChannelUpdate if isOutdated(cu) => Tools log s"Ignoring outdated update $cu"
 
     case cu: ChannelUpdate =>
       val info = chanId2Info(cu.shortChannelId)
-      val isDisabled = Announcements isDisabled cu.flags
+      val isEnabled = Announcements isEnabled cu.channelFlags
       val (chainHeight, _, _) = fromShortId(cu.shortChannelId)
       // More fee: +weight, more capacity: -weight, more height: +weight
       val feeEstimate = cu.feeBaseMsat + cu.feeProportionalMillionths * 10
       val weight = feeEstimate + 50000000L / info.capacity + chainHeight / 500
 
-      val direction = Announcements isNode1 cu.flags match {
+      val direction = Announcements isNode1 cu.channelFlags match {
         case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2, weight)
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1, weight)
       }
 
       // Remove if it is disabled, add if it is enabled, don't do anything if it's outdated by now
-      val upd1 = if (isDisabled) finder.updates - direction else finder.updates.updated(direction, cu)
+      val upd1 = if (isEnabled) finder.updates.updated(direction, cu) else finder.updates - direction
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
       if (isFresh) finder = GraphFinder(upd1)
 
@@ -187,7 +186,7 @@ object Router { me =>
     // Considered outdated if it older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
-  Obs.interval(5.minutes).map(_ => System.currentTimeMillis) foreach { now =>
+  Obs.interval(5.minutes).map(_ => System.currentTimeMillis) foreach { _ =>
     // Removing directions also affects the next check since it makes nodes without chans
     val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
     finder = GraphFinder(updates1)

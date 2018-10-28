@@ -16,8 +16,8 @@ object Announcements { me =>
   private def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: RGB, alias: String, features: BinaryData, addresses: NodeAddressList) =
     me hashTwice LightningMessageCodecs.nodeAnnouncementWitness.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: HNil)
 
-  private def channelUpdateWitnessEncode(chainHash: BinaryData, shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) =
-    me hashTwice LightningMessageCodecs.channelUpdateWitness.encode(chainHash :: shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil)
+  private def channelUpdateWitnessEncode(chainHash: BinaryData, shortChannelId: Long, timestamp: Long, messageFlags: Byte, channelFlags: Byte, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Option[Long] = None) =
+    me hashTwice LightningMessageCodecs.channelUpdateWitness.encode(chainHash :: shortChannelId :: timestamp :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil)
 
   def signChannelAnnouncement(chainHash: BinaryData, shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey,
                               localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
@@ -49,29 +49,26 @@ object Announcements { me =>
   // two nodes who are operating the channel, such that node-id-1 is the numerically-lesser
   // of the two DER encoded keys sorted in ascending numerical order
 
+  def isNode1(channelFlags: Byte) = (channelFlags & 1) == 0
+  def isEnabled(channelFlags: Byte) = (channelFlags & 2) == 0
   def isNode1(localNodeId: BinaryData, remoteNodeId: BinaryData) = LexicographicalOrdering.isLessThan(localNodeId, remoteNodeId)
+  def makeMessageFlags(hasOptionChannelHtlcMax: Boolean) = BitVector.bits(hasOptionChannelHtlcMax :: Nil).padLeft(8).toByte(true)
+  def makeChannelFlags(isNode1: Boolean, enable: Boolean) = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(8).toByte(true)
 
-  // BOLT 7: The creating node [...] MUST set the direction bit of flags to 0 if
-  // the creating node is node-id-1 in that message, otherwise 1
-
-  def isNode1(flags: BinaryData) = !BitVector(flags.data).reverse.get(0)
-
-  // A node MAY create and send a channel_update with the disable
-  // bit set to signal the temporary unavailability of a channel
-
-  def isDisabled(flags: BinaryData) = BitVector(flags.data).reverse.get(1)
-
-  def makeFlags(isNode1: Boolean, enable: Boolean): BinaryData = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(16).toByteArray
   def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,
-                        htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, isEnabled: Boolean,
-                        timestamp: Long): ChannelUpdate = {
+                        htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long,
+                        enable: Boolean = true, timestamp: Long = System.currentTimeMillis / 1000): ChannelUpdate = {
 
-    val flags = makeFlags(isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), isEnabled)
-    val sig = Crypto encodeSignature Crypto.sign(channelUpdateWitnessEncode(chainHash, shortChannelId,
-      timestamp, flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths), nodeSecret)
+    val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
+    val messageFlags = makeMessageFlags(hasOptionChannelHtlcMax = true)
+    val channelFlags = makeChannelFlags(isNode1 = isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), enable = enable)
+    val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, messageFlags, channelFlags, cltvExpiryDelta,
+      htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsatOpt)
 
-    ChannelUpdate(signature = sig :+ 1.toByte, chainHash, shortChannelId, timestamp,
-      flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
+    val sig = Crypto.sign(witness, nodeSecret)
+    ChannelUpdate(signature = Crypto.encodeSignature(sig) :+ 1.toByte, chainHash = chainHash, shortChannelId = shortChannelId, timestamp = timestamp,
+      messageFlags = messageFlags, channelFlags = channelFlags, cltvExpiryDelta = cltvExpiryDelta, htlcMinimumMsat = htlcMinimumMsat,
+      feeBaseMsat = feeBaseMsat, feeProportionalMillionths = feeProportionalMillionths, htlcMaximumMsat = htlcMaximumMsatOpt)
   }
 
   def checkSigs(ann: ChannelAnnouncement): Boolean = {
@@ -88,7 +85,8 @@ object Announcements { me =>
     verifySignature(nodeAnnouncementWitnessEncode(ann.timestamp, ann.nodeId, ann.rgbColor,
       ann.alias, ann.features, ann.addresses), ann.signature, PublicKey apply ann.nodeId)
 
-  def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean =
-    verifySignature(channelUpdateWitnessEncode(ann.chainHash, ann.shortChannelId, ann.timestamp, ann.flags,
-      ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths), ann.signature, nodeId)
+  def checkSig(upd: ChannelUpdate, nodeId: PublicKey): Boolean =
+    verifySignature(channelUpdateWitnessEncode(upd.chainHash, upd.shortChannelId, upd.timestamp, upd.messageFlags,
+      upd.channelFlags, upd.cltvExpiryDelta, upd.htlcMinimumMsat, upd.feeBaseMsat, upd.feeProportionalMillionths,
+      upd.htlcMaximumMsat), upd.signature, nodeId)
 }

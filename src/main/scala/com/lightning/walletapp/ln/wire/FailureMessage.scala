@@ -32,7 +32,7 @@ case class InvalidOnionKey(onionHash: BinaryData) extends BadOnion with Perm
 
 sealed trait Update extends FailureMessage { def update: ChannelUpdate }
 case class AmountBelowMinimum(amountMsat: Long, update: ChannelUpdate) extends Update
-case class ChannelDisabled(flags: BinaryData, update: ChannelUpdate) extends Update
+case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update
 case class FeeInsufficient(amountMsat: Long, update: ChannelUpdate) extends Update
 case class IncorrectCltvExpiry(expiry: Long, update: ChannelUpdate) extends Update
 case class TemporaryChannelFailure(update: ChannelUpdate) extends Update
@@ -42,7 +42,7 @@ object FailureMessageCodecs {
   private val sha256Codec = binarydata(32) withContext "sha256Codec"
   private val channelUpdateCodecWithType = lightningMessageCodec.narrow[ChannelUpdate](Attempt successful _.asInstanceOf[ChannelUpdate], identity)
   private val channelUpdateWithLengthCodec = variableSizeBytes(value = choice(channelUpdateCodecWithType, channelUpdateCodec), size = uint16)
-  private val disabled = (binarydata(2) withContext "flags") :: channelUpdateWithLengthCodec
+  private val disabled = (byte withContext "messageFlags") :: (byte withContext "channelFlags") :: channelUpdateWithLengthCodec
   private val amount = (uint64 withContext "amountMsat") :: channelUpdateWithLengthCodec
   private val expiry = (uint32 withContext "expiry") :: channelUpdateWithLengthCodec
 
@@ -71,7 +71,7 @@ object FailureMessageCodecs {
     .typecase(cr = provide(IncorrectPaymentAmount), tag = PERM | 16)
     .typecase(cr = provide(FinalExpiryTooSoon), tag = 17)
     .typecase(cr = (uint32 withContext "expiry").as[FinalIncorrectCltvExpiry], tag = 18)
-    .typecase(cr = (uint32 withContext "amountMsat").as[FinalIncorrectHtlcAmount], tag = 19)
+    .typecase(cr = (uint64 withContext "amountMsat").as[FinalIncorrectHtlcAmount], tag = 19)
     .typecase(cr = disabled.as[ChannelDisabled], tag = UPDATE | 20)
     .typecase(cr = provide(ExpiryTooFar), tag = 21)
 }

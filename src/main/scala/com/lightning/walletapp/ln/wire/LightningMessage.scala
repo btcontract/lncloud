@@ -93,13 +93,14 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData, nodeSignature2: Binar
 
 // PAYMENT ROUTE INFO
 
-case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChannelId: Long, timestamp: Long,
-                         flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long,
-                         feeProportionalMillionths: Long) extends RoutingMessage {
+case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChannelId: Long,
+                         timestamp: Long, messageFlags: Byte, channelFlags: Byte, cltvExpiryDelta: Int,
+                         htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long,
+                         htlcMaximumMsat: Option[Long] = None) extends RoutingMessage {
 
-  def toHop(targetNodeId: PublicKey) =
-    Hop(targetNodeId, shortChannelId, cltvExpiryDelta,
-      htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
+  require(requirement = (messageFlags & 1) != 0 == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
+  def toHop(nodeId: PublicKey) = Hop(nodeId, shortChannelId, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
+  lazy val feeEstimate = feeBaseMsat + feeProportionalMillionths * 10
 }
 
 case class Hop(nodeId: PublicKey, shortChannelId: Long,
