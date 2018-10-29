@@ -90,10 +90,15 @@ object Router { me =>
   }
 
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
-    def rmRandEdge(ds: Seq[ChanDirection], gr: Graph) = runAnd(gr)(gr removeEdge shuffle(ds).head)
+    def chanUpdateIdentity(cu: ChannelUpdate) = s"${cu.cltvExpiryDelta}-${cu.htlcMinimumMsat}-${cu.feeBaseMsat}-${cu.feeProportionalMillionths}"
+    def rmRandEdge(directions: Seq[ChanDirection], targetGraph: Graph) = runAnd(targetGraph)(targetGraph removeEdge shuffle(directions).head)
     val toHops: Vector[ChanDirection] => PaymentRoute = _.map(dir => updates(dir) toHop dir.from)
     // This works because every map update also replaces a GraphFinder object
     lazy val mixed = shuffle(updates.keys)
+
+    // Given a node pubkey, find its most frequent ChannelUpdate paramters
+    def mostFrequentChannelUpdate(nodeId: PublicKey) = updates.filterKeys(_.from == nodeId)
+      .values.groupBy(chanUpdateIdentity).values.toList.sortBy(_.size).headOption.map(_.head)
 
     def findPaths(xn: Set[PublicKey], xc: ShortChannelIdSet, from: Set[PublicKey], to: PublicKey, sat: Long) = {
       // Filter out chans with insufficient capacity, nodes and chans excluded by user, not useful nodes and chans
