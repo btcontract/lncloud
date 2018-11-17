@@ -48,20 +48,20 @@ class AveragePrice(val pair: CurrencyPair, val exchanges: List[String], val code
 
 class ExchangeRates {
   val usd = new AveragePrice(BTC_USD, classOf[BitstampExchange].getName :: classOf[BitfinexExchange].getName ::
-    classOf[KrakenExchange].getName :: classOf[GDAXExchange].getName :: Nil, "USD")
+    classOf[KrakenExchange].getName :: classOf[GDAXExchange].getName :: Nil, "usd")
 
   val eur = new AveragePrice(BTC_EUR, classOf[PaymiumExchange].getName :: classOf[KrakenExchange].getName ::
-    classOf[BitstampExchange].getName :: classOf[GDAXExchange].getName :: Nil, "EUR")
+    classOf[BitstampExchange].getName :: classOf[GDAXExchange].getName :: Nil, "eur")
 
   val jpy = new AveragePrice(BTC_JPY, classOf[KrakenExchange].getName ::
-    classOf[BitcoinAverageExchange].getName :: classOf[QuoineExchange].getName :: Nil, "JPY")
+    classOf[BitcoinAverageExchange].getName :: classOf[QuoineExchange].getName :: Nil, "jpy")
 
-  val cny = new AveragePrice(BTC_CNY, classOf[BitcoinAverageExchange].getName :: Nil, "CNY")
-  val inr = new AveragePrice(BTC_INR, classOf[BitcoinAverageExchange].getName :: Nil, "INR")
-  val cad = new AveragePrice(BTC_CAD, classOf[KrakenExchange].getName :: classOf[LakeBTCExchange].getName :: Nil, "CAD")
-  val rub = new AveragePrice(BTC_RUB, classOf[BitcoinAverageExchange].getName :: classOf[ExmoExchange].getName :: Nil, "RUB")
-  val brl = new AveragePrice(BTC_BRL, classOf[BitcoinAverageExchange].getName :: classOf[MercadoBitcoinExchange].getName :: Nil, "BRL")
-  val czk = new AveragePrice(BTC_CZK, classOf[BitcoinAverageExchange].getName :: classOf[CoinmateExchange].getName :: Nil, "CZK")
+  val cny = new AveragePrice(BTC_CNY, classOf[BitcoinAverageExchange].getName :: Nil, "cny")
+  val inr = new AveragePrice(BTC_INR, classOf[BitcoinAverageExchange].getName :: Nil, "inr")
+  val cad = new AveragePrice(BTC_CAD, classOf[KrakenExchange].getName :: classOf[LakeBTCExchange].getName :: Nil, "cad")
+  val rub = new AveragePrice(BTC_RUB, classOf[BitcoinAverageExchange].getName :: classOf[ExmoExchange].getName :: Nil, "rub")
+  val brl = new AveragePrice(BTC_BRL, classOf[BitcoinAverageExchange].getName :: classOf[MercadoBitcoinExchange].getName :: Nil, "brl")
+  val czk = new AveragePrice(BTC_CZK, classOf[BitcoinAverageExchange].getName :: classOf[CoinmateExchange].getName :: Nil, "czk")
 
   def displayState = for {
     average: AveragePrice <- currencies
