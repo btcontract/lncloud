@@ -24,7 +24,7 @@ object Blockchain {
 
   def getChanInfo(ca: ChannelAnnouncement) = Try {
     val txid = getBlockByHeight(ca.blockHeight).tx.get(ca.txIndex)
-    val amountBtc = bitcoin.getTxOut(txid, ca.outputIndex, false).value
+    val amountBtc = bitcoin.getTxOut(txid, ca.outputIndex, true).value
     ChanInfo(txid, (BigDecimal(amountBtc) * 100000000L).toLong, ca)
   }
 
