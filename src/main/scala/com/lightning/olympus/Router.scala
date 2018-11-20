@@ -141,13 +141,14 @@ object Router { me =>
     }
   }
 
-  def reschedule = Obs.just(Tools log "Rescheduling queue processing...")
-    .delay(10.seconds).foreach(_ => processQueue, Tools.errlog)
+  def rescheduleQueue =
+    Obs.just(Tools log "Rescheduling queue processing...")
+      .delay(20.seconds).foreach(_ => processQueue, Tools.errlog)
 
   def processQueue: Unit = {
     val nextMessage = unprocessedMessages.poll
     if (nextMessage != null) processMessage(nextMessage)
-    if (nextMessage != null) processQueue else reschedule
+    if (nextMessage != null) processQueue else rescheduleQueue
   }
 
   private def processMessage(message: LightningMessage) = message match {

@@ -79,7 +79,7 @@ class Responder { me =>
   // Start watching Bitcoin blocks and transactions via ZMQ interface
   val supervisor = system actorOf Props.create(classOf[ZMQSupervisor], db)
   LNConnector.connect // Start filling routing message queue
-  Router.reschedule // Start processing routing messages
+  Router.rescheduleQueue // Start processing routing messages
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
