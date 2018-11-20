@@ -45,8 +45,8 @@ object Olympus extends ServerApp {
         val description = "Storage tokens for backup Olympus server at 127.0.0.1"
         val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
-          eclairSockPort = 9735, eclairNodeId = "0351e197ce9dda4cf37a228a7d5f7b3ab0f9e386ae833412fd2da5528fbc2bd037",
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "34.239.230.56",
+          eclairSockPort = 9735, eclairNodeId = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
           rewindRange = 0, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
@@ -58,8 +58,9 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
+//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -77,7 +78,8 @@ class Responder { me =>
   val system = ActorSystem("zmq-system")
   // Start watching Bitcoin blocks and transactions via ZMQ interface
   val supervisor = system actorOf Props.create(classOf[ZMQSupervisor], db)
-  LNConnector.connect
+  LNConnector.connect // Start filling routing message queue
+  Router.reschedule // Start processing routing messages
 
   val http = HttpService {
     // Put an EC key into temporal cache and provide SignerQ, SignerR (seskey)
@@ -207,8 +209,8 @@ object LNConnector {
 
   ConnectionManager.listeners += new ConnectionListener {
     override def onIncompatible(nodeId: PublicKey) = onTerminalError(nodeId)
-    override def onMessage(nodeId: PublicKey, msg: LightningMessage) = Router receive msg
     override def onOperational(nodeId: PublicKey) = Tools log "Eclair socket is operational"
+    override def onMessage(nodeId: PublicKey, msg: LightningMessage) = Router.unprocessedMessages offer msg
 
     override def onTerminalError(nodeId: PublicKey) =
       ConnectionManager.connections.get(nodeId)

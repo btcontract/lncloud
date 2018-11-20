@@ -10,6 +10,7 @@ import com.lightning.olympus.Utils._
 
 import scala.util.{Success, Try}
 import rx.lang.scala.{Observable => Obs}
+import java.util.concurrent.ConcurrentLinkedQueue
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DirectedWeightedPseudograph
@@ -33,6 +34,7 @@ object Router { me =>
   val chanId2Info = mutable.Map.empty[Long, ChanInfo]
   val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
+  val unprocessedMessages = new ConcurrentLinkedQueue[LightningMessage]
   val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefFactory)
   var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
   var finder = GraphFinder(Map.empty)
@@ -139,8 +141,16 @@ object Router { me =>
     }
   }
 
-  def receive(m: LightningMessage) = me synchronized doReceive(m)
-  private def doReceive(message: LightningMessage) = message match {
+  def reschedule = Obs.just(Tools log "Rescheduling queue processing...")
+    .delay(10.seconds).foreach(_ => processQueue, Tools.errlog)
+
+  def processQueue: Unit = {
+    val nextMessage = unprocessedMessages.poll
+    if (nextMessage != null) processMessage(nextMessage)
+    if (nextMessage != null) processQueue else reschedule
+  }
+
+  private def processMessage(message: LightningMessage) = message match {
     case channelAnnounce: ChannelAnnouncement => Blockchain getChanInfo channelAnnounce foreach {
       case small if small.capacity < values.minCapacity => Tools log "Ignoring chan with low capacity"
       case chanInfo => addChanInfo(chanInfo)
@@ -172,7 +182,8 @@ object Router { me =>
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
       if (isFresh) finder = GraphFinder(upd1)
 
-    case _ =>
+    case otherwise =>
+      Tools log s"Unexpected $otherwise"
   }
 
   def complexRemove(infos: Iterable[ChanInfo], what: String) = me synchronized {
