@@ -210,13 +210,7 @@ object LNConnector {
     override def onIncompatible(nodeId: PublicKey) = onTerminalError(nodeId)
     override def onOperational(nodeId: PublicKey) = Tools log "Eclair socket is operational"
     override def onMessage(nodeId: PublicKey, msg: LightningMessage) = Router.unprocessedMessages offer msg
-
-    override def onTerminalError(nodeId: PublicKey) =
-      ConnectionManager.connections.get(nodeId)
-        .foreach(_.socket.close)
-
-    override def onDisconnect(nodeId: PublicKey) =
-      Obs.just(Tools log "Restarting").delay(5.seconds)
-        .foreach(_ => connect, Tools.errlog)
+    override def onTerminalError(nodeId: PublicKey) = ConnectionManager.connections.get(nodeId).foreach(_.socket.close)
+    override def onDisconnect(nodeId: PublicKey) = Obs.just(Tools log "Restarting").delay(5.seconds).foreach(_ => connect, Tools.errlog)
   }
 }

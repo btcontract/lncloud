@@ -58,6 +58,7 @@ class ExchangeRates {
 
   val cny = new AveragePrice(BTC_CNY, classOf[BitcoinAverageExchange].getName :: Nil, "cny")
   val inr = new AveragePrice(BTC_INR, classOf[BitcoinAverageExchange].getName :: Nil, "inr")
+  val ils = new AveragePrice(BTC_ILS, classOf[BitcoinAverageExchange].getName :: Nil, "ils")
   val cad = new AveragePrice(BTC_CAD, classOf[KrakenExchange].getName :: classOf[LakeBTCExchange].getName :: Nil, "cad")
   val rub = new AveragePrice(BTC_RUB, classOf[BitcoinAverageExchange].getName :: classOf[ExmoExchange].getName :: Nil, "rub")
   val brl = new AveragePrice(BTC_BRL, classOf[BitcoinAverageExchange].getName :: classOf[MercadoBitcoinExchange].getName :: Nil, "brl")
@@ -69,8 +70,9 @@ class ExchangeRates {
     humanHistory = history.prices mkString "\r\n-- "
   } yield s"${average.pair} $exchange \r\n-- $humanHistory"
 
-  val currencies = List(usd, eur, jpy, cny, inr, cad, rub, brl, czk)
+  val currencies = List(usd, eur, jpy, cny, inr, ils, cad, rub, brl, czk)
   def update(some: Any) = for (average <- currencies) average.update
+
   retry(obsOnIO map update, pickInc, 4 to 6).repeatWhen(_ delay 30.minutes)
     .doOnNext(_ => Tools log "Exchange rates were updated").subscribe(none)
 }
