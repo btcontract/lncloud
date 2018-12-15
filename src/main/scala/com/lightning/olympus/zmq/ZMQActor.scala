@@ -4,11 +4,16 @@ import com.lightning.walletapp.ln._
 import scala.collection.JavaConverters._
 import com.lightning.walletapp.ln.Tools._
 
+import org.zeromq.{ZContext, ZMQ, ZMsg}
+import rx.lang.scala.{Observable => Obs}
+import com.lightning.olympus.{Blockchain, Router}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
+import com.lightning.olympus.Utils.{bitcoin, values}
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs.revocationInfoCodec
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
 import scala.concurrent.ExecutionContext.Implicits.global
 import com.lightning.olympus.database.Database
-import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration.DurationInt
 import com.lightning.walletapp.ln.Helpers
 import com.lightning.walletapp.helper.AES
@@ -17,11 +22,6 @@ import scodec.bits.BitVector
 import org.zeromq.ZMQ.Event
 import scodec.DecodeResult
 import akka.actor.Actor
-
-import com.lightning.olympus.Utils.{bitcoin, values}
-import com.lightning.olympus.{Blockchain, Router}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
-import org.zeromq.{ZContext, ZMQ, ZMsg}
 
 
 class ZMQActor(db: Database) extends Actor {
@@ -32,7 +32,7 @@ class ZMQActor(db: Database) extends Actor {
   val removeSpentChannels = new ZMQListener {
     override def onNewTx(twr: TransactionWithRaw) = for {
       // We need to check if any input spends a channel output
-      // related payment channels should be removed
+      // related payment channels should be removed immediately
 
       input <- twr.tx.txIn.headOption
       chanInfo <- Router.txId2Info get input.outPoint.txid
@@ -73,31 +73,43 @@ class ZMQActor(db: Database) extends Actor {
 
   val sendWatched = new ZMQListener {
     // A map from parent breach txid to punishing data
+    // need to keep these around and re-publish a few times
     val publishes: mutable.Map[BinaryData, RevokedCommitPublished] =
       new ConcurrentHashMap[BinaryData, RevokedCommitPublished].asScala
 
-    def publishPunishments = for {
-      txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
-      _ = log(s"Re-broadcasting a punishment transactions for breached transaction $txId...")
-      transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
-    } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
+    // Try to publish breaches periodically to not query db on each incoming transaction
+    val txidAccumulator: mutable.Set[String] = new ConcurrentSkipListSet[String].asScala
+    Obs.interval(90.seconds).foreach(_ => collectAndPublishPunishments, Tools.errlog)
 
-    override def onNewBlock(block: Block) = {
-      val halfTxIds = for (txid <- block.tx.asScala) yield txid take 16
-      val half2Full = halfTxIds.zip(block.tx.asScala).toMap
-      if (block.height % 1440 == 0) publishes.clear
+    def collectAndPublishPunishments = {
+      val collectedTxIds = txidAccumulator.toVector
+      val halfTxIds = for (txid <- collectedTxIds) yield txid take 16
+      val half2FullMap = halfTxIds.zip(collectedTxIds).toMap
+      log(s"Checking ${txidAccumulator.size} spends")
+      txidAccumulator.clear
 
       for {
-        halfTxId \ aesz <- db.getWatched(halfTxIds.toVector)
-        fullTxidBin <- half2Full get halfTxId map BinaryData.apply
+        halfTxId \ aesz <- db.getWatched(halfTxIds)
+        fullTxidBin <- half2FullMap get halfTxId map BinaryData.apply
         revBitVec <- AES.decZygote(aesz, fullTxidBin) map BitVector.apply
         DecodeResult(ri, _) <- revocationInfoCodec.decode(revBitVec).toOption
         twr <- Blockchain getRawTxData fullTxidBin.toString map TransactionWithRaw
         rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, twr.tx)
       } publishes.put(fullTxidBin, rcp)
 
-      // Broadcast txs
-      publishPunishments
+      for {
+        txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
+        _ = log(s"Re-broadcasting a punishment transactions for breached channel funding $txId")
+        transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
+      } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
+    }
+
+    override def onNewTx(twr: TransactionWithRaw) =
+      txidAccumulator += twr.tx.txid.toString
+
+    override def onNewBlock(block: Block) = {
+      if (block.height % 1440 == 0) publishes.clear
+      txidAccumulator ++= block.tx.asScala
     }
   }
 
