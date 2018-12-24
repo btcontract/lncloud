@@ -23,7 +23,14 @@ import scala.collection.mutable
 
 
 case class ChanInfo(txid: String, capacity: Long, ca: ChannelAnnouncement)
-case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey, weight: Long)
+case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey, weight: Long) {
+  // We may have an object where only weight differs for a cusom comparator to omit weight
+
+  override def equals(something: Any): Boolean = something match {
+    case cd: ChanDirection => shortId == cd.shortId && from == cd.from
+    case _ => false
+  }
+}
 
 object Router { me =>
   type ShortChannelIdSet = Set[Long]
@@ -174,10 +181,10 @@ object Router { me =>
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1, weight)
       }
 
-      // Remove if it is disabled, add if it is enabled, don't do anything if it's outdated by now
-      val upd1 = if (isEnabled) finder.updates.updated(direction, cu) else finder.updates - direction
+      val updates1 = finder.updates - direction
+      val updates2 = if (isEnabled) updates1.updated(direction, cu) else updates1
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
-      if (isFresh) finder = GraphFinder(upd1)
+      if (isFresh) finder = GraphFinder(updates2)
 
     case _ =>
   }
