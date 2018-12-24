@@ -39,18 +39,6 @@ object Router { me =>
   var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
   var finder = GraphFinder(Map.empty)
 
-  def rmChanInfo(info: ChanInfo) = {
-    nodeId2Chans = nodeId2Chans minusShortChanId info
-    chanId2Info -= info.ca.shortChannelId
-    txId2Info -= info.txid
-  }
-
-  def addChanInfo(info: ChanInfo) = {
-    nodeId2Chans = nodeId2Chans plusShortChanId info
-    chanId2Info(info.ca.shortChannelId) = info
-    txId2Info(info.txid) = info
-  }
-
   def rmNode(node: NodeAnnouncement) =
     nodeId2Announce get node.nodeId foreach { old =>
       // Announce may have a new alias so we search for
@@ -152,10 +140,18 @@ object Router { me =>
   }
 
   private def processMessage(message: LightningMessage) = message match {
-    case channelAnnounce: ChannelAnnouncement => Blockchain getChanInfo channelAnnounce foreach {
-      case small if small.capacity < values.minCapacity => Tools log "Ignoring chan with low capacity"
-      case chanInfo => addChanInfo(chanInfo)
-    }
+    // First channel announcements, then node announcements, then node updates
+
+    case channelAnnounce: ChannelAnnouncement =>
+      Blockchain getChanInfo channelAnnounce foreach {
+        case small if small.capacity < values.minCapacity =>
+          Tools log "Ignoring chan with low capacity"
+
+        case chanInfo =>
+          nodeId2Chans = nodeId2Chans plusShortChanId chanInfo
+          chanId2Info(chanInfo.ca.shortChannelId) = chanInfo
+          txId2Info(chanInfo.txid) = chanInfo
+      }
 
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
     case node: NodeAnnouncement if nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
@@ -183,14 +179,18 @@ object Router { me =>
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
       if (isFresh) finder = GraphFinder(upd1)
 
-    case otherwise =>
-      Tools log s"Unexpected $otherwise"
+    case _ =>
   }
 
   def complexRemove(infos: Iterable[ChanInfo], what: String) = me synchronized {
     // Once channel infos are removed we may have nodes without channels and updates
 
-    infos foreach rmChanInfo
+    for (info <- infos) {
+      nodeId2Chans = nodeId2Chans minusShortChanId info
+      chanId2Info -= info.ca.shortChannelId
+      txId2Info -= info.txid
+    }
+
     // Removal may result in lost nodes so all nodes with now zero channels are removed
     nodeId2Announce.filterKeys(nodeId => nodeId2Chans.dict(nodeId).isEmpty).values foreach rmNode
     // And finally we need to remove all the lost updates which have no channel announcements left
@@ -200,20 +200,12 @@ object Router { me =>
   }
 
   def isOutdated(cu: ChannelUpdate) =
-    // Considered outdated if it older than two weeks
+    // Considered outdated if it is older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
   Obs.interval(5.minutes).map(_ => System.currentTimeMillis) foreach { _ =>
     // Removing directions also affects the next check since it makes nodes without chans
     val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
     finder = GraphFinder(updates1)
-  }
-
-  Obs interval 15.minutes foreach { _ =>
-    val twoWeeksBehind = bitcoin.getBlockCount - 2016 // ~2 weeks
-    val shortId2Updates = finder.updates.values.groupBy(_.shortChannelId)
-    val oldChanInfos = chanId2Info.values.filter(_.ca.blockHeight < twoWeeksBehind)
-    val outdatedChanInfos = oldChanInfos.filterNot(shortId2Updates contains _.ca.shortChannelId)
-    complexRemove(outdatedChanInfos, "Removed possible present outdated nodes and channels")
   }
 }
