@@ -214,7 +214,7 @@ object Router { me =>
   Obs.interval(5.minutes) foreach { _ =>
     // Removing directions also affects the next check since it makes nodes without chans
     val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
-    Tools log s"Removed ${finder.updates.size - updates1.size} outdated updates"
+    Tools log s"Had ${finder.updates.size} updates, ${updates1.size} updates now"
     finder = GraphFinder(updates1)
   }
 }
