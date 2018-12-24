@@ -130,7 +130,7 @@ class Responder { me =>
     case req @ POST -> Root / "router" / "update" =>
       Router.finder mostFrequentChannelUpdate PublicKey(req params "nodekey") match {
         case Some(cu) => Tuple2(oK, channelUpdateCodec.encode(cu).require.toHex).toJson
-        case None => Tuple2(eRROR, "notfounf").toJson
+        case None => Tuple2(eRROR, "notfound").toJson
       }
 
     // TRANSACTIONS AND SHORT ID
