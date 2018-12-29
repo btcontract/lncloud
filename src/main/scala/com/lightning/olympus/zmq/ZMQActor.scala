@@ -49,13 +49,14 @@ class ZMQActor(db: Database) extends Actor {
     override def onNewBlock(block: Block) = {
       // We need to save which txids this one spends from
       // since clients may need this to extract preimages
-      log(s"Recording block #${block.height}...")
+      log(s"Recording block ${block.height}")
 
       for {
         txid <- block.tx.asScala.par
-        binary <- Blockchain getRawTxData txid
-        parents = TransactionWithRaw(binary).tx.txIn.map(_.outPoint.txid.toString)
-      } db.putTx(txids = parents, prefix = txid, hex = binary.toString)
+        raw <- Blockchain getRawTxData txid
+        txIns = TransactionWithRaw(raw).tx.txIn
+        parents = txIns.map(_.outPoint.txid.toString)
+      } db.putSpender(parents, prefix = txid)
     }
   }
 

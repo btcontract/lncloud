@@ -144,9 +144,10 @@ class Responder { me =>
       else Tuple2(oK, fundingTxParentBlock.height -> fundingTxOrderIndex).toJson
 
     case req @ POST -> Root / "txs" / "get" =>
-      // Given a list of commit tx ids, fetch all child txs which spend their outputs
+      // Given a list of parent tx ids, fetch all child txs which spend their outputs
       val txIds = req.params andThen hex2String andThen to[StringVec] apply "txids" take 24
-      Tuple2(oK, db getTxs txIds).toJson
+      val spenderTxs = db.getSpenders(txIds).map(Blockchain.getRawTxData).flatMap(_.toOption)
+      Tuple2(oK, spenderTxs).toJson
 
     case req @ POST -> Root / "txs" / "schedule" => verify(req.params) {
       val txs = req.params andThen hex2String andThen to[StringVec] apply bODY

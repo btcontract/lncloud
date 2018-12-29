@@ -13,9 +13,9 @@ import java.util.Date
 
 
 abstract class Database {
-  // Recording on-chain transactions, clients may need it
-  def putTx(txids: Seq[String], prefix: String, hex: String)
-  def getTxs(txids: StringVec): StringVec
+  // Recording of format [spends from] -> spender
+  def putSpender(txids: Seq[String], prefix: String)
+  def getSpenders(txids: StringVec): StringVec
 
   // Scheduling txs to spend
   def putScheduled(tx: Transaction): Unit
@@ -43,12 +43,16 @@ class MongoDatabase extends Database {
   val olympus: MongoDB = MongoClient("localhost")("btc-olympus")
   final val createdAt = "createdAt"
 
-  def getTxs(txids: StringVec) = olympus("spentTxs").find("txids" $in txids).map(_ as[String] "hex").toVector
-  def getScheduled(depth: Int) = olympus("scheduledTxs").find("cltv" $lt depth).map(_ as[String] "tx").toList
+  def getSpenders(txids: StringVec) =
+    olympus("spentTxs").find("txids" $in txids)
+      .map(_ as[String] "prefix").toVector
 
-  def putTx(txids: Seq[String], prefix: String, hex: String) =
-    olympus("spentTxs").update("prefix" $eq prefix, $set("prefix" -> prefix, "txids" -> txids,
-      "hex" -> hex, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+  def putSpender(txids: Seq[String], prefix: String) = olympus("spentTxs").update("prefix" $eq prefix,
+    $set("prefix" -> prefix, "txids" -> txids, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+
+  def getScheduled(depth: Int) =
+    olympus("scheduledTxs").find("cltv" $lt depth)
+      .map(_ as[String] "tx").toList
 
   def putScheduled(tx: Transaction) =
     olympus("scheduledTxs") insert MongoDBObject("cltv" -> cltvBlocks(tx),
@@ -56,7 +60,7 @@ class MongoDatabase extends Database {
 
   // Storing arbitrary data, typically channel backups
   def putData(key: String, data: String) = olympus("userData") insert MongoDBObject("key" -> key, "data" -> data, createdAt -> new Date)
-  def getData(key: String) = olympus("userData").find("key" $eq key).sort(DBObject(createdAt -> -1) take 8).map(_ as[String] "data").toList
+  def getData(key: String): List[String] = olympus("userData").find("key" $eq key).sort(DBObject(createdAt -> -1) take 8).map(_ as[String] "data").toList
 
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String) = blindSignatures("blindTokens").update("seskey" $eq seskey,
