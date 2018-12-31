@@ -30,11 +30,11 @@ class ZMQActor(db: Database) extends Actor {
 
   val rmSpent = "Removed spent channels"
   val removeSpentChannels = new ZMQListener {
-    override def onNewTx(twr: TransactionWithRaw) = for {
+    override def onNewTx(tx: Transaction) = for {
       // We need to check if any input spends a channel output
       // related payment channels should be removed immediately
 
-      input <- twr.tx.txIn.headOption
+      input <- tx.txIn
       chanInfo <- Router.txId2Info get input.outPoint.txid
       if chanInfo.ca.outputIndex == input.outPoint.index
     } Router.complexRemove(chanInfo :: Nil, rmSpent)
@@ -53,10 +53,10 @@ class ZMQActor(db: Database) extends Actor {
 
       for {
         txid <- block.tx.asScala.par
-        raw <- Blockchain getRawTxData txid
-        txIns = TransactionWithRaw(raw).tx.txIn
-        parents = txIns.map(_.outPoint.txid.toString)
-      } db.putSpender(parents, prefix = txid)
+        rawBin <- Blockchain getRawTxData txid
+        txInputs = Transaction.read(rawBin).txIn
+        parents = txInputs.map(_.outPoint.txid.toString)
+      } db.putSpender(txids = parents, prefix = txid)
     }
   }
 
@@ -66,10 +66,11 @@ class ZMQActor(db: Database) extends Actor {
       // whose parents have at least two confirmations
       // CSV timeout will be rejected by blockchain
 
-      raw <- db getScheduled block.height map BinaryData.apply
-      parents = Transaction.read(raw).txIn.map(_.outPoint.txid.toString)
+      rawStr <- db getScheduled block.height
+      txInputs = Transaction.read(rawStr).txIn
+      parents = txInputs.map(_.outPoint.txid.toString)
       if parents forall Blockchain.isParentDeepEnough
-    } Blockchain.sendRawTx(raw)
+    } Blockchain.sendRawTx(rawStr)
   }
 
   val sendWatched = new ZMQListener {
@@ -80,7 +81,7 @@ class ZMQActor(db: Database) extends Actor {
 
     // Try to publish breaches periodically to not query db on each incoming transaction
     val txidAccumulator: mutable.Set[String] = new ConcurrentSkipListSet[String].asScala
-    Obs.interval(90.seconds).foreach(_ => collectAndPublishPunishments, Tools.errlog)
+    Obs.interval(60.seconds).foreach(_ => collectAndPublishPunishments, Tools.errlog)
 
     def collectAndPublishPunishments = {
       val collectedTxIds = txidAccumulator.toVector
@@ -94,8 +95,8 @@ class ZMQActor(db: Database) extends Actor {
         fullTxidBin <- half2FullMap get halfTxId map BinaryData.apply
         revBitVec <- AES.decZygote(aesz, fullTxidBin) map BitVector.apply
         DecodeResult(ri, _) <- revocationInfoCodec.decode(revBitVec).toOption
-        twr <- Blockchain getRawTxData fullTxidBin.toString map TransactionWithRaw
-        rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, twr.tx)
+        tx <- Blockchain.getRawTxData(fullTxidBin.toString).map(Transaction read _)
+        rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, tx)
       } publishes.put(fullTxidBin, rcp)
 
       for {
@@ -105,8 +106,8 @@ class ZMQActor(db: Database) extends Actor {
       } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
     }
 
-    override def onNewTx(twr: TransactionWithRaw) =
-      txidAccumulator += twr.tx.txid.toString
+    override def onNewTx(tx: Transaction) =
+      txidAccumulator += tx.txid.toString
 
     override def onNewBlock(block: Block) = {
       if (block.height % 1440 == 0) publishes.clear
@@ -150,13 +151,13 @@ class ZMQActor(db: Database) extends Actor {
   }
 
   def gotBlockHash(hash: BinaryData) = {
-    val fullBlock = bitcoin getBlock hash.toString
+    val fullBlock = bitcoin.getBlock(hash.toString)
     listeners.foreach(_ onNewBlock fullBlock)
   }
 
   def gotRawTx(raw: BinaryData) = {
-    val twr = TransactionWithRaw(raw)
-    listeners.foreach(_ onNewTx twr)
+    val transaction = Transaction.read(raw)
+    listeners.foreach(_ onNewTx transaction)
   }
 
   def rescanBlocks = {
@@ -168,12 +169,7 @@ class ZMQActor(db: Database) extends Actor {
   }
 }
 
-case class TransactionWithRaw(raw: BinaryData) {
-  // A wrapper with deserialized tx for performance
-  val tx = Transaction read raw
-}
-
 trait ZMQListener {
   def onNewBlock(block: Block): Unit = none
-  def onNewTx(tx: TransactionWithRaw): Unit = none
+  def onNewTx(tx: Transaction): Unit = none
 }
