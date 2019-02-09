@@ -47,9 +47,8 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "34.239.230.56",
           eclairSockPort = 9735, eclairNodeId = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-          rewindRange = 0, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
+          rewindRange = 0, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 75000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
-
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
@@ -58,9 +57,8 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
-//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -119,10 +117,10 @@ class Responder { me =>
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
-      val query = req.params("query").trim.take(32).toLowerCase
-      // A node may be well connected but not public and thus having no node announcement
-      val announces = if (query.nonEmpty) Router.searchTrie.getValuesForKeysStartingWith(query).asScala
-        else Router.nodeId2Chans.scoredNodeSuggestions take 48 flatMap Router.nodeId2Announce.get
+      val announces = req.params("query").trim.take(32).toLowerCase match {
+        case query if query.nonEmpty => Router.searchTrie.getValuesForKeysStartingWith(query).asScala
+        case _ => Router.nodeId2Chans.scoredNodeSuggestions take 48 flatMap Router.nodeId2Announce.get
+      }
 
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
       val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
