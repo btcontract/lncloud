@@ -32,6 +32,8 @@ libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.1.0"
 // Exchanges
 libraryDependencies += "org.knowm.xchange" % "xchange-mercadobitcoin" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-bitcoinaverage" % "4.3.11"
+libraryDependencies += "org.knowm.xchange" % "xchange-coinbasepro" % "4.3.11"
+libraryDependencies += "org.knowm.xchange" % "xchange-btcmarkets" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-coinmate" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-gatecoin" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-bitfinex" % "4.3.11"
@@ -44,7 +46,6 @@ libraryDependencies += "org.knowm.xchange" % "xchange-kraken" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-okcoin" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-exmo" % "4.3.11"
 libraryDependencies += "org.knowm.xchange" % "xchange-core" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-gdax" % "4.3.11"
 
 val workaround = {
   sys.props += "packaging.type" -> "jar"
