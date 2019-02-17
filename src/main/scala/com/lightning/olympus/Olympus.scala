@@ -118,10 +118,10 @@ class Responder { me =>
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
-      val query = req.params("query").trim.take(32).toLowerCase
-      // A node may be well connected but not public and thus having no node announcement
-      val announces = if (query.nonEmpty) Router.searchTrie.getValuesForKeysStartingWith(query).asScala
-        else Router.nodeId2Chans.scoredNodeSuggestions take 48 flatMap Router.nodeId2Announce.get
+      val announces = req.params("query").trim.take(32).toLowerCase match {
+        case query if query.nonEmpty => Router.searchTrie.getValuesForKeysStartingWith(query).asScala
+        case _ => Router.nodeId2Chans.scoredNodeSuggestions take 48 flatMap Router.nodeId2Announce.get
+      }
 
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
       val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
