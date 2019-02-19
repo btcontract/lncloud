@@ -141,9 +141,13 @@ object Router { me =>
       .delay(20.seconds).foreach(_ => processQueue, Tools.errlog)
 
   def processQueue: Unit = {
+    val left = unprocessedMessages.size
     val nextMessage = unprocessedMessages.poll
-    if (nextMessage != null) processMessage(nextMessage)
-    if (nextMessage != null) processQueue else rescheduleQueue
+    if (nextMessage == null) rescheduleQueue else {
+      if (left % 100 == 0) Tools log s"$left msgs left"
+      processMessage(nextMessage)
+      processQueue
+    }
   }
 
   private def processMessage(message: LightningMessage) = message match {

@@ -33,6 +33,6 @@ object Blockchain {
   val getBlockByHeight: Int => Block = new mutable.HashMap[Int, Block] {
     // Memoize static block data, but clear every 6 hours to avoid memory leak
     override def apply(height: Int) = getOrElseUpdate(height, bitcoin getBlock height)
-    Obs interval 6.hours foreach { _ => clear }
+    Obs interval 1.minute foreach { _ => if (size > 1000) clear }
   }
 }
