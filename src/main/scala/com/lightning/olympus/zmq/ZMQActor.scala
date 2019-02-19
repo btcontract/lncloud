@@ -35,12 +35,14 @@ class ZMQActor(db: Database) extends Actor {
       // related payment channels should be removed immediately
 
       input <- tx.txIn
-      chanInfo <- Router.txId2Info get input.outPoint.txid
+      chanInfo <- Router.txId2Info.get(input.outPoint.txid)
       if chanInfo.ca.outputIndex == input.outPoint.index
     } Router.complexRemove(chanInfo :: Nil, rmSpent)
 
     override def onNewBlock(block: Block) = {
-      val spent = Router.txId2Info.values filter Blockchain.isSpent
+      val blockTxids = block.tx.asScala.map(BinaryData.apply).toSet
+      val blockTxidToChanInfo = Router.txId2Info.filterKeys(blockTxids)
+      val spent = blockTxidToChanInfo.values.filter(Blockchain.isSpent)
       if (spent.nonEmpty) Router.complexRemove(spent, rmSpent)
     }
   }
@@ -49,7 +51,7 @@ class ZMQActor(db: Database) extends Actor {
     override def onNewBlock(block: Block) = {
       // We need to save which txids this one spends from
       // since clients may need this to extract preimages
-      log(s"Recording block ${block.height}")
+      log(s"Recording block ${block.height} to db")
 
       for {
         txid <- block.tx.asScala.par

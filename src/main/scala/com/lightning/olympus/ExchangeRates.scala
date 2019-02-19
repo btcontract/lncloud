@@ -25,7 +25,7 @@ import org.knowm.xchange.quoine.QuoineExchange
 import org.knowm.xchange.exmo.ExmoExchange
 
 
-class AveragePrice(val pair: CurrencyPair, val exchanges: List[String], val code: String) {
+class AveragePrice(val pair: CurrencyPair, exchanges: List[String], val code: String) {
   val history = new ConcurrentHashMap[String, PriceHistory].asScala
   type PriceTry = Try[BigDecimal]
 
