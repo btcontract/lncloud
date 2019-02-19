@@ -28,8 +28,7 @@ class ZMQActor(db: Database) extends Actor {
   // Reads messages in a non-blocking manner with an interval
   // should be restarted from outside in case of disconnect
 
-  val rmSpent = "Removed spent channels"
-  val removeSpentChannels = new ZMQListener {
+  val checkTransactions = new ZMQListener {
     override def onNewTx(tx: Transaction) = for {
       // We need to check if any input spends a channel output
       // related payment channels should be removed immediately
@@ -37,28 +36,21 @@ class ZMQActor(db: Database) extends Actor {
       input <- tx.txIn
       chanInfo <- Router.txId2Info.get(input.outPoint.txid)
       if chanInfo.ca.outputIndex == input.outPoint.index
-    } Router.complexRemove(chanInfo :: Nil, rmSpent)
+      text = s"Removing chan $chanInfo because spent"
+    } Router.complexRemove(chanInfo :: Nil, text)
 
     override def onNewBlock(block: Block) = {
-      val blockTxids = block.tx.asScala.map(BinaryData.apply).toSet
-      val blockTxidToChanInfo = Router.txId2Info.filterKeys(blockTxids)
-      val spent = blockTxidToChanInfo.values.filter(Blockchain.isSpent)
-      if (spent.nonEmpty) Router.complexRemove(spent, rmSpent)
-    }
-  }
-
-  val recordTransactions = new ZMQListener {
-    override def onNewBlock(block: Block) = {
-      // We need to save which txids this one spends from
-      // since clients may need this to extract preimages
+      // We need to save which txids this one spends from since clients may need this to extract preimages
+      // then we need to check if any transaction contained in a block spends any of existing channels
       log(s"Recording block ${block.height} to db")
 
       for {
         txid <- block.tx.asScala.par
-        rawBin <- Blockchain getRawTxData txid
-        txInputs = Transaction.read(rawBin).txIn
-        parents = txInputs.map(_.outPoint.txid.toString)
-      } db.putSpender(txids = parents, prefix = txid)
+        rawBin <- Blockchain.getRawTxData(txid)
+        transaction = Transaction.read(in = rawBin)
+        parents = transaction.txIn.map(_.outPoint.txid.toString)
+        _ = db.putSpender(txids = parents, prefix = txid)
+      } onNewTx(tx = transaction)
     }
   }
 
@@ -119,7 +111,7 @@ class ZMQActor(db: Database) extends Actor {
 
   val ctx = new ZContext
   val subscriber = ctx.createSocket(ZMQ.SUB)
-  val listeners = Set(sendScheduled, sendWatched, removeSpentChannels, recordTransactions)
+  val listeners = Set(sendScheduled, sendWatched, checkTransactions)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.subscribe("hashblock" getBytes ZMQ.CHARSET)
   subscriber.subscribe("rawtx" getBytes ZMQ.CHARSET)

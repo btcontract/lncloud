@@ -11,12 +11,6 @@ import scala.util.Try
 
 
 object Blockchain {
-  def isSpent(chanInfo: ChanInfo) = Try {
-    // Absent output tx means it has been spent already
-    // attempting to get confirmations out of null result will fail here
-    bitcoin.getTxOut(chanInfo.txid, chanInfo.ca.outputIndex).confirmations
-  }.isFailure
-
   def isParentDeepEnough(txid: String) = Try {
     // Wait for parent depth before spending a child
     bitcoin.getRawTransaction(txid).confirmations > 1
