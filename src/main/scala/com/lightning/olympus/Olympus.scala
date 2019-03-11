@@ -45,15 +45,16 @@ object Olympus extends ServerApp {
         val description = "Storage tokens for backup Olympus server at 127.0.0.1"
         val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "34.239.230.56",
-          eclairSockPort = 9735, eclairNodeId = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-          rewindRange = 72, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.83.143",
+          eclairSockPort = 9735, eclairNodeId = "03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d",
+          rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
     }
 
+    TxCache.cacheBlockTxs
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)

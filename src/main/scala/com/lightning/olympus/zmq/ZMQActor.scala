@@ -157,7 +157,7 @@ class ZMQActor(db: Database) extends Actor {
   def rescanBlocks = {
     val currentPoint = bitcoin.getBlockCount
     val pastPoint = currentPoint - values.rewindRange
-    val blocks = pastPoint to currentPoint map Blockchain.getBlockByHeight
+    val blocks = pastPoint to currentPoint map bitcoin.getBlock
     for (block <- blocks) for (lst <- listeners) lst onNewBlock block
     log("Done rescanning blocks")
   }
