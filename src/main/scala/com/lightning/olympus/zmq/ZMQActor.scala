@@ -6,9 +6,8 @@ import com.lightning.walletapp.ln.Tools._
 
 import org.zeromq.{ZContext, ZMQ, ZMsg}
 import rx.lang.scala.{Observable => Obs}
-import com.lightning.olympus.{Blockchain, Router}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
-import com.lightning.olympus.Utils.{bitcoin, values}
+import com.lightning.olympus.Utils.{bitcoin, blockchain, values}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs.revocationInfoCodec
 import wf.bitcoin.javabitcoindrpcclient.BitcoindRpcClient.Block
@@ -17,6 +16,7 @@ import com.lightning.olympus.database.Database
 import scala.concurrent.duration.DurationInt
 import com.lightning.walletapp.ln.Helpers
 import com.lightning.walletapp.helper.AES
+import com.lightning.olympus.Router
 import scala.collection.mutable
 import scodec.bits.BitVector
 import org.zeromq.ZMQ.Event
@@ -46,7 +46,7 @@ class ZMQActor(db: Database) extends Actor {
 
       for {
         txid <- block.tx.asScala.par
-        rawBin <- Blockchain.getRawTxData(txid)
+        rawBin <- blockchain.getRawTxData(txid)
         transaction = Transaction.read(in = rawBin)
         parents = transaction.txIn.map(_.outPoint.txid.toString)
         _ = db.putSpender(txids = parents, prefix = txid)
@@ -63,8 +63,8 @@ class ZMQActor(db: Database) extends Actor {
       rawStr <- db getScheduled block.height
       txInputs = Transaction.read(rawStr).txIn
       parents = txInputs.map(_.outPoint.txid.toString)
-      if parents forall Blockchain.isParentDeepEnough
-    } Blockchain.sendRawTx(rawStr)
+      if parents forall blockchain.isParentDeepEnough
+    } blockchain.sendRawTx(rawStr)
   }
 
   val sendWatched = new ZMQListener {
@@ -89,7 +89,7 @@ class ZMQActor(db: Database) extends Actor {
         fullTxidBin <- half2FullMap get halfTxId map BinaryData.apply
         revBitVec <- AES.decZygote(aesz, fullTxidBin) map BitVector.apply
         DecodeResult(ri, _) <- revocationInfoCodec.decode(revBitVec).toOption
-        tx <- Blockchain.getRawTxData(fullTxidBin.toString).map(Transaction read _)
+        tx <- blockchain.getRawTxData(fullTxidBin.toString).map(Transaction read _)
         rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, tx)
       } publishes.put(fullTxidBin, rcp)
 
@@ -97,7 +97,7 @@ class ZMQActor(db: Database) extends Actor {
         txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
         _ = log(s"Re-broadcasting a punishment transactions for breached channel funding $txId")
         transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
-      } Blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
+      } blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
     }
 
     override def onNewTx(tx: Transaction) =

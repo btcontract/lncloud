@@ -10,10 +10,11 @@ import com.lightning.olympus.Utils._
 
 import scala.util.{Success, Try}
 import rx.lang.scala.{Observable => Obs}
-import java.util.concurrent.ConcurrentLinkedQueue
 import com.googlecode.concurrenttrees.radix.ConcurrentRadixTree
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.DirectedWeightedPseudograph
+import java.util.concurrent.ConcurrentLinkedQueue
+import com.lightning.olympus.Utils.blockchain
 import scala.concurrent.duration.DurationInt
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -21,6 +22,10 @@ import fr.acinq.bitcoin.BinaryData
 import scala.util.Random.shuffle
 import scala.collection.mutable
 
+
+case class TxidAndSats(txid: String, sats: Long) {
+  def toChanInfo(ca: ChannelAnnouncement) = ChanInfo(txid, sats, ca)
+}
 
 case class ChanInfo(txid: String, capacity: Long, ca: ChannelAnnouncement)
 case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey, weight: Long) {
@@ -154,8 +159,8 @@ object Router { me =>
     // First channel announcements, then node announcements, then node updates
 
     case channelAnnounce: ChannelAnnouncement =>
-      Blockchain getChanInfo channelAnnounce foreach {
-        case small if small.capacity < values.minCapacity =>
+      blockchain getChanInfo channelAnnounce foreach {
+        case tiny if tiny.capacity < values.minCapacity =>
           Tools log "Ignoring chan with low capacity"
 
         case chanInfo =>

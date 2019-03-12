@@ -2,11 +2,11 @@ package com.lightning.olympus.database
 
 import com.mongodb.casbah.Imports._
 import fr.acinq.bitcoin.{BinaryData, Transaction}
+import com.lightning.olympus.{BlindData, ChanInfo, TxidAndSats}
 import com.lightning.walletapp.ln.Scripts.cltvBlocks
 import com.lightning.walletapp.ln.wire.AESZygote
 import com.lightning.walletapp.ln.Tools.Bytes
 import com.lightning.olympus.Utils.StringVec
-import com.lightning.olympus.BlindData
 import language.implicitConversions
 import java.math.BigInteger
 import java.util.Date
@@ -30,6 +30,10 @@ abstract class Database {
   // Storing arbitrary data in database
   def putData(key: String, data: String)
   def getData(key: String): List[String]
+
+  // Chan information
+  def getChanInfo(shortChanId: Long): Option[TxidAndSats]
+  def addChanInfo(info: ChanInfo): Unit
 
   // Registering revoked transactions to be watched
   def putWatched(params: AESZygote, halfTxId: String): Unit
@@ -61,6 +65,15 @@ class MongoDatabase extends Database {
   // Storing arbitrary data, typically channel backups
   def putData(key: String, data: String) = olympus("userData") insert MongoDBObject("key" -> key, "data" -> data, createdAt -> new Date)
   def getData(key: String): List[String] = olympus("userData").find("key" $eq key).sort(DBObject(createdAt -> -1) take 8).map(_ as[String] "data").toList
+
+  // Chan information
+  def getChanInfo(shortChanId: Long) = for {
+    result <- olympus("chanInfo").findOne("shortChanId" $eq shortChanId)
+  } yield TxidAndSats(result as[String] "txid", result as[Long] "capacity")
+
+  def addChanInfo(info: ChanInfo) = olympus("chanInfo").update("shortChanId" $eq info.ca.shortChannelId,
+    $set("txid" -> info.txid, "capacity" -> info.capacity, "shortChanId" -> info.ca.shortChannelId,
+      createdAt -> new Date), upsert = true, multi = false, WriteConcern.Unacknowledged)
 
   // Blind tokens management, k is sesPrivKey
   def putPendingTokens(data: BlindData, seskey: String) = blindSignatures("blindTokens").update("seskey" $eq seskey,

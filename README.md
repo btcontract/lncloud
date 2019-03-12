@@ -44,8 +44,11 @@ $ mongo
 > db.scheduledTxs.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 30 } )
 > db.scheduledTxs.createIndex( { "cltv": 1 } )
 
-> db.userData.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 5 } )
+> db.userData.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 * 4 } )
 > db.userData.createIndex( { "key": 1 } )
+
+> db.chanInfo.createIndex( { "shortChanId": 1 } )
+> db.chanInfo.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 } )
 
 > use btc-blindSignatures
 > db.blindTokens.createIndex( { "createdAt": 1 }, { expireAfterSeconds: 3600 * 24 * 365 } )

@@ -14,7 +14,6 @@ import org.http4s.{HttpService, Response}
 import rx.lang.scala.{Observable => Obs}
 import akka.actor.{ActorSystem, Props}
 
-import com.lightning.olympus.database.MongoDatabase
 import com.lightning.walletapp.lnutils.InRoutesPlus
 import javax.crypto.Cipher.getMaxAllowedKeyLength
 import org.http4s.server.middleware.UrlFormLifter
@@ -47,14 +46,13 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.83.143",
           eclairSockPort = 9735, eclairNodeId = "03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d",
-          rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 50000L,
+          rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 200000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
       case List("production", rawVals) =>
         values = to[Vals](rawVals)
     }
 
-    TxCache.cacheBlockTxs
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
@@ -72,7 +70,6 @@ class Responder { me =>
   private val exchangeRates = new ExchangeRates
   private val blindTokens = new BlindTokens
   private val feeRates = new FeeRates
-  private val db = new MongoDatabase
 
   val system = ActorSystem("zmq-system")
   // Start watching Bitcoin blocks and transactions via ZMQ interface
@@ -146,7 +143,7 @@ class Responder { me =>
     case req @ POST -> Root / "txs" / "get" =>
       // Given a list of parent tx ids, fetch all child txs which spend their outputs
       val txIds = req.params andThen hex2String andThen to[StringVec] apply "txids" take 24
-      val spenderTxs = db.getSpenders(txIds).map(Blockchain.getRawTxData).flatMap(_.toOption)
+      val spenderTxs = db.getSpenders(txIds).map(blockchain.getRawTxData).flatMap(_.toOption)
       Tuple2(oK, spenderTxs).toJson
 
     case req @ POST -> Root / "txs" / "schedule" => verify(req.params) {
