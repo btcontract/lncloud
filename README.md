@@ -21,9 +21,9 @@ rpcpassword=bar # set your own
 
 rpcport=18332
 port=8333
+txindex=1
 
-txindex=1 # recommended but not necessary
-# prune=100000 not recommended but won't break anything if turned on, useful if you have less than 200Gb of disk space
+addresstype=bech32
 
 zmqpubrawtx=tcp://127.0.0.1:29000
 zmqpubhashblock=tcp://127.0.0.1:29000
