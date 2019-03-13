@@ -124,12 +124,6 @@ class Responder { me =>
       val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
       Tuple2(oK, encoded zip sizes).toJson
 
-    case req @ POST -> Root / "router" / "update" =>
-      Router.finder mostFrequentChannelUpdate PublicKey(req params "nodekey") match {
-        case Some(cu) => Tuple2(oK, channelUpdateCodec.encode(cu).require.toHex).toJson
-        case None => Tuple2(eRROR, "notfound").toJson
-      }
-
     // TRANSACTIONS AND SHORT ID
 
     case req @ POST -> Root / "shortid" / "get" =>

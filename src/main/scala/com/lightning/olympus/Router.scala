@@ -98,10 +98,6 @@ object Router { me =>
     // This works because every map update also replaces a GraphFinder object
     lazy val mixed = shuffle(updates.keys)
 
-    // Given a node pubkey, find its most frequent ChannelUpdate paramters
-    def mostFrequentChannelUpdate(nodeId: PublicKey) = updates.filterKeys(_.from == nodeId)
-      .values.groupBy(chanUpdateIdentity).values.toList.sortBy(_.size).headOption.map(_.head)
-
     def findPaths(xn: Set[PublicKey], xc: ShortChannelIdSet, from: Set[PublicKey], to: PublicKey, sat: Long) = {
       // Filter out chans with insufficient capacity, nodes and chans excluded by user, not useful nodes and chans
       // We can't use rmRandomEdge if destination node has only one channel since it can possibly be removed
