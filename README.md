@@ -111,11 +111,11 @@ assembly
 10. Run Olympus instance by issuing:
 ```
 $ java -jar olympus-assembly-1.0.jar production "{
-\"zmqApi\":\"tcp://127.0.0.1:19000\", // Bitcoin ZeroMQ endpoint
+\"zmqApi\":\"tcp://127.0.0.1:29000\", // Bitcoin ZeroMQ endpoint
 \"ip\":\"192.3.114.77\", // Olympus API will be accessible at this address...
 \"port\":9203, // ...and this port
 \"privKey\":\"17237641984433455757821928886025053286790003625266087739786982589470995742521\", // To blind-sign storage tokens
-\"btcApi\":\"http://foo:bar@127.0.0.1:19332\", // Bitcoin Json-RPC endpoint
+\"btcApi\":\"http://foo:bar@127.0.0.1:18332\", // Bitcoin Json-RPC endpoint
 \"eclairSockPort\":9935, // Eclair port
 \"rewindRange\":14, // How many blocks to inspect on restart if Olympus was offline for some time, important for watchtower
 \"eclairSockIp\":\"192.3.114.77\", // Eclair address
