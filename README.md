@@ -110,7 +110,21 @@ assembly
 
 10. Run Olympus instance by issuing:
 ```
-$ java -jar olympus-assembly-1.0.jar production "{\"zmqApi\":\"tcp://127.0.0.1:29000\",\"ip\":\"127.0.0.1\",\"privKey\":\"17237641984433455757821928886025053286790003625266087739786982589470995742521\",\"btcApi\":\"http://foo:bar@127.0.0.1:18332\",\"eclairSockPort\":9735,\"rewindRange\":1,\"eclairSockIp\":\"127.0.0.1\",\"eclairNodeId\":\"03dc39d7f43720c2c0f86778dfd2a77049fa4a44b4f0a8afb62f3921567de41375\",\"paymentProvider\":{\"quantity\":50,\"priceMsat\":2000000,\"url\":\"http://127.0.0.1:8080\",\"description\":\"Storage tokens for backup Olympus server at 127.0.0.1\",\"tag\":\"EclairProvider\",\"pass\":\"pass\"}}"
+$ java -jar olympus-assembly-1.0.jar production "{
+\"zmqApi\":\"tcp://127.0.0.1:19000\", // Bitcoin ZeroMQ endpoint
+\"ip\":\"192.3.114.77\", // Olympus API will be accessible at this address...
+\"port\":9203, // ...and this port
+\"privKey\":\"17237641984433455757821928886025053286790003625266087739786982589470995742521\", // To blind-sign storage tokens
+\"btcApi\":\"http://foo:bar@127.0.0.1:19332\", // Bitcoin Json-RPC endpoint
+\"eclairSockPort\":9935, // Eclair port
+\"rewindRange\":14, // How many blocks to inspect on restart if Olympus was offline for some time, important for watchtower
+\"eclairSockIp\":\"192.3.114.77\", // Eclair address
+\"eclairNodeId\":\"02330d13587b67a85c0a36ea001c4dba14bcd48dda8988f7303275b040bffb6abd\",
+\"paymentProvider\":{\"quantity\":50,\"priceMsat\":5000000,\"url\":\"http://192.3.114.77:8089\",\"description\":\"50 storage tokens for backup Olympus server at a.lightning-wallet.com\",\"tag\":\"EclairProvider\",\"pass\":\"password\"},
+\"sslFile\":\"keystore.jks\",
+\"sslPass\":\"pass123\",
+\"minCapacity\":10000 // Channels below this value will be excluded from graph due to low chance of routing success
+}"
 ```
 
 Note: Olympus config is provided as a command line argument instead of a file because it contains private keys (the one for storage tokens and for Strike). Don't forget to use space before issuing a command (i.e. `$ java -jar ...`, NOT `$java - jar ...`) so it does not get recorded in history.
