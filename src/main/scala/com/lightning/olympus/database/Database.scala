@@ -14,7 +14,7 @@ import java.util.Date
 
 abstract class Database {
   // Recording of format [spends from] -> spender
-  def putSpender(txids: Seq[String], prefix: String)
+  def putSpender(txids: Seq[String], prefix: String): Unit
   def getSpenders(txids: StringVec): StringVec
 
   // Scheduling txs to spend
@@ -23,12 +23,12 @@ abstract class Database {
 
   // Clear tokens storage and cheking
   def getPendingTokens(seskey: String): Option[BlindData]
-  def putPendingTokens(data: BlindData, seskey: String)
+  def putPendingTokens(data: BlindData, seskey: String): Unit
   def isClearTokenUsed(clearToken: String): Boolean
-  def putClearToken(clearToken: String)
+  def putClearToken(clearToken: String): Unit
 
   // Storing arbitrary data in database
-  def putData(key: String, data: String)
+  def putData(key: String, data: String): Unit
   def getData(key: String): List[String]
 
   // Chan information
@@ -91,15 +91,14 @@ class MongoDatabase extends Database {
   def isClearTokenUsed(ct: String) = blindSignatures("clearTokens" + ct.head).findOne("token" $eq ct).isDefined
 
   // Store and retrieve watched revoked transactions
-  def putWatched(aesz: AESZygote, halfTxId: String) = watchedTxs("watchedTxs").update("halfTxId" $eq halfTxId,
-    $set("v" -> aesz.v, "iv" -> aesz.iv.toArray, "ciphertext" -> aesz.ciphertext.toArray, "halfTxId" -> halfTxId,
-      createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
+  def putWatched(aesz: AESZygote, halfTxId: String) =
+    watchedTxs("watchedTxs" + halfTxId.head).update("halfTxId" $eq halfTxId,
+      $set("v" -> aesz.v, "iv" -> aesz.iv.toArray, "ciphertext" -> aesz.ciphertext.toArray,
+        "halfTxId" -> halfTxId, createdAt -> new Date), upsert = true, multi = false, WriteConcern.Safe)
 
-  def getWatchedSequence(halfTxIds: StringVec) = for {
-    res <- watchedTxs("watchedTxs").find("halfTxId" $in halfTxIds)
-    easz = AESZygote(res as[Int] "v", res as[Bytes] "iv", res as[Bytes] "ciphertext")
-  } yield obj2String(res get "halfTxId") -> easz
-
-  def getWatched(halfTxids: StringVec) =
-    getWatchedSequence(halfTxids).toMap
+  def getWatched(halfTxids: StringVec) = for {
+    Tuple2(headPrefix, txidsHex) <- halfTxids.groupBy(_ take 1)
+    record <- watchedTxs("watchedTxs" + headPrefix).find("halfTxId" $in txidsHex)
+    easz = AESZygote(record as[Int] "v", record as[Bytes] "iv", record as[Bytes] "ciphertext")
+  } yield obj2String(record get "halfTxId") -> easz
 }

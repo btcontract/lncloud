@@ -60,7 +60,7 @@ class ZMQActor(db: Database) extends Actor {
       // whose parents have at least two confirmations
       // CSV timeout will be rejected by blockchain
 
-      rawStr <- db getScheduled block.height
+      rawStr <- db.getScheduled(block.height)
       txInputs = Transaction.read(rawStr).txIn
       parents = txInputs.map(_.outPoint.txid.toString)
       if parents forall blockchain.isParentDeepEnough
@@ -75,7 +75,7 @@ class ZMQActor(db: Database) extends Actor {
 
     // Try to publish breaches periodically to not query db on each incoming transaction
     val txidAccumulator: mutable.Set[String] = new ConcurrentSkipListSet[String].asScala
-    Obs.interval(60.seconds).foreach(_ => collectAndPublishPunishments, Tools.errlog)
+    Obs.interval(120.seconds).foreach(_ => collectAndPublishPunishments, Tools.errlog)
 
     def collectAndPublishPunishments = {
       val collectedTxIds = txidAccumulator.toVector
@@ -132,10 +132,6 @@ class ZMQActor(db: Database) extends Actor {
     else context.system.scheduler.scheduleOnce(1.second)(checkMsg)
   }
 
-  rescanBlocks
-  checkEvent
-  checkMsg
-
   def receive: Receive = {
     case msg: ZMsg => msg.popString match {
       case "hashblock" => gotBlockHash(msg.pop.getData)
@@ -161,6 +157,10 @@ class ZMQActor(db: Database) extends Actor {
     for (block <- blocks) for (lst <- listeners) lst onNewBlock block
     log("Done rescanning blocks")
   }
+
+  rescanBlocks
+  checkEvent
+  checkMsg
 }
 
 trait ZMQListener {

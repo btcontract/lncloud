@@ -1,10 +1,9 @@
 package com.lightning.walletapp.helper
 
+import com.lightning.walletapp.ln.Tools.{Bytes, random}
 import javax.crypto.spec.{IvParameterSpec, SecretKeySpec}
-import com.lightning.walletapp.ln.Tools.{Bytes, bin2readable, random}
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs.aesZygoteCodec
 import com.lightning.walletapp.ln.wire.AESZygote
-import org.bitcoinj.core.Utils.HEX
 import scodec.bits.BitVector
 import javax.crypto.Cipher
 import scala.util.Try
@@ -22,15 +21,12 @@ object AES {
   def dec(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.DECRYPT_MODE) doFinal data
   def enc(data: Bytes, key: Bytes, initVector: Bytes) = cipher(key, initVector, Cipher.ENCRYPT_MODE) doFinal data
 
-  // Used for Object -> Json -> Encrypted -> Zygote -> Hex
+  // Used for Object -> Json -> Encrypted -> Zygote -> BitVector
 
-  def encReadable2Hex(plain: String, key: Bytes) = {
+  def encReadable(plain: String, key: Bytes) = {
     val zygote = encBytes(plain getBytes "UTF-8", key)
-    aesZygoteCodec.encode(zygote).require.toHex
+    aesZygoteCodec.encode(zygote).require
   }
-
-  def decHex2Readable(raw: String, key: Bytes) =
-    decBytes(HEX decode raw, key) map bin2readable
 
   // Used for Object -> Scodec -> Encrypted -> Zygote
 

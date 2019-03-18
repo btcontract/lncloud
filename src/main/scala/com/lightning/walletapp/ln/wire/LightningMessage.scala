@@ -1,15 +1,15 @@
 package com.lightning.walletapp.ln.wire
 
+import com.lightning.walletapp.ln.Tools._
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
-import com.lightning.walletapp.lnutils.olympus.OlympusWrap.StringVec
-import com.lightning.walletapp.ln.LightningException
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.eclair.UInt64
 
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
-import java.net.{Inet4Address, Inet6Address, InetSocketAddress}
-import com.lightning.walletapp.ln.Tools.{bin2readable, fromShortId}
+import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+import com.lightning.walletapp.ln.{Features, HasCommitments, LightningException}
+import com.lightning.walletapp.lnutils.olympus.OlympusWrap.StringVec
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.UInt64
 
 
 trait LightningMessage
@@ -22,11 +22,16 @@ case class Pong(data: BinaryData) extends LightningMessage
 
 // CHANNEL SETUP MESSAGES: open channels never get these
 
+case class ChannelFlags(flags: Byte) {
+  def isPublic = Features.isBitSet(0, flags)
+  def isZeroConfSpendablePush = Features.isBitSet(3, flags)
+}
+
 case class OpenChannel(chainHash: BinaryData, temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long,
                        dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64, channelReserveSatoshis: Long, htlcMinimumMsat: Long,
                        feeratePerKw: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int, fundingPubkey: PublicKey, revocationBasepoint: Point,
                        paymentBasepoint: Point, delayedPaymentBasepoint: Point, htlcBasepoint: Point, firstPerCommitmentPoint: Point,
-                       channelFlags: Byte) extends ChannelSetupMessage
+                       channelFlags: ChannelFlags) extends ChannelSetupMessage
 
 case class AcceptChannel(temporaryChannelId: BinaryData, dustLimitSatoshis: Long, maxHtlcValueInFlightMsat: UInt64,
                          channelReserveSatoshis: Long, htlcMinimumMsat: Long, minimumDepth: Long, toSelfDelay: Int, maxAcceptedHtlcs: Int,
@@ -53,7 +58,7 @@ case class UpdateAddHtlc(channelId: BinaryData, id: Long,
                          onionRoutingPacket: BinaryData) extends ChannelMessage {
 
   lazy val hash160 = Crypto ripemd160 paymentHash
-  val amount = MilliSatoshi(amountMsat)
+  lazy val amount = MilliSatoshi(amountMsat)
 }
 
 case class UpdateFailHtlc(channelId: BinaryData, id: Long, reason: BinaryData) extends ChannelMessage
@@ -103,50 +108,56 @@ case class ChannelUpdate(signature: BinaryData, chainHash: BinaryData, shortChan
   lazy val feeEstimate = feeBaseMsat + feeProportionalMillionths * 10
 }
 
-case class Hop(nodeId: PublicKey, shortChannelId: Long,
-               cltvExpiryDelta: Int, htlcMinimumMsat: Long,
-               feeBaseMsat: Long, feeProportionalMillionths: Long) {
+case class Hop(nodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,
+               htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long) {
 
-  def humanDetails = s"Node ID: $nodeId, Channel ID: $shortChannelId, Expiry: $cltvExpiryDelta blocks, " +
-    f"Routing fees: ${feeProportionalMillionths / 10000D}%2f%% of payment sum + baseline $feeBaseMsat msat"
+  lazy val feeBreakdown = f"${feeProportionalMillionths / 10000D}%2f%% of payment sum + baseline $feeBaseMsat msat"
+  lazy val humanDetails = s"Node ID: $nodeId, Channel ID: $shortChannelId, Expiry: $cltvExpiryDelta blocks, Routing fees: $feeBreakdown"
 }
 
 // NODE ADDRESS HANDLING
 
-case class NodeAnnouncement(signature: BinaryData,
-                            features: BinaryData, timestamp: Long,
-                            nodeId: PublicKey, rgbColor: RGB, alias: String,
-                            addresses: NodeAddressList) extends RoutingMessage {
+case class NodeAnnouncement(signature: BinaryData, features: BinaryData, timestamp: Long, nodeId: PublicKey,
+                            rgbColor: RGB, alias: String, addresses: NodeAddressList) extends RoutingMessage {
 
-  lazy val identifier = (alias + nodeId.toString).toLowerCase
-  lazy val workingAddress: InetSocketAddress = addresses.collect {
-    case IPv4(sockAddress, port) => new InetSocketAddress(sockAddress, port)
-    case IPv6(sockAddress, port) => new InetSocketAddress(sockAddress, port)
-  }.head
+  val pretty = addresses collectFirst {
+    case _: IPv4 | _: IPv6 => nodeId.toString take 15 grouped 3 mkString "\u0020"
+    case _: Tor2 => s"<strong>Tor</strong>\u0020${nodeId.toString take 12 grouped 3 mkString "\u0020"}"
+    case _: Tor3 => s"<strong>Tor</strong>\u0020${nodeId.toString take 12 grouped 3 mkString "\u0020"}"
+  } getOrElse "No IP address"
 
-  override def toString = {
-    val cute = nodeId.toString take 15 grouped 3 mkString "\u0020"
-    s"<strong>${alias take 16}</strong><br><small>$cute</small>"
-  }
+  val identifier = (alias + nodeId.toString).toLowerCase
+  val asString = s"<strong>${alias take 16}</strong><br><small>$pretty</small>"
 }
 
-sealed trait NodeAddress
-case object Padding extends NodeAddress
-case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress
-case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress
-case class Tor2(tor2: BinaryData, port: Int) extends NodeAddress
-case class Tor3(tor3: BinaryData, port: Int) extends NodeAddress
+sealed trait NodeAddress { def canBeUpdatedIfOffline: Boolean }
+case object Padding extends NodeAddress { def canBeUpdatedIfOffline = false }
+case class IPv4(ipv4: Inet4Address, port: Int) extends NodeAddress { def canBeUpdatedIfOffline = true }
+case class IPv6(ipv6: Inet6Address, port: Int) extends NodeAddress { def canBeUpdatedIfOffline = true }
+case class Tor2(tor2: String, port: Int) extends NodeAddress { def canBeUpdatedIfOffline = false }
+case class Tor3(tor3: String, port: Int) extends NodeAddress { def canBeUpdatedIfOffline = false }
 
 case object NodeAddress {
-  def apply(isa: InetSocketAddress) = isa.getAddress match {
-    case inet4Address: Inet4Address => IPv4(inet4Address, isa.getPort)
-    case inet6Address: Inet6Address => IPv6(inet6Address, isa.getPort)
-    case otherwise => throw new LightningException(otherwise.toString)
+  val onionSuffix = ".onion"
+  val V2Len = 16
+  val V3Len = 56
+
+  def onion2Isa(encodedHost: String, port: Int) = encodedHost match {
+    case address if address.length == V2Len => new InetSocketAddress(s"$address$onionSuffix", port)
+    case address if address.length == V3Len => new InetSocketAddress(s"$address$onionSuffix", port)
+    case unknownAddress => throw new RuntimeException(s"Invalid Tor address $unknownAddress")
   }
+
+  def fromParts(host: String, port: Int) =
+    if (host.endsWith(onionSuffix) && host.length == V2Len + onionSuffix.length) Tor2(host dropRight onionSuffix.length, port)
+    else if (host.endsWith(onionSuffix) && host.length == V3Len + onionSuffix.length) Tor3(host dropRight onionSuffix.length, port)
+    else InetAddress getByName host match {
+      case ip4Addr: Inet4Address => IPv4(ip4Addr, port)
+      case ip6Addr: Inet6Address => IPv6(ip6Addr, port)
+    }
 }
 
 // Not in a spec
-case class OutRequest(sat: Long, badNodes: Set[String], badChans: Set[Long], from: Set[String], to: String)
 case class WalletZygote(v: Int, db: BinaryData, wallet: BinaryData, chain: BinaryData)
 case class CerberusPayload(payloads: Vector[AESZygote], halfTxIds: StringVec)
 case class AESZygote(v: Int, iv: BinaryData, ciphertext: BinaryData)

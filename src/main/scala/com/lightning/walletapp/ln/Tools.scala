@@ -14,7 +14,6 @@ object \ {
 }
 
 object Tools {
-  type UserId = String
   type Bytes = Array[Byte]
   val random = new RandomGenerator
   def runAnd[T](result: T)(action: Any): T = result
@@ -24,6 +23,11 @@ object Tools {
   def randomPrivKey = PrivateKey(random getBytes 32, compressed = true)
   def wrap(run: => Unit)(go: => Unit) = try go catch none finally run
   def none: PartialFunction[Any, Unit] = { case _ => }
+
+  def toMap[T, K, V](source: Seq[T], keyFun: T => K, valFun: T => V): Map[K, V] = {
+    val premap = for (mapElement <- source) yield keyFun(mapElement) -> valFun(mapElement)
+    premap.toMap
+  }
 
   def fromShortId(id: Long) = {
     val blockHeight = id.>>(40).&(0xFFFFFF).toInt
@@ -46,12 +50,15 @@ object Features {
   val OPTION_DATA_LOSS_PROTECT_MANDATORY = 0
   val OPTION_DATA_LOSS_PROTECT_OPTIONAL = 1
 
-  implicit def binData2BitSet(data: BinaryData): util.BitSet = util.BitSet valueOf data.reverse.toArray
-  def areSupported(bitset: util.BitSet) = !(0 until bitset.length by 2 exists bitset.get)
+  implicit def binData2BitSet(featuresBinaryData: BinaryData): util.BitSet = util.BitSet.valueOf(featuresBinaryData.reverse.toArray)
+  def dataLossProtect(bitset: util.BitSet) = bitset.get(OPTION_DATA_LOSS_PROTECT_OPTIONAL) || bitset.get(OPTION_DATA_LOSS_PROTECT_MANDATORY)
+  def isBitSet(position: Int, bitField: Byte): Boolean = bitField.&(1 << position) == (1 << position)
 
-  def dataLossProtect(bitset: util.BitSet) =
-    bitset.get(OPTION_DATA_LOSS_PROTECT_OPTIONAL) ||
-      bitset.get(OPTION_DATA_LOSS_PROTECT_MANDATORY)
+  def areSupported(bitset: util.BitSet): Boolean = {
+    val mandatoryFeatures: Set[Int] = Set(OPTION_DATA_LOSS_PROTECT_MANDATORY)
+    def mandatoryUnsupported(n: Int) = bitset.get(n) && !mandatoryFeatures.contains(n)
+    !(0 until bitset.length by 2 exists mandatoryUnsupported)
+  }
 }
 
 class LightningException(reason: String = "Failure") extends RuntimeException(reason)

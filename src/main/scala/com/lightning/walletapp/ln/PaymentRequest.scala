@@ -53,7 +53,7 @@ object FallbackAddressTag { me =>
   }
 
   def fromBech32Address(address: String): FallbackAddressTag = {
-    val Tuple3(_, version, hash) = Bech32 decodeWitnessAddress address
+    val (_, version, hash) = Bech32 decodeWitnessAddress address
     FallbackAddressTag(version, hash)
   }
 }
@@ -103,7 +103,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val unsafeMsat = amount.get.amount
   lazy val adjustedMinFinalCltvExpiry = minFinalCltvExpiry.getOrElse(0L) + 10L
   lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta }
-  lazy val paymentHash = tags.collectFirst { case p: PaymentHashTag => p.hash }.get
+  lazy val paymentHash = tags.collectFirst { case payHash: PaymentHashTag => payHash.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
 
   lazy val fallbackAddress = tags.collectFirst {
@@ -148,6 +148,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 object PaymentRequest {
   type Int5Seq = Seq[Int5]
   type AmountOption = Option[MilliSatoshi]
+  val expiryTag = ExpiryTag(3600 * 48)
 
   val prefixes =
     Map(Block.RegtestGenesisBlock.hash -> "lnbcrt",
@@ -155,14 +156,12 @@ object PaymentRequest {
       Block.LivenetGenesisBlock.hash -> "lnbc")
 
   def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
-            privateKey: PrivateKey, description: String, fallbackAddress: Option[String],
+            privKey: PrivateKey, description: String, fallbackAddress: Option[String],
             routes: PaymentRouteVec): PaymentRequest = {
 
-    val paymentHashTag = PaymentHashTag(paymentHash)
-    val fallbackTag = fallbackAddress.map(FallbackAddressTag.apply).toVector
-    val tags = routes.map(RoutingInfoTag.apply) ++ fallbackTag ++ Vector(DescriptionTag(description), ExpiryTag(3600 * 48), paymentHashTag)
-    val pr = PaymentRequest(prefixes(chain), amount, System.currentTimeMillis / 1000L, privateKey.publicKey, tags, BinaryData.empty)
-    pr sign privateKey
+    val baseTags = Vector(DescriptionTag(description), MinFinalCltvExpiryTag(72), PaymentHashTag(paymentHash), expiryTag)
+    val completeTags = routes.map(RoutingInfoTag.apply) ++ fallbackAddress.map(FallbackAddressTag.apply).toVector ++ baseTags
+    PaymentRequest(prefixes(chain), amount, System.currentTimeMillis / 1000L, privKey.publicKey, completeTags, BinaryData.empty) sign privKey
   }
 
   object Amount {
@@ -195,7 +194,7 @@ object PaymentRequest {
   object Timestamp {
     def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
     def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
-      else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
+    else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {
@@ -310,7 +309,7 @@ object PaymentRequest {
         loop(data drop len, tags1)
       }
 
-    val Tuple2(hrp, data) = Bech32 decode input
+    val (hrp, data) = Bech32 decode input
     val stream = data.foldLeft(BitStream.empty)(write5)
     require(stream.bitCount >= 65 * 8, "Data is too short")
 

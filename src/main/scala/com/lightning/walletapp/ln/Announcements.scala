@@ -57,7 +57,7 @@ object Announcements { me =>
 
   def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int,
                         htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long,
-                        enable: Boolean = true, timestamp: Long = System.currentTimeMillis / 1000): ChannelUpdate = {
+                        enable: Boolean = true, timestamp: Long = System.currentTimeMillis / 1000) = {
 
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
     val messageFlags = makeMessageFlags(hasOptionChannelHtlcMax = true)

@@ -44,8 +44,8 @@ object Olympus extends ServerApp {
         val description = "Storage tokens for backup Olympus server at 127.0.0.1"
         val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.83.143",
-          eclairSockPort = 9735, eclairNodeId = "03144fcc73cea41a002b2865f98190ab90e4ff58a2ce24d3870f5079081e42922d",
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
+          eclairSockPort = 9735, eclairNodeId = "0351e197ce9dda4cf37a228a7d5f7b3ab0f9e386ae833412fd2da5528fbc2bd037",
           rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 200000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
@@ -56,8 +56,9 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
+    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
@@ -195,14 +196,13 @@ class Responder { me =>
 
 object LNConnector {
   def connect = ConnectionManager.connectTo(announce, notify = true)
-  val inetSockAddress = new InetSocketAddress(InetAddress getByName values.eclairSockIp, values.eclairSockPort)
-  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing", NodeAddress(inetSockAddress) :: Nil)
+  val nodeAddress = NodeAddress.fromParts(values.eclairSockIp, values.eclairSockPort)
+  val announce = NodeAnnouncement(null, null, 0, values.eclairNodePubKey, null, "Routing", nodeAddress :: Nil)
 
   ConnectionManager.listeners += new ConnectionListener {
-    override def onIncompatible(nodeId: PublicKey) = onTerminalError(nodeId)
-    override def onOperational(nodeId: PublicKey) = Tools log "Eclair socket is operational"
     override def onMessage(nodeId: PublicKey, msg: LightningMessage) = Router.unprocessedMessages offer msg
     override def onTerminalError(nodeId: PublicKey) = ConnectionManager.connections.get(nodeId).foreach(_.socket.close)
+    override def onOperational(nodeId: PublicKey, isCompat: Boolean) = Tools log s"Eclair socket is operational, is compat: $isCompat"
     override def onDisconnect(nodeId: PublicKey) = Obs.just(Tools log "Restarting").delay(5.seconds).foreach(_ => connect, Tools.errlog)
   }
 }
