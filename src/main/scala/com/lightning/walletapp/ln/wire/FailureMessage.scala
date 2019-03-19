@@ -2,7 +2,7 @@ package com.lightning.walletapp.ln.wire
 
 import scodec.codecs._
 import LightningMessageCodecs._
-import fr.acinq.bitcoin.BinaryData
+import scodec.bits.ByteVector
 import scodec.Attempt
 
 
@@ -25,10 +25,10 @@ case object TemporaryNodeFailure extends Node
 case object PermanentNodeFailure extends Perm with Node
 case object RequiredNodeFeatureMissing extends Perm with Node
 
-sealed trait BadOnion extends FailureMessage { def onionHash: BinaryData }
-case class InvalidOnionVersion(onionHash: BinaryData) extends BadOnion with Perm
-case class InvalidOnionHmac(onionHash: BinaryData) extends BadOnion with Perm
-case class InvalidOnionKey(onionHash: BinaryData) extends BadOnion with Perm
+sealed trait BadOnion extends FailureMessage { def onionHash: ByteVector }
+case class InvalidOnionVersion(onionHash: ByteVector) extends BadOnion with Perm
+case class InvalidOnionHmac(onionHash: ByteVector) extends BadOnion with Perm
+case class InvalidOnionKey(onionHash: ByteVector) extends BadOnion with Perm
 
 sealed trait Update extends FailureMessage { def update: ChannelUpdate }
 case class AmountBelowMinimum(amountMsat: Long, update: ChannelUpdate) extends Update
@@ -39,7 +39,7 @@ case class TemporaryChannelFailure(update: ChannelUpdate) extends Update
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update
 
 object FailureMessageCodecs {
-  private val sha256Codec = binarydata(32) withContext "sha256Codec"
+  private val sha256Codec = bytes32 withContext "sha256Codec"
   private val channelUpdateCodecWithType = lightningMessageCodec.narrow[ChannelUpdate](Attempt successful _.asInstanceOf[ChannelUpdate], identity)
   private val channelUpdateWithLengthCodec = variableSizeBytes(value = choice(channelUpdateCodecWithType, channelUpdateCodec), size = uint16)
   private val disabled = (byte withContext "messageFlags") :: (byte withContext "channelFlags") :: channelUpdateWithLengthCodec

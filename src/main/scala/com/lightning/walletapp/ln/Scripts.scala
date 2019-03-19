@@ -5,12 +5,13 @@ import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin.Protocol._
 import com.softwaremill.quicklens._
 
-import scala.util.Try
-import java.nio.ByteOrder
-import scala.language.postfixOps
 import com.lightning.walletapp.ln.wire.UpdateAddHtlc
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
 import ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS
+import scala.language.postfixOps
+import scodec.bits.ByteVector
+import java.nio.ByteOrder
+import scala.util.Try
 
 
 object Scripts { me =>
@@ -20,10 +21,10 @@ object Scripts { me =>
       case true => Script.createMultiSigMofN(m = 2, pubkey1 :: pubkey2 :: Nil)
     }
 
-  def witness2of2(sig1: BinaryData, sig2: BinaryData, pubkey1: PublicKey, pubkey2: PublicKey) =
+  def witness2of2(sig1: ByteVector, sig2: ByteVector, pubkey1: PublicKey, pubkey2: PublicKey) =
     LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin) -> multiSig2of2(pubkey1, pubkey2) match {
-      case (false, multisig) => ScriptWitness(BinaryData.empty :: sig2 :: sig1 :: Script.write(multisig) :: Nil)
-      case (true, multisig) => ScriptWitness(BinaryData.empty :: sig1 :: sig2 :: Script.write(multisig) :: Nil)
+      case (false, multisig) => ScriptWitness(ByteVector.empty :: sig2 :: sig1 :: Script.write(multisig) :: Nil)
+      case (true, multisig) => ScriptWitness(ByteVector.empty :: sig1 :: sig2 :: Script.write(multisig) :: Nil)
     }
 
   def pubKeyScript(pub1: PublicKey, pub2: PublicKey) = {
@@ -59,68 +60,70 @@ object Scripts { me =>
 
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
-    OP_ELSE ::
+      OP_ELSE ::
       encodeNumber(toSelfDelay) ::
       OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
       OP_PUSHDATA(localDelayedPaymentPubkey) ::
-    OP_ENDIF ::
-    OP_CHECKSIG :: Nil
+      OP_ENDIF ::
+      OP_CHECKSIG :: Nil
 
   // This witness script spends a [[toLocalDelayed]] output using a revocation key as a punishment
-  def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
-    ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
+  def witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector, toLocalScript: ByteVector) =
+  ScriptWitness(revocationSig :: ByteVector(1) :: toLocalScript :: Nil)
 
   def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey,
-                  revocationPubKey: PublicKey, payHash160: BinaryData) =
+                  revocationPubKey: PublicKey, payHash160: ByteVector) =
 
     OP_DUP :: OP_HASH160 ::
-    OP_PUSHDATA(revocationPubKey.hash160) ::
-    OP_EQUAL ::
-    OP_IF ::
+      OP_PUSHDATA(revocationPubKey.hash160) ::
+      OP_EQUAL ::
+      OP_IF ::
       // To you with revocation key
       OP_CHECKSIG ::
-    OP_ELSE ::
+      OP_ELSE ::
       OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP ::
       OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
       OP_NOTIF ::
-        // To me via timelocked HTLC-timeout transaction
-        OP_DROP :: OP_2 :: OP_SWAP ::
-        OP_PUSHDATA(localHtlcPubkey) ::
-        OP_2 :: OP_CHECKMULTISIG ::
+      // To me via timelocked HTLC-timeout transaction
+      OP_DROP :: OP_2 :: OP_SWAP ::
+      OP_PUSHDATA(localHtlcPubkey) ::
+      OP_2 :: OP_CHECKMULTISIG ::
       OP_ELSE ::
-        OP_HASH160 :: OP_PUSHDATA(payHash160) ::
-        OP_EQUALVERIFY :: OP_CHECKSIG ::
+      OP_HASH160 :: OP_PUSHDATA(payHash160) ::
+      OP_EQUALVERIFY :: OP_CHECKSIG ::
       OP_ENDIF ::
-    OP_ENDIF :: Nil
+      OP_ENDIF :: Nil
 
   def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey,
-                   revocationPubKey: PublicKey, payHash160: BinaryData, lockTime: Long) =
+                   revocationPubKey: PublicKey, payHash160: ByteVector, lockTime: Long) =
 
     OP_DUP :: OP_HASH160 ::
-    OP_PUSHDATA(revocationPubKey.hash160) ::
-    OP_EQUAL ::
-    OP_IF ::
+      OP_PUSHDATA(revocationPubKey.hash160) ::
+      OP_EQUAL ::
+      OP_IF ::
       // To you with revocation key
       OP_CHECKSIG ::
-    OP_ELSE ::
+      OP_ELSE ::
       OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP ::
       OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
       OP_IF ::
-        // To me via HTLC-success transaction
-        OP_HASH160 :: OP_PUSHDATA(payHash160) :: OP_EQUALVERIFY ::
-        OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) ::
-        OP_2 :: OP_CHECKMULTISIG ::
+      // To me via HTLC-success transaction
+      OP_HASH160 :: OP_PUSHDATA(payHash160) :: OP_EQUALVERIFY ::
+      OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) ::
+      OP_2 :: OP_CHECKMULTISIG ::
       OP_ELSE ::
-        // To you after timeout
-        OP_DROP :: encodeNumber(lockTime) ::
-        OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
-        OP_CHECKSIG ::
+      // To you after timeout
+      OP_DROP :: encodeNumber(lockTime) ::
+      OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+      OP_CHECKSIG ::
       OP_ENDIF ::
-    OP_ENDIF :: Nil
+      OP_ENDIF :: Nil
 
   // TRANSACTION TEMPLATES
 
   trait TransactionWithInputInfo {
+    // Input of current tx subtracted from output of next tx outputs reveals a final fee
+    def --(that: TransactionWithInputInfo) = input.txOut.amount - that.tx.allOutputsAmount
     def input: InputInfo
     def tx: Transaction
   }
@@ -148,7 +151,7 @@ object Scripts { me =>
     *     - [[HtlcPenaltyTx]] spends [[HtlcTimeoutTx]] using the per-commitment secret
     */
 
-  case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: BinaryData)
+  case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector)
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
 
   case class HtlcSuccessTx(input: InputInfo, tx: Transaction, add: UpdateAddHtlc) extends TransactionWithInputInfo
@@ -196,8 +199,8 @@ object Scripts { me =>
   def obscuredCommitTxNumber(number: Long, isFunder: Boolean, local: Point, remote: Point) = {
     val (paymentBasepoint1, paymentBasepoint2) = if (isFunder) (local, remote) else (remote, local)
     val combined = paymentBasepoint1.toBin(compressed = true) ++ paymentBasepoint2.toBin(compressed = true)
-    val blind = (Crypto sha256 combined takeRight 6).reverse ++ BinaryData("0x0000")
-    number ^ Protocol.uint64(blind, ByteOrder.LITTLE_ENDIAN)
+    val blind = (Crypto sha256 combined takeRight 6).reverse ++ ByteVector.fromValidHex("0000")
+    number ^ Protocol.uint64(blind.toArray, ByteOrder.LITTLE_ENDIAN)
   }
 
   def getCommitTxNumber(commitTx: Transaction, isFunder: Boolean, local: Point, remote: Point): Long =
@@ -207,51 +210,51 @@ object Scripts { me =>
   def encodeTxNumber(txnumber: Long) = (0x80000000L | (txnumber >> 24), (txnumber & 0xffffffL) | 0x20000000)
   def decodeTxNumber(sequence: Long, locktime: Long) = (sequence & 0xffffffL).<<(24) + (locktime & 0xffffffL)
 
-  def addSigs(commit: CommitTx, localKey: PublicKey, remoteKey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx =
+  def addSigs(commit: CommitTx, localKey: PublicKey, remoteKey: PublicKey, localSig: ByteVector, remoteSig: ByteVector): CommitTx =
     commit.modify(_.tx).using(_ updateWitnesses witness2of2(localSig, remoteSig, localKey, remoteKey) :: Nil)
 
-  def addSigs(closing: ClosingTx, localFunding: PublicKey, remoteFunding: PublicKey, localSig: BinaryData, remoteSig: BinaryData): ClosingTx =
+  def addSigs(closing: ClosingTx, localFunding: PublicKey, remoteFunding: PublicKey, localSig: ByteVector, remoteSig: ByteVector): ClosingTx =
     closing.modify(_.tx).using(_ updateWitnesses witness2of2(localSig, remoteSig, localFunding, remoteFunding) :: Nil)
 
-  def addSigs(mainPenaltyTx: MainPenaltyTx, revocationSig: BinaryData): MainPenaltyTx =
-    mainPenaltyTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(revocationSig :: BinaryData("01") ::
+  def addSigs(mainPenaltyTx: MainPenaltyTx, revocationSig: ByteVector): MainPenaltyTx =
+    mainPenaltyTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(revocationSig :: ByteVector(1) ::
       mainPenaltyTx.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: BinaryData, revocationPubkey: PublicKey): HtlcPenaltyTx =
+  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: ByteVector, revocationPubkey: PublicKey): HtlcPenaltyTx =
     htlcPenaltyTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(revocationSig :: revocationPubkey.toBin ::
       htlcPenaltyTx.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx =
-    htlcSuccessTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage ::
+  def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: ByteVector, remoteSig: ByteVector, paymentPreimage: ByteVector): HtlcSuccessTx =
+    htlcSuccessTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(ByteVector.empty :: remoteSig :: localSig :: paymentPreimage ::
       htlcSuccessTx.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: BinaryData, remoteSig: BinaryData): HtlcTimeoutTx =
-    htlcTimeoutTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(BinaryData.empty :: remoteSig ::
-      localSig :: BinaryData.empty :: htlcTimeoutTx.input.redeemScript :: Nil) :: Nil)
+  def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: ByteVector, remoteSig: ByteVector): HtlcTimeoutTx =
+    htlcTimeoutTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(ByteVector.empty :: remoteSig ::
+      localSig :: ByteVector.empty :: htlcTimeoutTx.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: BinaryData, paymentPreimage: BinaryData): ClaimHtlcSuccessTx =
+  def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: ByteVector, paymentPreimage: ByteVector): ClaimHtlcSuccessTx =
     claimHtlcSuccessTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(localSig :: paymentPreimage ::
       claimHtlcSuccessTx.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: BinaryData): ClaimHtlcTimeoutTx =
-    claimHtlcTimeoutTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(localSig :: BinaryData.empty ::
+  def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: ByteVector): ClaimHtlcTimeoutTx =
+    claimHtlcTimeoutTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(localSig :: ByteVector.empty ::
       claimHtlcTimeoutTx.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localSig: BinaryData, localPaymentPubkey: BinaryData): ClaimP2WPKHOutputTx =
+  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localSig: ByteVector, localPaymentPubkey: ByteVector): ClaimP2WPKHOutputTx =
     claimP2WPKHOutputTx.modify(_.tx).using(_ updateWitnesses ScriptWitness(localSig :: localPaymentPubkey :: Nil) :: Nil)
 
-  def addSigs(claimHtlcDelayed: ClaimDelayedOutputTx, localSig: BinaryData): ClaimDelayedOutputTx =
-    claimHtlcDelayed.modify(_.tx).using(_ updateWitnesses ScriptWitness(localSig :: BinaryData.empty ::
+  def addSigs(claimHtlcDelayed: ClaimDelayedOutputTx, localSig: ByteVector): ClaimDelayedOutputTx =
+    claimHtlcDelayed.modify(_.tx).using(_ updateWitnesses ScriptWitness(localSig :: ByteVector.empty ::
       claimHtlcDelayed.input.redeemScript :: Nil) :: Nil)
 
-  def addSigs(claimHtlcDelayedPenalty: ClaimDelayedOutputPenaltyTx, revocationSig: BinaryData): ClaimDelayedOutputPenaltyTx =
+  def addSigs(claimHtlcDelayedPenalty: ClaimDelayedOutputPenaltyTx, revocationSig: ByteVector): ClaimDelayedOutputPenaltyTx =
     claimHtlcDelayedPenalty.modify(_.tx).using(_ updateWitnesses Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig,
       claimHtlcDelayedPenalty.input.redeemScript) :: Nil)
 
-  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey): BinaryData =
+  def sign(tx: Transaction, inputIndex: Int, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey): ByteVector =
     Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
 
-  def sign(key: PrivateKey)(txinfo: TransactionWithInputInfo): BinaryData =
+  def sign(key: PrivateKey)(txinfo: TransactionWithInputInfo): ByteVector =
     sign(txinfo.tx, 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
 
   def checkValid[T <: TransactionWithInputInfo](txWithInputInfo: => T) = Try {
@@ -261,7 +264,7 @@ object Scripts { me =>
     txWithInputInfo
   }
 
-  def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey): Boolean =
+  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector, pubKey: PublicKey): Boolean =
     Crypto.verifySignature(Transaction.hashForSigning(txinfo.tx, 0, txinfo.input.redeemScript,
       SIGHASH_ALL, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0), sig, pubKey)
 
@@ -294,7 +297,7 @@ object Scripts { me =>
         localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
 
     val outs = toLocalDelayedOutput ++ toRemoteOutput ++ htlcOfferedOutputs ++ htlcReceivedOutputs
-    val in = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil
+    val in = TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = sequence) :: Nil
     val tx = Transaction(version = 2, in, outs, lockTime = locktime)
     CommitTx(commitTxInput, LexicographicalOrdering sort tx)
   }
@@ -309,7 +312,7 @@ object Scripts { me =>
     def makeHtlcTx(redeem: Seq[ScriptElt], pubKeyScript: Seq[ScriptElt], amount: Satoshi, fee: Satoshi, expiry: Long) = {
       val index = finder.findPubKeyScriptIndex(pubkeyScript = Script.write(Script pay2wsh redeem), Option apply amount)
       val inputInfo = InputInfo(OutPoint(commitTx, index), commitTx.txOut(index), Script write redeem)
-      val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, 0x00000000L) :: Nil
+      val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0x00000000L) :: Nil
       val txOut = TxOut(amount - fee, pubKeyScript) :: Nil
       val tx = Transaction(2, txIn, txOut, expiry)
       inputInfo -> tx
@@ -334,7 +337,7 @@ object Scripts { me =>
   }
 
   def makeClaimHtlcTimeoutTx(finder: PubKeyScriptIndexFinder, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey,
-                             remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData, add: UpdateAddHtlc,
+                             remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, add: UpdateAddHtlc,
                              feeratePerKw: Long, dustLimit: Satoshi): Try[ClaimHtlcTimeoutTx] = Try {
 
     val redeem = htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, add.hash160, add.expiry)
@@ -342,14 +345,14 @@ object Scripts { me =>
     val inputInfo = InputInfo(OutPoint(finder.tx, index), finder.tx.txOut(index), Script write redeem)
     val finalAmount = inputInfo.txOut.amount - weight2fee(feeratePerKw, claimHtlcTimeoutWeight)
     if (finalAmount < dustLimit) throw new LightningException("ClaimTx amount below dust")
-    val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, 0x00000000L) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0x00000000L) :: Nil
     val txOut = TxOut(finalAmount, localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = add.expiry)
     ClaimHtlcTimeoutTx(Some(add), inputInfo, tx)
   }
 
   def makeClaimHtlcSuccessTx(finder: PubKeyScriptIndexFinder, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey,
-                             remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData, add: UpdateAddHtlc,
+                             remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, add: UpdateAddHtlc,
                              feeratePerKw: Long, dustLimit: Satoshi): Try[ClaimHtlcSuccessTx] = Try {
 
     val redeem = htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, add.hash160)
@@ -357,14 +360,14 @@ object Scripts { me =>
     val inputInfo = InputInfo(OutPoint(finder.tx, index), finder.tx.txOut(index), Script write redeem)
     val finalAmount = inputInfo.txOut.amount - weight2fee(feeratePerKw, claimHtlcSuccessWeight)
     if (finalAmount < dustLimit) throw new LightningException("ClaimTx amount below dust")
-    val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, 0xffffffffL) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0xffffffffL) :: Nil
     val txOut = TxOut(finalAmount, localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = 0L)
     ClaimHtlcSuccessTx(inputInfo, tx)
   }
 
   def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localPaymentPubkey: PublicKey,
-                              localFinalScriptPubKey: BinaryData, feeratePerKw: Long,
+                              localFinalScriptPubKey: ByteVector, feeratePerKw: Long,
                               dustLimit: Satoshi): Try[ClaimP2WPKHOutputTx] = Try {
 
     val redeem = Script pay2pkh localPaymentPubkey
@@ -373,7 +376,7 @@ object Scripts { me =>
     val inputInfo = InputInfo(OutPoint(delayedOutputTx, index), delayedOutputTx.txOut(index), Script write redeem)
     val finalAmount = inputInfo.txOut.amount - weight2fee(feeratePerKw, claimP2WPKHOutputWeight)
     if (finalAmount < dustLimit) throw new LightningException("ClaimTx amount below dust")
-    val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, 0x00000000L) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0x00000000L) :: Nil
     val txOut = TxOut(finalAmount, localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = 0L)
     ClaimP2WPKHOutputTx(inputInfo, tx)
@@ -381,7 +384,7 @@ object Scripts { me =>
 
   def makeClaimDelayedOutputTx(delayedOutputTx: Transaction,
                                localRevocationPubkey: PublicKey, toLocalDelay: Int,
-                               remoteDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData,
+                               remoteDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector,
                                feeratePerKw: Long, dustLimit: Satoshi): Try[ClaimDelayedOutputTx] = Try {
 
     val finder = new PubKeyScriptIndexFinder(delayedOutputTx)
@@ -390,14 +393,14 @@ object Scripts { me =>
     val inputInfo = InputInfo(OutPoint(delayedOutputTx, index), delayedOutputTx.txOut(index), Script write redeem)
     val finalAmount = inputInfo.txOut.amount - weight2fee(feeratePerKw, claimHtlcDelayedWeight)
     if (finalAmount < dustLimit) throw new LightningException("ClaimTx amount below dust")
-    val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, toLocalDelay) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, toLocalDelay) :: Nil
     val txOut = TxOut(finalAmount, localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = 0L)
     ClaimDelayedOutputTx(inputInfo, tx)
   }
 
   def makeMainPenaltyTx(commitTx: Transaction,
-                        remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: BinaryData,
+                        remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector,
                         toRemoteDelay: Int, remoteDelayedPaymentPubkey: PublicKey, feeratePerKw: Long,
                         dustLimit: Satoshi): Try[MainPenaltyTx] = Try {
 
@@ -407,28 +410,28 @@ object Scripts { me =>
     val inputInfo = InputInfo(OutPoint(commitTx, index), commitTx.txOut(index), Script write redeem)
     val finalAmount = inputInfo.txOut.amount - weight2fee(feeratePerKw, mainPenaltyWeight)
     if (finalAmount < dustLimit) throw new LightningException("ClaimTx amount below dust")
-    val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, 0xffffffffL) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0xffffffffL) :: Nil
     val txOut = TxOut(finalAmount, localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = 0L)
     MainPenaltyTx(inputInfo, tx)
   }
 
-  def makeHtlcPenaltyTx(finder: PubKeyScriptIndexFinder, redeem: BinaryData,
-                        localFinalScriptPubKey: BinaryData, feeratePerKw: Long,
+  def makeHtlcPenaltyTx(finder: PubKeyScriptIndexFinder, redeem: ByteVector,
+                        localFinalScriptPubKey: ByteVector, feeratePerKw: Long,
                         dustLimit: Satoshi): Try[HtlcPenaltyTx] = Try {
 
     val index = finder.findPubKeyScriptIndex(pubkeyScript = Script.write(Script pay2wsh redeem), None)
     val inputInfo = InputInfo(outPoint = OutPoint(finder.tx, index), finder.tx.txOut(index), redeem)
     val finalAmount = inputInfo.txOut.amount - weight2fee(feeratePerKw, htlcPenaltyWeight)
     if (finalAmount < dustLimit) throw new LightningException("ClaimTx amount below dust")
-    val txIn = TxIn(inputInfo.outPoint, BinaryData.empty, 0xffffffffL) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0xffffffffL) :: Nil
     val txOut = TxOut(finalAmount, localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = 0L)
     HtlcPenaltyTx(inputInfo, tx)
   }
 
   def makeClaimDelayedOutputPenaltyTx(delayedOutputTx: Transaction, localRevocationPubkey: PublicKey, toLocalDelay: Int,
-                                      localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: BinaryData, feeratePerKw: Long,
+                                      localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: Long,
                                       dustLimit: Satoshi): Try[ClaimDelayedOutputPenaltyTx] = Try {
 
     val finder = new PubKeyScriptIndexFinder(delayedOutputTx)
@@ -437,12 +440,15 @@ object Scripts { me =>
     val inputInfo = InputInfo(OutPoint(delayedOutputTx, index), delayedOutputTx.txOut(index), Script write redeem)
 
     // Make an unsigned dummy transaction
-    val txIn = TxIn(inputInfo.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil
+    val txIn = TxIn(inputInfo.outPoint, ByteVector.empty, 0xffffffffL) :: Nil
     val txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil
     val tx = Transaction(2, txIn, txOut, lockTime = 0)
 
-    // Compute weight with a dummy 73 bytes signature which is the largest one can get
-    val approx = Scripts.addSigs(ClaimDelayedOutputPenaltyTx(inputInfo, tx), "00" * 73).tx.weight(PROTOCOL_VERSION)
+    // 73 bytes signature which is the largest one can get
+    val claim = ClaimDelayedOutputPenaltyTx(inputInfo, tx)
+    val dummySig = ByteVector.fill(73)(0)
+
+    val approx = Scripts.addSigs(claim, dummySig).tx.weight(PROTOCOL_VERSION)
     val finalAmount = inputInfo.txOut.amount - weight2fee(perKw = feeratePerKw, weight = approx)
     if (finalAmount < dustLimit) throw new LightningException("HtlcPunishTx amount below dust")
     val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = finalAmount) :: Nil)
@@ -454,7 +460,7 @@ class PubKeyScriptIndexFinder(val tx: Transaction) {
   private[this] var indexesAlreadyUsed = Set.empty[Long]
   private[this] val indexedOutputs = tx.txOut.zipWithIndex
 
-  def findPubKeyScriptIndex(pubkeyScript: BinaryData, amountOpt: Option[Satoshi] = None): Int = {
+  def findPubKeyScriptIndex(pubkeyScript: ByteVector, amountOpt: Option[Satoshi] = None): Int = {
     // It is never enough to resolve on pubkeyScript alone because we may have duplicate HTLC payments
     // hence we collect an already used output indexes and make sure payment sums are matched in some cases
 

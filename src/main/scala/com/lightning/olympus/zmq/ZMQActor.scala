@@ -4,9 +4,9 @@ import com.lightning.walletapp.ln._
 import scala.collection.JavaConverters._
 import com.lightning.walletapp.ln.Tools._
 
-import org.zeromq.{ZContext, ZMQ, ZMsg}
 import rx.lang.scala.{Observable => Obs}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
+import scodec.bits.{BitVector, ByteVector}
+import org.zeromq.{SocketType, ZContext, ZMQ, ZMsg}
 import com.lightning.olympus.Utils.{bitcoin, blockchain, values}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentSkipListSet}
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs.revocationInfoCodec
@@ -17,8 +17,8 @@ import scala.concurrent.duration.DurationInt
 import com.lightning.walletapp.ln.Helpers
 import com.lightning.walletapp.helper.AES
 import com.lightning.olympus.Router
+import fr.acinq.bitcoin.Transaction
 import scala.collection.mutable
-import scodec.bits.BitVector
 import org.zeromq.ZMQ.Event
 import scodec.DecodeResult
 import akka.actor.Actor
@@ -33,9 +33,9 @@ class ZMQActor(db: Database) extends Actor {
       // We need to check if any input spends a channel output
       // related payment channels should be removed immediately
 
-      input <- tx.txIn
-      chanInfo <- Router.txId2Info.get(input.outPoint.txid)
-      if chanInfo.ca.outputIndex == input.outPoint.index
+      spendInput <- tx.txIn
+      chanInfo <- Router.txId2Info.get(spendInput.outPoint.txid.toHex)
+      if chanInfo.ca.outputIndex == spendInput.outPoint.index
       text = s"Removing chan $chanInfo because spent"
     } Router.complexRemove(chanInfo :: Nil, text)
 
@@ -46,9 +46,9 @@ class ZMQActor(db: Database) extends Actor {
 
       for {
         txid <- block.tx.asScala.par
-        rawBin <- blockchain.getRawTxData(txid)
-        transaction = Transaction.read(in = rawBin)
-        parents = transaction.txIn.map(_.outPoint.txid.toString)
+        rawHex <- blockchain.getRawTxData(txid)
+        transaction = Transaction.read(in = rawHex)
+        parents = transaction.txIn.map(_.outPoint.txid.toHex)
         _ = db.putSpender(txids = parents, prefix = txid)
       } onNewTx(tx = transaction)
     }
@@ -60,18 +60,18 @@ class ZMQActor(db: Database) extends Actor {
       // whose parents have at least two confirmations
       // CSV timeout will be rejected by blockchain
 
-      rawStr <- db.getScheduled(block.height)
-      txInputs = Transaction.read(rawStr).txIn
-      parents = txInputs.map(_.outPoint.txid.toString)
-      if parents forall blockchain.isParentDeepEnough
-    } blockchain.sendRawTx(rawStr)
+      rawTxHex <- db.getScheduled(block.height)
+      txInputs = Transaction.read(rawTxHex).txIn
+      parentTxIds = txInputs.map(_.outPoint.txid.toHex)
+      if parentTxIds forall blockchain.isParentDeepEnough
+    } blockchain.sendRawTx(rawTxHex)
   }
 
   val sendWatched = new ZMQListener {
     // A map from parent breach txid to punishing data
     // need to keep these around and re-publish a few times
-    val publishes: mutable.Map[BinaryData, RevokedCommitPublished] =
-      new ConcurrentHashMap[BinaryData, RevokedCommitPublished].asScala
+    val publishes: mutable.Map[String, RevokedCommitPublished] =
+      new ConcurrentHashMap[String, RevokedCommitPublished].asScala
 
     // Try to publish breaches periodically to not query db on each incoming transaction
     val txidAccumulator: mutable.Set[String] = new ConcurrentSkipListSet[String].asScala
@@ -85,23 +85,28 @@ class ZMQActor(db: Database) extends Actor {
       txidAccumulator.clear
 
       for {
+        // Obtain matched txs and get their full txids
         halfTxId \ aesz <- db.getWatched(halfTxIds)
-        fullTxidBin <- half2FullMap get halfTxId map BinaryData.apply
-        revBitVec <- AES.decZygote(aesz, fullTxidBin) map BitVector.apply
-        DecodeResult(ri, _) <- revocationInfoCodec.decode(revBitVec).toOption
-        tx <- blockchain.getRawTxData(fullTxidBin.toString).map(Transaction read _)
-        rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, tx)
-      } publishes.put(fullTxidBin, rcp)
+        fullTxid <- half2FullMap get halfTxId
+
+        // Decrypt punishment blob and decode RevocationInfo
+        revBitVec <- AES.decZygote(aesz, ByteVector.fromValidHex(fullTxid).toArray)
+        DecodeResult(ri, _) <- revocationInfoCodec.decode(BitVector apply revBitVec).toOption
+
+        // Get parent tx from chain, generate punishment, schedule spend
+        parentTx <- blockchain.getRawTxData(fullTxid).map(Transaction.read)
+        rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, parentTx)
+      } publishes.put(fullTxid, rcp)
 
       for {
         txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
         _ = log(s"Re-broadcasting a punishment transactions for breached channel funding $txId")
         transactionWithInputInfo <- claimMain ++ claimTheirMainPenalty ++ htlcPenalty
-      } blockchain.sendRawTx(Transaction write transactionWithInputInfo.tx)
+      } blockchain.sendRawTx(transactionWithInputInfo.tx.bin.toHex)
     }
 
     override def onNewTx(tx: Transaction) =
-      txidAccumulator += tx.txid.toString
+      txidAccumulator += tx.txid.toHex
 
     override def onNewBlock(block: Block) = {
       if (block.height % 1440 == 0) publishes.clear
@@ -110,44 +115,53 @@ class ZMQActor(db: Database) extends Actor {
   }
 
   val ctx = new ZContext
-  val subscriber = ctx.createSocket(ZMQ.SUB)
+  val subscriber = ctx.createSocket(SocketType.SUB)
   val listeners = Set(sendScheduled, sendWatched, checkTransactions)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.subscribe("hashblock" getBytes ZMQ.CHARSET)
   subscriber.subscribe("rawtx" getBytes ZMQ.CHARSET)
   subscriber.connect(values.zmqApi)
 
-  val monitor = ctx.createSocket(ZMQ.PAIR)
+  val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
 
-  def checkEvent: Unit = {
-    val event = Event.recv(monitor, ZMQ.DONTWAIT)
-    if (null != event) runAnd(self ! event.getEvent)(checkEvent)
-    else context.system.scheduler.scheduleOnce(1.second)(checkEvent)
-  }
-
-  def checkMsg: Unit = {
-    val zmqMessage = ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)
-    if (null != zmqMessage) runAnd(self ! zmqMessage)(checkMsg)
-    else context.system.scheduler.scheduleOnce(1.second)(checkMsg)
-  }
-
-  def receive: Receive = {
+  def receive = {
     case msg: ZMsg => msg.popString match {
       case "hashblock" => gotBlockHash(msg.pop.getData)
       case "rawtx" => gotRawTx(msg.pop.getData)
       case _ => log("Unexpected topic")
     }
+
+    case event: Event => event.getEvent match {
+      case ZMQ.EVENT_DISCONNECTED => throw new Exception("ZMQ connection lost")
+      case ZMQ.EVENT_CONNECTED => log("ZMQ connection established")
+      case _ => log("Unexpected event")
+    }
+
+    case 'checkEvent =>
+      val event = Event.recv(monitor, ZMQ.DONTWAIT)
+      if (event != null) self ! event else reScheduleEvent
+
+    case 'checkMsg =>
+      val msg = ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)
+      if (msg != null) self ! msg else reScheduleMsg
+
   }
 
-  def gotBlockHash(hash: BinaryData) = {
-    val fullBlock = bitcoin.getBlock(hash.toString)
+  def reScheduleEvent = context.system.scheduler.scheduleOnce(1.second, self ,'checkEvent)
+  def reScheduleMsg = context.system.scheduler.scheduleOnce(1.second, self, 'checkMsg)
+
+  def gotBlockHash(hash: Bytes) = {
+    val blockHashHex = ByteVector.view(hash).toHex
+    val fullBlock = bitcoin.getBlock(blockHashHex)
     listeners.foreach(_ onNewBlock fullBlock)
+    self ! 'checkMsg
   }
 
-  def gotRawTx(raw: BinaryData) = {
+  def gotRawTx(raw: Bytes) = {
     val transaction = Transaction.read(raw)
     listeners.foreach(_ onNewTx transaction)
+    self ! 'checkMsg
   }
 
   def rescanBlocks = {
@@ -159,8 +173,8 @@ class ZMQActor(db: Database) extends Actor {
   }
 
   rescanBlocks
-  checkEvent
-  checkMsg
+  self ! 'checkEvent
+  self ! 'checkMsg
 }
 
 trait ZMQListener {

@@ -14,7 +14,7 @@ import com.lightning.walletapp.ln.crypto.Noise.KeyPair
 import java.util.concurrent.ConcurrentHashMap
 import fr.acinq.bitcoin.Crypto.PublicKey
 import java.util.concurrent.Executors
-import fr.acinq.bitcoin.BinaryData
+import scodec.bits.ByteVector
 
 
 object ConnectionManager {
@@ -42,9 +42,9 @@ object ConnectionManager {
     val socket = new Socket
 
     val handler: TransportHandler = new TransportHandler(keyPair, ann.nodeId) {
+      def handleDecryptedIncomingData(data: ByteVector) = intercept(LightningMessageCodecs deserialize data)
       def handleEnterOperationalState = handler process Init(LNParams.globalFeatures, LNParams.localFeatures)
-      def handleDecryptedIncomingData(data: BinaryData) = intercept(LightningMessageCodecs deserialize data)
-      def handleEncryptedOutgoingData(data: BinaryData) = try socket.getOutputStream write data catch none
+      def handleEncryptedOutgoingData(data: ByteVector) = try socket.getOutputStream write data.toArray catch none
       def handleError = { case _ => events onTerminalError ann.nodeId }
     }
 
@@ -60,7 +60,7 @@ object ConnectionManager {
       while (true) {
         val length = socket.getInputStream.read(buffer, 0, buffer.length)
         if (length < 0) throw new RuntimeException("Connection droppped")
-        else handler process BinaryData(buffer take length)
+        else handler process ByteVector.view(buffer take length)
       }
     }
 
@@ -76,20 +76,16 @@ object ConnectionManager {
       lastMsg = System.currentTimeMillis
 
       message match {
-        case their: Init =>
-          val dlp = dataLossProtect(their.localFeatures)
-          val baseCompat = areSupported(their.localFeatures)
-          events.onOperational(ann.nodeId, dlp && baseCompat)
-
-        case Ping(len, _) if len > 0 && len <= 65532 => handler process Pong("00" * len)
+        case their: Init => events.onOperational(isCompat = areSupported(their.localFeatures) && dataLossProtect(their.localFeatures), nodeId = ann.nodeId)
+        case Ping(resposeLength, _) if resposeLength > 0 && resposeLength <= 65532 => handler process Pong(ByteVector fromValidHex "00" * resposeLength)
         case internalMessage => events.onMessage(ann.nodeId, internalMessage)
       }
     }
   }
 
   for {
-    _ <- Obs interval 30.seconds
-    outdated = System.currentTimeMillis - 1000L * 90
+    _ <- Obs interval 5.minutes
+    outdated = System.currentTimeMillis - 1000L * 60 * 10
     _ \ work <- connections if work.lastMsg < outdated
   } work.disconnect
 }

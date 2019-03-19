@@ -13,7 +13,8 @@ class ZMQSupervisor(db: Database) extends Actor {
   override def supervisorStrategy = OneForOneStrategy(-1, 5.seconds) {
     // ZMQ connection may be lost or an exception may be thrown while processing data
     // so we always wait for 5 seconds and try to reconnect again if that happens
-    case _: Throwable =>
+    case processingError: Throwable =>
+      processingError.printStackTrace
       Thread sleep 5000L
       Resume
   }

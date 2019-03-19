@@ -3,7 +3,7 @@ package com.lightning.olympus
 import com.lightning.walletapp.ln.wire.ChannelAnnouncement
 import com.lightning.olympus.database.Database
 import com.lightning.olympus.Utils.bitcoin
-import fr.acinq.bitcoin.BinaryData
+import scodec.bits.ByteVector
 import language.postfixOps
 import scala.util.Try
 
@@ -26,11 +26,6 @@ class Blockchain(db: Database) { me =>
     info
   }
 
-  def getRawTxData(txid: String) = Try {
-    BinaryData(bitcoin getRawTransactionHex txid)
-  }
-
-  def sendRawTx(binary: BinaryData) = Try {
-    bitcoin sendRawTransaction binary.toString
-  }
+  def getRawTxData(txid: String) = Try(bitcoin getRawTransactionHex txid)
+  def sendRawTx(txHex: String) = Try(bitcoin sendRawTransaction txHex)
 }

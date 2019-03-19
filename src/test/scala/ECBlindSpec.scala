@@ -1,15 +1,14 @@
 import java.math.BigInteger
 
-import com.lightning.olympus.Utils.{StringVec, values}
+import com.lightning.olympus.Utils.values
 import com.lightning.olympus.crypto.{BlindMemo, ECBlind}
 import com.lightning.olympus.{BlindData, BlindTokens, Vals}
 import org.scalatest.FunSuite
 import com.lightning.walletapp.ln.Tools.random
-import fr.acinq.bitcoin.BinaryData
 import org.bitcoinj.core.ECKey
 import org.bitcoinj.core.Utils.HEX
-
 import scala.util.Random
+
     
 class ECBlindSpec extends FunSuite {
 
@@ -48,6 +47,5 @@ class ECBlindSpec extends FunSuite {
       bt.signer.verifyClearSig(clearMsg = new BigInteger(clearToken),
         clearSignature = new BigInteger(clearSig), point = bt decodeECPoint point)
     }.forall(identity))
-
   }
 }

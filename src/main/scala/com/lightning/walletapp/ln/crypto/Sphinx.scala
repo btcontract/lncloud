@@ -4,6 +4,7 @@ import com.lightning.walletapp.ln.crypto.Sphinx._
 import com.lightning.walletapp.ln.crypto.MultiStreamUtils._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, Scalar}
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
+import scodec.bits.{BitVector, ByteVector}
 import fr.acinq.bitcoin.{Crypto, Protocol}
 
 import com.lightning.walletapp.ln.wire.FailureMessageCodecs.failureMessageCodec
@@ -11,7 +12,6 @@ import com.lightning.walletapp.ln.wire.FailureMessage
 import com.lightning.walletapp.ln.LightningException
 import com.lightning.walletapp.ln.Tools.Bytes
 import org.bitcoinj.core.Sha256Hash
-import scodec.bits.BitVector
 import java.math.BigInteger
 import java.nio.ByteOrder
 
@@ -20,15 +20,15 @@ case class Packet(v: Bytes, publicKey: Bytes, routingInfo: Bytes, hmac: Bytes) {
   require(hmac.length == MacLength, s"Onion header hmac length should be exactly $MacLength bytes")
   require(publicKey.length == 33, "Onion header public key length should be exactly 33 bytes")
   require(routingInfo.length == DataLength, "Invalid routing info length")
-  def isLast: Boolean = hmac sameElements zeroes(MacLength)
-  def serialize: Bytes = Packet write me
+  lazy val pubKey = PublicKey(ByteVector view publicKey)
+  def isLast = hmac sameElements zeroes(MacLength)
+  def serialize = Packet write me
 }
 
 object Packet { me =>
   def read(in: Bytes): Packet = me read new ByteArrayInputStream(in)
-  def write(packet: Packet): Bytes = write(new ByteArrayOutputStream(PacketLength), packet)
-  def write(out: ByteArrayOutputStream, header: Packet): Bytes = awrite(out, header.v,
-    header.publicKey, header.routingInfo, header.hmac).toByteArray
+  def write(packet: Packet): Bytes = write(out = new ByteArrayOutputStream(PacketLength), header = packet)
+  def write(out: ByteArrayOutputStream, header: Packet): Bytes = awrite(out, header.v, header.publicKey, header.routingInfo, header.hmac).toByteArray
 
   private def read(stream: ByteArrayInputStream) = {
     val res = aread(stream, 1, 33, DataLength, MacLength)
@@ -72,7 +72,7 @@ object Sphinx { me =>
 
   def generateKey(keyType: Bytes, secret: Bytes): Bytes = Digests.hmacSha256(keyType, secret)
   def generateKey(keyType: String, secret: Bytes): Bytes = generateKey(keyType getBytes "UTF-8", secret)
-  def computeBlindingFactor(pub: PublicKey, secret: Bytes): Bytes = Sha256Hash hash aconcat(pub.toBin, secret)
+  def computeBlindingFactor(pub: PublicKey, secret: Bytes): Bytes = Sha256Hash hash aconcat(pub.toBin.toArray, secret)
   def blind(pub: PublicKey, blindingFactors: BytesVec): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
   def blind(pub: PublicKey, blindingFactor: Bytes): PublicKey = {
@@ -80,15 +80,11 @@ object Sphinx { me =>
     PublicKey(pub.multiply(scalar).normalize)
   }
 
-  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): Bytes =
-    Sha256Hash.hash(pub.multiply(secret).normalize getEncoded true)
-
-  def generateStream(key: Bytes, length: Int): Bytes =
-    ChaCha20Legacy.process(me zeroes length, key, me zeroes 8,
-      encrypt = true, skipBlock = false)
+  def computeSharedSecret(pub: PublicKey, secret: PrivateKey): Bytes = Sha256Hash.hash(pub.multiply(secret).normalize getEncoded true)
+  def generateStream(key: Bytes, length: Int): Bytes = ChaCha20.process(zeroes(length), key, zeroes(12), encrypt = true, skipBlock = false)
 
   def computeEphemerealPublicKeysAndSharedSecrets(publicKeys: PublicKeyVec, sessionKey: PrivateKey): (PublicKeyVec, BytesVec) = {
-    val firstEphemerealPublicKey = blind(pub = PublicKey(value = Crypto.curve.getG, compressed = true), sessionKey.value.toByteArray)
+    val firstEphemerealPublicKey = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value.toByteArray)
     val firstSecret: Bytes = computeSharedSecret(pub = publicKeys.head, secret = sessionKey)
     val firstBlindingFactor = computeBlindingFactor(firstEphemerealPublicKey, firstSecret)
 
@@ -120,16 +116,16 @@ object Sphinx { me =>
 
     val packet = Packet read rawPacket
     val message = aconcat(packet.routingInfo, associatedData)
-    val sharedSecret = computeSharedSecret(PublicKey(packet.publicKey), privateKey)
+    val sharedSecret = computeSharedSecret(packet.pubKey, privateKey)
     require(mac(generateKey("mu", sharedSecret), message) sameElements packet.hmac, "Invalid header mac")
     val stream1 = generateStream(generateKey("rho", sharedSecret), PayloadLength + MacLength + DataLength)
     val bin = xor(aconcat(packet.routingInfo, me zeroes PayloadLength + MacLength), stream1)
     val hmac = bin.slice(PayloadLength, PayloadLength + MacLength)
     val nextRoutinfo = bin.drop(PayloadLength + MacLength)
 
-    val factor = computeBlindingFactor(PublicKey(packet.publicKey), sharedSecret)
-    val pubKey = blind(PublicKey(packet.publicKey), factor).toBin.toArray
-    val nextPacket = Packet(Array(Version), pubKey, nextRoutinfo, hmac)
+    val factor = computeBlindingFactor(packet.pubKey, sharedSecret)
+    val blindedPublicKey = blind(packet.pubKey, factor).toBin.toArray
+    val nextPacket = Packet(Array(Version), blindedPublicKey, nextRoutinfo, hmac)
     ParsedPacket(bin take PayloadLength, nextPacket, sharedSecret)
   }
 
@@ -154,13 +150,13 @@ object Sphinx { me =>
 
   def makePacket(seskey: PrivateKey, pubKeys: PublicKeyVec, payloads: BytesVec, assocData: Bytes) = {
     def loop(packet: Packet, hopPayloads: BytesVec, ephemeralKeys: PublicKeyVec, sharedSecrets: BytesVec): Packet =
-      if (hopPayloads.isEmpty) packet else loop(makeNextPacket(hopPayloads.last, assocData, ephemeralKeys.last.toBin,
+      if (hopPayloads.isEmpty) packet else loop(makeNextPacket(hopPayloads.last, assocData, ephemeralKeys.last.toBin.toArray,
         sharedSecrets.last, packet, Array.emptyByteArray), hopPayloads dropRight 1, ephemeralKeys dropRight 1,
         sharedSecrets dropRight 1)
 
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(pubKeys, seskey)
     val filler = generateFiller(keyType = "rho", sharedsecrets dropRight 1, hopSize = PayloadLength + MacLength, maxHops = MaxHops)
-    val lastPacket = makeNextPacket(payloads.last, assocData, ephemeralPublicKeys.last.toBin, sharedsecrets.last, LAST_PACKET, filler)
+    val lastPacket = makeNextPacket(payloads.last, assocData, ephemeralPublicKeys.last.toBin.toArray, sharedsecrets.last, LAST_PACKET, filler)
     val packet = loop(lastPacket, payloads dropRight 1, ephemeralPublicKeys dropRight 1, sharedsecrets dropRight 1)
     SecretsAndPacket(sharedsecrets zip pubKeys, packet)
   }
@@ -171,8 +167,9 @@ object Sphinx { me =>
     val message: Bytes = failureMessageCodec.encode(failure).require.toByteArray
     if (message.length > MaxErrorPayloadLength) throw new LightningException
 
-    val payload = aconcat(Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN),
-      message, Protocol.writeUInt16(MaxErrorPayloadLength - message.length, ByteOrder.BIG_ENDIAN),
+    val payload =
+      aconcat(Protocol.writeUInt16Array(message.length, ByteOrder.BIG_ENDIAN), message,
+        Protocol.writeUInt16Array(MaxErrorPayloadLength - message.length, ByteOrder.BIG_ENDIAN),
         me zeroes MaxErrorPayloadLength - message.length)
 
     val mac1 = mac(generateKey("um", sharedSecret), payload)
@@ -192,9 +189,8 @@ object Sphinx { me =>
     xor(packet, stream)
   }
 
-  // May throw if shared secrets is empty
-  def parseErrorPacket(secrets: Vector[BytesAndKey],
-                       packet: Bytes): ErrorPacket = {
+  // May throw if shared secrets is empty, should always be enclosed in Try block
+  def parseErrorPacket(secrets: Vector[BytesAndKey], packet: Bytes): ErrorPacket = {
 
     val (secret, pubkey) = secrets.head
     val packet1 = forwardErrorPacket(packet, secret)

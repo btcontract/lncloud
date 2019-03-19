@@ -1,17 +1,19 @@
 package com.lightning.walletapp.ln.crypto
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.{Scalar, Point}
+import fr.acinq.bitcoin.Crypto
 import ShaChain.largestTxIndex
+import scodec.bits.ByteVector
 
 
 object Generators {
-  def perCommitSecret(seed: BinaryData, index: Long): Scalar = {
-    val secret = ShaChain.shaChainFromSeed(seed, largestTxIndex - index)
-    Scalar(secret)
+  def perCommitSecret(seed: ByteVector, index: Long): Scalar = {
+    val result = ShaChain.shaChainFromSeed(seed.toArray, largestTxIndex - index)
+    ByteVector.view(result)
   }
 
-  def perCommitPoint(seed: BinaryData, index: Long): Point =
+  def perCommitPoint(seed: ByteVector, index: Long): Point =
     perCommitSecret(seed, index).toPoint
 
   def points2Scalar(point1: Point, point2: Point) = {

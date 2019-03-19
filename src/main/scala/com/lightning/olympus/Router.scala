@@ -18,7 +18,6 @@ import com.lightning.olympus.Utils.blockchain
 import scala.concurrent.duration.DurationInt
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.BinaryData
 import scala.util.Random.shuffle
 import scala.collection.mutable
 
@@ -44,7 +43,7 @@ object Router { me =>
   private[this] val chanDirectionClass = classOf[ChanDirection]
 
   val chanId2Info = mutable.Map.empty[Long, ChanInfo]
-  val txId2Info = mutable.Map.empty[BinaryData, ChanInfo]
+  val txId2Info = mutable.Map.empty[String, ChanInfo]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
   val unprocessedMessages = new ConcurrentLinkedQueue[LightningMessage]
   val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefFactory)
@@ -142,10 +141,8 @@ object Router { me =>
       .delay(20.seconds).foreach(_ => processQueue, Tools.errlog)
 
   def processQueue: Unit = {
-    val left = unprocessedMessages.size
     val nextMessage = unprocessedMessages.poll
     if (nextMessage == null) rescheduleQueue else {
-      if (left % 100 == 0) Tools log s"$left msgs left"
       processMessage(nextMessage)
       processQueue
     }
@@ -157,7 +154,7 @@ object Router { me =>
     case channelAnnounce: ChannelAnnouncement =>
       blockchain getChanInfo channelAnnounce foreach {
         case tiny if tiny.capacity < values.minCapacity =>
-          Tools log "Ignoring chan with low capacity"
+          Tools log s"Ignoring ${tiny.txid} of capacity ${tiny.capacity}"
 
         case chanInfo =>
           nodeId2Chans = nodeId2Chans plusShortChanId chanInfo

@@ -7,8 +7,7 @@ import com.lightning.walletapp.ln.Tools.Bytes
 
 
 trait ByteStream { def getBytes(size: Int): Bytes }
-class RandomGenerator extends SecureRandom with ByteStream
-{
+class RandomGenerator extends SecureRandom with ByteStream {
   def getBytes(size: Int) = {
     val array = new Bytes(size)
     super.nextBytes(array)

@@ -37,19 +37,14 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
     def write(internal: BigInteger): JsValue = internal.toString.toJson
   }
 
-  implicit object BinaryDataFmt extends JsonFormat[BinaryData] {
-    def read(json: JsValue): BinaryData = BinaryData(me json2String json)
-    def write(internal: BinaryData): JsValue = internal.toString.toJson
-  }
-
   implicit object TransactionFmt extends JsonFormat[Transaction] {
     def read(json: JsValue): Transaction = Transaction.read(me json2String json)
-    def write(internal: Transaction): JsValue = Transaction.write(internal).toString.toJson
+    def write(internal: Transaction): JsValue = internal.bin.toHex.toJson
   }
 
   implicit object PublicKeyFmt extends JsonFormat[PublicKey] {
-    def read(json: JsValue): PublicKey = PublicKey(me json2String json)
-    def write(internal: PublicKey): JsValue = internal.toString.toJson
+    def read(json: JsValue): PublicKey = PublicKey.fromValidHex(me json2String json)
+    def write(internal: PublicKey): JsValue = internal.toBin.toHex.toJson
   }
 
   implicit val lightningMessageFmt = sCodecJsonFmt(lightningMessageCodec)
@@ -59,6 +54,7 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   implicit val closingSignedFmt = sCodecJsonFmt(closingSignedCodec)
   implicit val fundingLockedFmt = sCodecJsonFmt(fundingLockedCodec)
   implicit val channelUpdateFmt = sCodecJsonFmt(channelUpdateCodec)
+  implicit val byteVectorFmt = sCodecJsonFmt(scodec.codecs.bytes)
   implicit val commitSigFmt = sCodecJsonFmt(commitSigCodec)
   implicit val shutdownFmt = sCodecJsonFmt(shutdownCodec)
   implicit val uint64exFmt = sCodecJsonFmt(uint64ex)
@@ -71,8 +67,18 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   implicit val chargeFmt = jsonFormat[String, String, String, Boolean,
     Charge](Charge.apply, "payment_hash", "id", "payment_request", "paid")
 
+  implicit val strikeProviderFmt =
+    taggedJsonFmt(jsonFormat[Long, Int, String, String, String,
+      StrikeProvider](StrikeProvider.apply, "priceMsat", "quantity",
+      "description", "url", "privKey"), tag = "StrikeProvider")
+
+  implicit val eclairProvider =
+    taggedJsonFmt(jsonFormat[Long, Int, String, String, String,
+      EclairProvider](EclairProvider.apply, "priceMsat", "quantity",
+      "description", "url", "pass"), tag = "EclairProvider")
+
   implicit object PaymentProviderFmt
-  extends JsonFormat[PaymentProvider] {
+    extends JsonFormat[PaymentProvider] {
 
     def read(json: JsValue) = json.asJsObject fields "tag" match {
       case JsString("StrikeProvider") => json.convertTo[StrikeProvider]
@@ -86,16 +92,6 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
       case _ => throw new RuntimeException
     }
   }
-
-  implicit val strikeProviderFmt =
-    taggedJsonFmt(jsonFormat[Long, Int, String, String, String,
-      StrikeProvider](StrikeProvider.apply, "priceMsat", "quantity",
-      "description", "url", "privKey"), tag = "StrikeProvider")
-
-  implicit val eclairProvider =
-    taggedJsonFmt(jsonFormat[Long, Int, String, String, String,
-      EclairProvider](EclairProvider.apply, "priceMsat", "quantity",
-      "description", "url", "pass"), tag = "EclairProvider")
 
   implicit val valsFmt =
     jsonFormat[String, String, String, String, Int,

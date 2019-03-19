@@ -5,37 +5,35 @@ import fr.acinq.bitcoin.Bech32._
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin.Protocol._
 import fr.acinq.eclair.crypto.BitStream._
+import com.lightning.walletapp.ln.Tools._
 import com.lightning.walletapp.ln.PaymentRequest._
 import com.lightning.walletapp.ln.RoutingInfoTag._
 import com.lightning.walletapp.ln.crypto.MultiStreamUtils._
 import com.lightning.walletapp.ln.wire.Hop
 import fr.acinq.eclair.crypto.BitStream
 import java.nio.ByteOrder.BIG_ENDIAN
+import scodec.bits.ByteVector
 import java.math.BigInteger
 import scala.util.Try
 
 
 sealed trait Tag {
-  def toInt5s: Int5Seq
-  def encode(ints: Int5Seq, v: Char): Int5Seq =
-    Seq(Bech32 map v, (ints.length / 32).toByte,
+  def toInt5s: Bytes
+  def encode(ints: Bytes, v: Char): Bytes =
+    Array(Bech32 map v, (ints.length / 32).toByte,
       (ints.length % 32).toByte) ++ ints
 }
 
-case class PaymentHashTag(hash: BinaryData) extends Tag {
-  def toInt5s: Int5Seq = encode(Bech32 eight2five hash, 'p')
+case class PaymentHashTag(hash: ByteVector) extends Tag {
+  def toInt5s = encode(Bech32 eight2five hash.toArray, 'p')
 }
 
 case class DescriptionTag(description: String) extends Tag {
   def toInt5s = encode(Bech32 eight2five description.getBytes, 'd')
 }
 
-case class DescriptionHashTag(hash: BinaryData) extends Tag {
-  def toInt5s: Int5Seq = encode(Bech32 eight2five hash, 'h')
-}
-
-case class FallbackAddressTag(version: Byte, hash: BinaryData) extends Tag {
-  def toInt5s: Int5Seq = encode(version +: Bech32.eight2five(hash), 'f')
+case class FallbackAddressTag(version: Byte, hash: ByteVector) extends Tag {
+  def toInt5s = encode(version +: Bech32.eight2five(hash.toArray), 'f')
 }
 
 object FallbackAddressTag { me =>
@@ -53,21 +51,21 @@ object FallbackAddressTag { me =>
   }
 
   def fromBech32Address(address: String): FallbackAddressTag = {
-    val (_, version, hash) = Bech32 decodeWitnessAddress address
+    val (_, version, hash) = Bech32 decodeWitnessAddressMainChain address
     FallbackAddressTag(version, hash)
   }
 }
 
 case class RoutingInfoTag(route: PaymentRoute) extends Tag {
-  def toInt5s: Int5Seq = encode(Bech32.eight2five(route flatMap pack), 'r')
-  def pack(hop: Hop) = aconcat(hop.nodeId.toBin.data.toArray, writeUInt64(hop.shortChannelId, BIG_ENDIAN),
-    writeUInt32(hop.feeBaseMsat, BIG_ENDIAN), writeUInt32(hop.feeProportionalMillionths, BIG_ENDIAN),
-    writeUInt16(hop.cltvExpiryDelta, BIG_ENDIAN).data.toArray)
+  def toInt5s = encode(Bech32.eight2five(route.flatMap(pack).toArray), 'r')
+  def pack(hop: Hop) = aconcat(hop.nodeId.toBin.toArray, writeUInt64Array(hop.shortChannelId, BIG_ENDIAN),
+    writeUInt32Array(hop.feeBaseMsat, BIG_ENDIAN), writeUInt32Array(hop.feeProportionalMillionths, BIG_ENDIAN),
+    writeUInt16Array(hop.cltvExpiryDelta, BIG_ENDIAN))
 }
 
 object RoutingInfoTag {
-  def parse(data: Int5Seq) = {
-    val pubkey = data.slice(0, 33)
+  def parse(data: Bytes) = {
+    val pubkey = ByteVector apply data.slice(0, 33)
     val shortChanId = uint64(data.slice(33, 33 + 8), BIG_ENDIAN)
     val feeBaseMsat = uint32(data.slice(33 + 8, 33 + 8 + 4), BIG_ENDIAN)
     val cltvExpiryDelta = uint16(data.slice(33 + 8 + 4 + 4, chunkLength), BIG_ENDIAN)
@@ -79,29 +77,30 @@ object RoutingInfoTag {
   type PaymentRouteVec = Vector[PaymentRoute]
 
   val chunkLength = 33 + 8 + 4 + 4 + 2
-  def parseAll(data: Int5Seq): PaymentRoute =
+  def parseAll(data: Bytes): PaymentRoute =
     data.grouped(chunkLength).map(parse).toVector
 }
 
 case class ExpiryTag(seconds: Long) extends Tag {
-  def toInt5s = Bech32.map('x') +: (writeSize(ints.size) ++ ints)
+  def toInt5s = Bech32.map('x') +: (writeSize(ints.length) ++ ints)
   lazy val ints = writeUnsignedLong(seconds)
 }
 
 case class MinFinalCltvExpiryTag(expiryDelta: Long) extends Tag {
-  def toInt5s: Int5Seq = Bech32.map('c') +: (writeSize(ints.size) ++ ints)
+  def toInt5s = Bech32.map('c') +: (writeSize(ints.length) ++ ints)
   lazy val ints = writeUnsignedLong(expiryDelta)
 }
 
-case class UnknownTag(tag: Int5, int5s: Int5Seq) extends Tag {
-  def toInt5s: Int5Seq = tag +: (writeSize(int5s.size) ++ int5s)
+case class UnknownTag(tag: Int5, int5s: Bytes) extends Tag {
+  def toInt5s = tag +: (writeSize(int5s.length) ++ int5s)
 }
 
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long,
-                          nodeId: PublicKey, tags: Vector[Tag], signature: BinaryData) {
+                          nodeId: PublicKey, tags: Vector[Tag], signature: ByteVector) {
 
   lazy val unsafeMsat = amount.get.amount
   lazy val adjustedMinFinalCltvExpiry = minFinalCltvExpiry.getOrElse(0L) + 10L
+  lazy val description = tags.collectFirst { case DescriptionTag(info) => info }.getOrElse(new String)
   lazy val minFinalCltvExpiry = tags.collectFirst { case m: MinFinalCltvExpiryTag => m.expiryDelta }
   lazy val paymentHash = tags.collectFirst { case payHash: PaymentHashTag => payHash.hash }.get
   lazy val routingInfo = tags.collect { case r: RoutingInfoTag => r }
@@ -120,20 +119,16 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     timestamp + expiry.getOrElse(3600L) > System.currentTimeMillis / 1000L
   }
 
-  def description = tags.collectFirst {
-    case DescriptionHashTag(hash) => hash.toString
-    case DescriptionTag(description) => description
-  }.get
-
   def stream: BitStream = {
     val int5s = Timestamp.encode(timestamp) ++ tags.flatMap(_.toInt5s)
     val stream1 = int5s.foldLeft(BitStream.empty)(PaymentRequest.write5)
     stream1
   }
 
-  def hash: BinaryData = {
+  def hash: ByteVector = {
     val base = prefix + Amount.encode(amount)
-    Crypto sha256 base.getBytes("UTF-8") ++ stream.bytes
+    val ready = base.getBytes("UTF-8") ++ stream.bytes
+    Crypto sha256 ByteVector.view(ready)
   }
 
   def sign(priv: PrivateKey) = {
@@ -146,7 +141,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 }
 
 object PaymentRequest {
-  type Int5Seq = Seq[Int5]
   type AmountOption = Option[MilliSatoshi]
   val expiryTag = ExpiryTag(3600 * 48)
 
@@ -155,13 +149,13 @@ object PaymentRequest {
       Block.TestnetGenesisBlock.hash -> "lntb",
       Block.LivenetGenesisBlock.hash -> "lnbc")
 
-  def apply(chain: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData,
+  def apply(chain: ByteVector, amount: Option[MilliSatoshi], paymentHash: ByteVector,
             privKey: PrivateKey, description: String, fallbackAddress: Option[String],
             routes: PaymentRouteVec): PaymentRequest = {
 
     val baseTags = Vector(DescriptionTag(description), MinFinalCltvExpiryTag(72), PaymentHashTag(paymentHash), expiryTag)
     val completeTags = routes.map(RoutingInfoTag.apply) ++ fallbackAddress.map(FallbackAddressTag.apply).toVector ++ baseTags
-    PaymentRequest(prefixes(chain), amount, System.currentTimeMillis / 1000L, privKey.publicKey, completeTags, BinaryData.empty) sign privKey
+    PaymentRequest(prefixes(chain), amount, System.currentTimeMillis / 1000L, privKey.publicKey, completeTags, ByteVector.empty) sign privKey
   }
 
   object Amount {
@@ -192,13 +186,13 @@ object PaymentRequest {
   }
 
   object Timestamp {
-    def decode(data: Int5Seq): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
-    def encode(timestamp: Long, acc: Int5Seq = Nil): Int5Seq = if (acc.length == 7) acc
+    def decode(data: Bytes): Long = data.take(7).foldLeft(0L) { case (a, b) => a * 32 + b }
+    def encode(timestamp: Long, acc: Bytes = Array.emptyByteArray): Bytes = if (acc.length == 7) acc
     else encode(timestamp / 32, (timestamp % 32).toByte +: acc)
   }
 
   object Signature {
-    def decode(signature: BinaryData) = {
+    def decode(signature: ByteVector) = {
       require(signature.length == 65, "Invalid signature length")
       val s = new BigInteger(1, signature.slice(32, 64).toArray)
       val r = new BigInteger(1, signature.take(32).toArray)
@@ -207,33 +201,31 @@ object PaymentRequest {
     }
 
     def encode(r: BigInteger, s: BigInteger, recid: Byte) = {
-      val rEncoded = Crypto fixSize r.toByteArray.dropWhile(0.==)
-      val sEncoded = Crypto fixSize s.toByteArray.dropWhile(0.==)
-      rEncoded.data ++ sEncoded.data :+ recid
+      val rEncoded = Crypto fixSize ByteVector.view(r.toByteArray dropWhile 0.==)
+      val sEncoded = Crypto fixSize ByteVector.view(s.toByteArray dropWhile 0.==)
+      rEncoded ++ sEncoded :+ recid
     }
   }
 
   object Tag {
-    def parse(input: Int5Seq): Tag = {
+    def parse(input: Bytes): Tag = {
       val len = input(1) * 32 + input(2)
 
       input.head match {
         case pTag if pTag == Bech32.map('p') =>
           val hash = Bech32 five2eight input.slice(3, 52 + 3)
-          PaymentHashTag(hash)
+          PaymentHashTag(ByteVector apply hash)
 
         case dTag if dTag == Bech32.map('d') =>
           val description = Bech32 five2eight input.slice(3, len + 3)
-          DescriptionTag(Tools bin2readable description.toArray)
-
-        case hTag if hTag == Bech32.map('h') =>
-          val hash = Bech32 five2eight input.slice(3, len + 3)
-          DescriptionHashTag(hash)
+          DescriptionTag(Tools bin2readable description)
 
         case fTag if fTag == Bech32.map('f') =>
           val fallbackAddress = input.slice(4, len + 4 - 1)
-          if (input(3) < 0 || input(3) > 18) UnknownTag(input.head, fallbackAddress)
-          else FallbackAddressTag(input(3), Bech32 five2eight fallbackAddress)
+          if (input(3) < 0 || input(3) > 18) UnknownTag(input.head, fallbackAddress) else {
+            val fallbackAddressHash = ByteVector.view(Bech32 five2eight fallbackAddress)
+            FallbackAddressTag(input(3), fallbackAddressHash)
+          }
 
         case rTag if rTag == Bech32.map('r') =>
           val data = Bech32 five2eight input.slice(3, len + 3)
@@ -241,12 +233,12 @@ object PaymentRequest {
           RoutingInfoTag(path)
 
         case xTag if xTag == Bech32.map('x') =>
-          val ints: Int5Seq = input.slice(3, len + 3)
+          val ints: Bytes = input.slice(3, len + 3)
           val expiry = readUnsignedLong(len, ints)
           ExpiryTag(expiry)
 
         case cTag if cTag == Bech32.map('c') =>
-          val ints: Int5Seq = input.slice(3, len + 3)
+          val ints: Bytes = input.slice(3, len + 3)
           val expiry = readUnsignedLong(len, ints)
           MinFinalCltvExpiryTag(expiry)
 
@@ -276,31 +268,31 @@ object PaymentRequest {
     (stream1, (value & 0xff).toByte)
   }
 
-  def toInt5s(stream: BitStream, acc: Int5Seq = Nil): Int5Seq =
+  def toInt5s(stream: BitStream, acc: Bytes = Array.emptyByteArray): Bytes =
     if (stream.bitCount == 0) acc else {
       val stream1 \ value = read5(stream)
       toInt5s(stream1, acc :+ value)
     }
 
-  def writeSize(size: Long): Int5Seq = {
+  def writeSize(size: Long): Bytes = {
     val outputData = writeUnsignedLong(size)
     require(outputData.length <= 2)
 
     outputData.length match {
-      case 0 => Seq(0.toByte, 0.toByte)
+      case 0 => Array(0.toByte, 0.toByte)
       case 1 => 0.toByte +: outputData
       case _ => outputData
     }
   }
 
-  def writeUnsignedLong(value: Long, acc: Int5Seq = Nil): Int5Seq =
+  def writeUnsignedLong(value: Long, acc: Bytes = Array.emptyByteArray): Bytes =
     if (value == 0) acc else writeUnsignedLong(value / 32, (value % 32).toByte +: acc)
 
-  def readUnsignedLong(length: Int, ints: Int5Seq): Long =
+  def readUnsignedLong(length: Int, ints: Bytes): Long =
     ints.take(length).foldLeft(0L) { case acc \ i => acc * 32 + i }
 
   def read(input: String): PaymentRequest = {
-    def loop(data: Int5Seq, tags: Seq[Int5Seq] = Nil): Seq[Int5Seq] =
+    def loop(data: Bytes, tags: Seq[Bytes] = Nil): Seq[Bytes] =
 
       if (data.isEmpty) tags else {
         // 104 is the size of a signature
@@ -319,9 +311,9 @@ object PaymentRequest {
     val rawtags = loop(data0 drop 7)
     val tags = rawtags map Tag.parse
 
-    val signature = sig.reverse
+    val signature = ByteVector(sig.reverse)
     val (r, s, recid) = Signature decode signature
-    val messageHash = Crypto sha256 hrp.getBytes ++ stream1.bytes
+    val messageHash = Crypto sha256 ByteVector.view(hrp.getBytes ++ stream1.bytes)
     val (pub1, pub2) = Crypto.recoverPublicKey(r -> s, messageHash)
     val pub = if (recid % 2 != 0) pub2 else pub1
 
@@ -336,9 +328,7 @@ object PaymentRequest {
 
   def write(pr: PaymentRequest): String = {
     val hrp = pr.prefix + Amount.encode(pr.amount)
-    val int5s = toInt5s(pr.stream writeBytes pr.signature)
-    val checksum: Int5Seq = Bech32.checksum(hrp, int5s)
-    val body = (int5s ++ checksum) map Bech32.pam
-    hrp + "1" + new String(body.toArray)
+    val int5s = toInt5s(pr.stream writeBytes pr.signature.toSeq)
+    Bech32.encode(hrp, int5s)
   }
 }

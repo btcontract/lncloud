@@ -4,15 +4,17 @@ import fr.acinq.bitcoin.Crypto._
 import com.softwaremill.quicklens._
 import com.lightning.walletapp.ln.wire._
 import com.lightning.walletapp.ln.Scripts._
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import com.lightning.walletapp.ln.CommitmentSpec.{HtlcAndFail, HtlcAndFulfill}
 import com.lightning.walletapp.ln.crypto.{Generators, ShaChain, ShaHashesWithIndex}
+import com.lightning.walletapp.ln.Helpers.Closing.{SuccessAndClaim, TimeoutAndClaim}
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs.{LNMessageVector, RedeemScriptAndSig}
+import fr.acinq.bitcoin.{Satoshi, Transaction}
+import scodec.bits.ByteVector
 import fr.acinq.eclair.UInt64
 
 
 sealed trait Command
-case class CMDShutdown(scriptPubKey: Option[BinaryData] = None) extends Command
+case class CMDShutdown(scriptPubKey: Option[ByteVector] = None) extends Command
 case class CMDBestHeight(heightNow: Long, heightInit: Long) extends Command
 case class CMDConfirmed(tx: Transaction) extends Command
 case class CMDFunding(tx: Transaction) extends Command
@@ -23,9 +25,9 @@ case object CMDProceed extends Command
 case object CMDOffline extends Command
 case object CMDOnline extends Command
 
-case class CMDFailMalformedHtlc(id: Long, onionHash: BinaryData, code: Int) extends Command
-case class CMDFulfillHtlc(id: Long, preimage: BinaryData) extends Command
-case class CMDFailHtlc(id: Long, reason: BinaryData) extends Command
+case class CMDFailMalformedHtlc(id: Long, onionHash: ByteVector, code: Int) extends Command
+case class CMDFulfillHtlc(id: Long, preimage: ByteVector) extends Command
+case class CMDFailHtlc(id: Long, reason: ByteVector) extends Command
 
 // CHANNEL DATA
 
@@ -39,7 +41,7 @@ case class WaitFundingCreatedRemote(announce: NodeAnnouncement, localParams: Loc
                                     remoteParams: AcceptChannel, open: OpenChannel) extends ChannelData
 
 // Funding tx may arrive locally or from external funder
-case class WaitFundingSignedCore(localParams: LocalParams, channelId: BinaryData, channelFlags: Option[ChannelFlags],
+case class WaitFundingSignedCore(localParams: LocalParams, channelId: ByteVector, channelFlags: Option[ChannelFlags],
                                  remoteParams: AcceptChannel, localSpec: CommitmentSpec, remoteCommit: RemoteCommit) {
 
   def makeCommitments(signedLocalCommitTx: CommitTx) =
@@ -84,9 +86,30 @@ case class NegotiationsData(announce: NodeAnnouncement, commitments: Commitments
 case class RefundingData(announce: NodeAnnouncement, remoteLatestPoint: Option[Point],
                          commitments: Commitments) extends HasCommitments
 
+case class ClosingData(announce: NodeAnnouncement,
+                       commitments: Commitments, localProposals: Seq[ClosingTxProposed] = Nil,
+                       mutualClose: Seq[Transaction] = Nil, localCommit: Seq[LocalCommitPublished] = Nil,
+                       remoteCommit: Seq[RemoteCommitPublished] = Nil, nextRemoteCommit: Seq[RemoteCommitPublished] = Nil,
+                       refundRemoteCommit: Seq[RemoteCommitPublished] = Nil, revokedCommit: Seq[RevokedCommitPublished] = Nil,
+                       closedAt: Long = System.currentTimeMillis) extends HasCommitments
+
+sealed trait CommitPublished {
+  val commitTx: Transaction
+}
+
+case class LocalCommitPublished(claimMainDelayed: Seq[ClaimDelayedOutputTx], claimHtlcSuccess: Seq[SuccessAndClaim],
+                                claimHtlcTimeout: Seq[TimeoutAndClaim], commitTx: Transaction) extends CommitPublished
+
+case class RemoteCommitPublished(claimMain: Seq[ClaimP2WPKHOutputTx], claimHtlcSuccess: Seq[ClaimHtlcSuccessTx],
+                                 claimHtlcTimeout: Seq[ClaimHtlcTimeoutTx], commitTx: Transaction) extends CommitPublished
+
+case class MutualCommitPublished(commitTx: Transaction) extends CommitPublished
+case class RevokedCommitPublished(claimMain: Seq[ClaimP2WPKHOutputTx], claimTheirMainPenalty: Seq[MainPenaltyTx],
+                                  htlcPenalty: Seq[HtlcPenaltyTx], commitTx: Transaction) extends CommitPublished
+
 case class RevocationInfo(redeemScriptsToSigs: List[RedeemScriptAndSig],
-                          claimMainTxSig: Option[BinaryData], claimPenaltyTxSig: Option[BinaryData], feeRate: Long,
-                          dustLimit: Long, finalScriptPubKey: BinaryData, toSelfDelay: Int, localPubKey: PublicKey,
+                          claimMainTxSig: Option[ByteVector], claimPenaltyTxSig: Option[ByteVector], feeRate: Long,
+                          dustLimit: Long, finalScriptPubKey: ByteVector, toSelfDelay: Int, localPubKey: PublicKey,
                           remoteRevocationPubkey: PublicKey, remoteDelayedPaymentKey: PublicKey) {
 
   lazy val dustLim = Satoshi(dustLimit)
@@ -94,17 +117,13 @@ case class RevocationInfo(redeemScriptsToSigs: List[RedeemScriptAndSig],
     Scripts.makeClaimP2WPKHOutputTx(tx, localPubKey,
       finalScriptPubKey, feeRate, dustLim)
 
-  def makeHtlcPenalty(finder: PubKeyScriptIndexFinder)(redeemScript: BinaryData) =
+  def makeHtlcPenalty(finder: PubKeyScriptIndexFinder)(redeemScript: ByteVector) =
     Scripts.makeHtlcPenaltyTx(finder, redeemScript, finalScriptPubKey, feeRate, dustLim)
 
   def makeMainPenalty(tx: Transaction) =
     Scripts.makeMainPenaltyTx(tx, remoteRevocationPubkey, finalScriptPubKey,
       toSelfDelay, remoteDelayedPaymentKey, feeRate, dustLim)
 }
-
-sealed trait CommitPublished { val commitTx: Transaction }
-case class RevokedCommitPublished(claimMain: Seq[ClaimP2WPKHOutputTx], claimTheirMainPenalty: Seq[MainPenaltyTx],
-                                  htlcPenalty: Seq[HtlcPenaltyTx], commitTx: Transaction) extends CommitPublished
 
 // COMMITMENTS
 
@@ -171,8 +190,8 @@ object CommitmentSpec {
 case class LocalParams(maxHtlcValueInFlightMsat: UInt64, channelReserveSat: Long, toSelfDelay: Int,
                        maxAcceptedHtlcs: Int, fundingPrivKey: PrivateKey, revocationSecret: Scalar,
                        paymentKey: Scalar, delayedPaymentKey: Scalar, htlcKey: Scalar,
-                       defaultFinalScriptPubKey: BinaryData, dustLimit: Satoshi,
-                       shaSeed: BinaryData, isFunder: Boolean) {
+                       defaultFinalScriptPubKey: ByteVector, dustLimit: Satoshi,
+                       shaSeed: ByteVector, isFunder: Boolean) {
 
   lazy val delayedPaymentBasepoint = delayedPaymentKey.toPoint
   lazy val revocationBasepoint = revocationSecret.toPoint
@@ -183,13 +202,13 @@ case class LocalParams(maxHtlcValueInFlightMsat: UInt64, channelReserveSat: Long
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, localCommitIndexSnapshot: Long)
 case class LocalCommit(index: Long, spec: CommitmentSpec, htlcTxsAndSigs: Seq[HtlcTxAndSigs], commitTx: CommitTx)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txOpt: Option[Transaction], remotePerCommitmentPoint: Point)
-case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
+case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: ByteVector, remoteSig: ByteVector)
 case class Changes(proposed: LNMessageVector, signed: LNMessageVector, acked: LNMessageVector)
 
 case class ReducedState(htlcs: Set[Htlc], canSendMsat: Long, canReceiveMsat: Long, myFeeSat: Long)
 case class Commitments(localParams: LocalParams, remoteParams: AcceptChannel, localCommit: LocalCommit, remoteCommit: RemoteCommit, localChanges: Changes,
                        remoteChanges: Changes, localNextHtlcId: Long, remoteNextHtlcId: Long, remoteNextCommitInfo: Either[WaitingForRevocation, Point],
-                       commitInput: InputInfo, remotePerCommitmentSecrets: ShaHashesWithIndex, channelId: BinaryData, extraHop: Option[Hop] = None,
+                       commitInput: InputInfo, remotePerCommitmentSecrets: ShaHashesWithIndex, channelId: ByteVector, extraHop: Option[Hop] = None,
                        channelFlags: Option[ChannelFlags] = None, startedAt: Long = System.currentTimeMillis) { me =>
 
   lazy val reducedRemoteState: ReducedState = {
@@ -266,13 +285,74 @@ object Commitments {
     addRemoteProposal(c, fail)
   }
 
+  def sendCommit(c: Commitments, remoteNextPerCommitmentPoint: Point) = {
+    val spec = CommitmentSpec.reduce(c.remoteCommit.spec, c.remoteChanges.acked, c.localChanges.proposed)
+    val htlcKey = Generators.derivePrivKey(c.localParams.htlcKey, remoteNextPerCommitmentPoint)
+
+    val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs, _, _) =
+      Helpers.makeRemoteTxs(c.remoteCommit.index + 1, c.localParams,
+        c.remoteParams, c.commitInput, remoteNextPerCommitmentPoint, spec)
+
+    // Generate signatures
+    val sortedHtlcTxs = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
+    val htlcSigs = for (info <- sortedHtlcTxs) yield Scripts.sign(htlcKey)(info)
+
+    // Update commitment data
+    val remoteChanges1 = c.remoteChanges.copy(acked = Vector.empty, signed = c.remoteChanges.acked)
+    val localChanges1 = c.localChanges.copy(proposed = Vector.empty, signed = c.localChanges.proposed)
+    val commitSig = CommitSig(c.channelId, Scripts.sign(c.localParams.fundingPrivKey)(remoteCommitTx), htlcSigs.toList)
+    val remoteCommit1 = RemoteCommit(c.remoteCommit.index + 1, spec, Some(remoteCommitTx.tx), remoteNextPerCommitmentPoint)
+    val wait = WaitingForRevocation(nextRemoteCommit = remoteCommit1, commitSig, localCommitIndexSnapshot = c.localCommit.index)
+    c.copy(remoteNextCommitInfo = Left(wait), localChanges = localChanges1, remoteChanges = remoteChanges1) -> commitSig
+  }
+
+  def receiveCommit(c: Commitments, commit: CommitSig) = {
+    val spec = CommitmentSpec.reduce(c.localCommit.spec, c.localChanges.acked, c.remoteChanges.proposed)
+    val localPerCommitmentSecret = Generators.perCommitSecret(c.localParams.shaSeed, c.localCommit.index)
+    val localPerCommitmentPoint = Generators.perCommitPoint(c.localParams.shaSeed, c.localCommit.index + 1)
+    val localNextPerCommitmentPoint = Generators.perCommitPoint(c.localParams.shaSeed, c.localCommit.index + 2)
+    val remoteHtlcPubkey = Generators.derivePubKey(c.remoteParams.htlcBasepoint, localPerCommitmentPoint)
+    val localHtlcKey = Generators.derivePrivKey(c.localParams.htlcKey, localPerCommitmentPoint)
+
+    val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) =
+      Helpers.makeLocalTxs(c.localCommit.index + 1, c.localParams,
+        c.remoteParams, c.commitInput, localPerCommitmentPoint, spec)
+
+    val sortedHtlcTxs = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
+    val signedLocalCommitTx = Scripts.addSigs(localCommitTx, c.localParams.fundingPrivKey.publicKey,
+      c.remoteParams.fundingPubkey, Scripts.sign(c.localParams.fundingPrivKey)(localCommitTx), commit.signature)
+
+    if (commit.htlcSignatures.size != sortedHtlcTxs.size) throw new LightningException
+    if (Scripts.checkValid(signedLocalCommitTx).isFailure) throw new LightningException
+    val htlcSigs = for (info <- sortedHtlcTxs) yield Scripts.sign(localHtlcKey)(info)
+    val combined = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList
+
+    val htlcTxsAndSigs = combined collect {
+      case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
+        val check = Scripts checkValid Scripts.addSigs(htlcTx, localSig, remoteSig)
+        if (check.isSuccess) HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+        else throw new LightningException
+
+      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
+        val sigValid = Scripts.checkSig(htlcTx, remoteSig, remoteHtlcPubkey)
+        if (sigValid) HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+        else throw new LightningException
+    }
+
+    val localCommit1 = LocalCommit(c.localCommit.index + 1, spec, htlcTxsAndSigs, signedLocalCommitTx)
+    val remoteChanges1 = c.remoteChanges.copy(proposed = Vector.empty, acked = c.remoteChanges.acked ++ c.remoteChanges.proposed)
+    val c1 = c.copy(localChanges = c.localChanges.copy(acked = Vector.empty), remoteChanges = remoteChanges1, localCommit = localCommit1)
+    val revokeAndAck = RevokeAndAck(c.channelId, localPerCommitmentSecret, localNextPerCommitmentPoint)
+    c1 -> revokeAndAck
+  }
+
   def receiveRevocation(c: Commitments, rev: RevokeAndAck) = c.remoteNextCommitInfo match {
     case Left(_) if c.remoteCommit.remotePerCommitmentPoint != rev.perCommitmentSecret.toPoint =>
       throw new LightningException("Peer has supplied a wrong per commitment secret")
 
     case Left(wait) =>
       val nextIndex = ShaChain.largestTxIndex - c.remoteCommit.index
-      val secrets1 = ShaChain.addHash(c.remotePerCommitmentSecrets, rev.perCommitmentSecret.toBin, nextIndex)
+      val secrets1 = ShaChain.addHash(c.remotePerCommitmentSecrets, rev.perCommitmentSecret.toBin.toArray, nextIndex)
       val localChanges1 = c.localChanges.copy(signed = Vector.empty, acked = c.localChanges.acked ++ c.localChanges.signed)
       val remoteChanges1 = c.remoteChanges.copy(signed = Vector.empty)
 

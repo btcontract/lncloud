@@ -1,12 +1,12 @@
 package com.lightning.walletapp.ln.crypto
 
 import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
-import org.spongycastle.crypto.engines.{ChaCha7539Engine, ChaChaEngine}
 import com.lightning.walletapp.ln.crypto.MultiStreamUtils.aconcat
+import org.spongycastle.crypto.engines.ChaCha7539Engine
 import com.lightning.walletapp.ln.LightningException
 import org.spongycastle.crypto.SkippingStreamCipher
+import fr.acinq.bitcoin.Protocol.writeUInt64Array
 import com.lightning.walletapp.ln.Tools.Bytes
-import fr.acinq.bitcoin.Protocol.writeUInt64
 import java.nio.ByteOrder.LITTLE_ENDIAN
 
 
@@ -26,8 +26,8 @@ object ChaCha20Poly1305 {
 
   def pack(aad: Bytes, txt: Bytes) =
     aconcat(aad, pad16(aad), txt, pad16(txt),
-      writeUInt64(aad.length, LITTLE_ENDIAN),
-      writeUInt64(txt.length, LITTLE_ENDIAN),
+      writeUInt64Array(aad.length, LITTLE_ENDIAN),
+      writeUInt64Array(txt.length, LITTLE_ENDIAN),
       Array.emptyByteArray)
 
   def pad16(data: Bytes): Bytes =
@@ -53,8 +53,9 @@ trait SkippingStreamCipherEngine {
   }
 }
 
-object ChaCha20 extends SkippingStreamCipherEngine { def getEngine = new ChaCha7539Engine }
-object ChaCha20Legacy extends SkippingStreamCipherEngine { def getEngine = new ChaChaEngine }
+object ChaCha20 extends SkippingStreamCipherEngine {
+  def getEngine = new ChaCha7539Engine
+}
 
 object Poly1305 {
   def mac(key: Bytes, data: Bytes) = {

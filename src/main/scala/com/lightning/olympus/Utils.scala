@@ -13,8 +13,8 @@ import rx.lang.scala.schedulers.IOScheduler
 import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import wf.bitcoin.javabitcoindrpcclient
-import fr.acinq.bitcoin.BinaryData
 import org.bitcoinj.core.Utils.HEX
+import scodec.bits.ByteVector
 import java.math.BigInteger
 
 
@@ -50,15 +50,15 @@ object JsonHttpUtils {
 }
 
 // k is session private key, a source for signerR, tokens is a list of unsigned blind BigInts
-case class BlindData(paymentHash: BinaryData, id: String, k: BigInteger, tokens: StringVec)
+case class BlindData(paymentHash: String, id: String, k: BigInteger, tokens: StringVec)
 
 case class CacheItem[T](data: T, stamp: Long)
 case class Vals(privKey: String, btcApi: String, zmqApi: String, eclairSockIp: String, eclairSockPort: Int,
                 eclairNodeId: String, rewindRange: Int, ip: String, port: Int, paymentProvider: PaymentProvider,
                 minCapacity: Long, sslFile: String, sslPass: String) {
 
+  lazy val eclairNodePubKey = PublicKey fromValidHex eclairNodeId
   lazy val bigIntegerPrivKey = new BigInteger(privKey)
-  lazy val eclairNodePubKey = PublicKey(eclairNodeId)
 }
 
 trait PaymentProvider {
@@ -85,14 +85,12 @@ case class EclairProvider(priceMsat: Long, quantity: Int, description: String, u
     val content = s"""{ "params": [$priceMsat, "$description"], "method": "receive" }"""
     val raw = request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
 
-    val pr = PaymentRequest read raw
-    val payHash = pr.paymentHash.toString
-    Charge(payHash, payHash, raw, paid = false)
+    val payHash = PaymentRequest.read(raw).paymentHash.toHex
+    Charge(payHash, payHash, paymentRequest = raw, paid = false)
   }
 
   def isPaid(data: BlindData) = {
-    val paymentHash = data.paymentHash.toString
-    val content = s"""{ "params": ["$paymentHash"], "method": "checkpayment" }"""
+    val content = s"""{ "params": ["${data.paymentHash}"], "method": "checkpayment" }"""
     request.send(content).body.parseJson.asJsObject.fields("result").convertTo[Boolean]
   }
 }

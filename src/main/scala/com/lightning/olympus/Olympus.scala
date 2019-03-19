@@ -10,6 +10,7 @@ import com.lightning.walletapp.ln.wire._
 import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
 import java.net.{InetAddress, InetSocketAddress}
+import scodec.bits.{BitVector, ByteVector}
 import org.http4s.{HttpService, Response}
 import rx.lang.scala.{Observable => Obs}
 import akka.actor.{ActorSystem, Props}
@@ -28,7 +29,6 @@ import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
 import scalaz.concurrent.Task
-import scodec.bits.BitVector
 import java.math.BigInteger
 import java.nio.file.Paths
 
@@ -46,7 +46,7 @@ object Olympus extends ServerApp {
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
           btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
           eclairSockPort = 9735, eclairNodeId = "0351e197ce9dda4cf37a228a7d5f7b3ab0f9e386ae833412fd2da5528fbc2bd037",
-          rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 200000L,
+          rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 250000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
       case List("production", rawVals) =>
@@ -112,7 +112,7 @@ class Responder { me =>
 
     case req @ POST -> Root / "router" / "routesplus" =>
       val InRoutesPlus(sat, nodes, chans, from, dest) = req.params andThen hex2String andThen to[InRoutesPlus] apply "params"
-      val paths = Router.finder.findPaths(nodes take 160, chans take 160, from take 4, dest, sat = (sat * 1.2).toLong)
+      val paths = Router.finder.findPaths(nodes take 160, chans take 160, from take 4, dest, sat = (sat * 1.1).toLong)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
@@ -142,8 +142,9 @@ class Responder { me =>
       Tuple2(oK, spenderTxs).toJson
 
     case req @ POST -> Root / "txs" / "schedule" => verify(req.params) {
-      val txs = req.params andThen hex2String andThen to[StringVec] apply bODY
-      for (raw <- txs take 16) db.putScheduled(Transaction read raw)
+      val txBitVecFromHex = ByteVector.fromValidHex(req params bODY).toBitVector
+      val prunedTxByteVec = txvec.decode(txBitVecFromHex).require.value take 16
+      for (bv <- prunedTxByteVec) db.putScheduled(Transaction read bv.toArray)
       Tuple2(oK, "done").toJson
     }
 
@@ -162,8 +163,8 @@ class Responder { me =>
     // WATCHDOG
 
     case req @ POST -> Root / "cerberus" / "watch" => verify(req.params) {
-      val cerberusPayloadBitVec = BitVector(BinaryData(req params bODY).data)
-      val cerberusPayloadDecoded = cerberusPayloadCodec decode cerberusPayloadBitVec
+      val cerberusPayloadBitVecFromHex = ByteVector.fromValidHex(req params bODY).toBitVector
+      val cerberusPayloadDecoded = cerberusPayloadCodec decode cerberusPayloadBitVecFromHex
       val CerberusPayload(aesZygotes, halfTxIds) = cerberusPayloadDecoded.require.value
       for (aesz \ half <- aesZygotes zip halfTxIds take 20) db.putWatched(aesz, half)
       Tuple2(oK, "done").toJson
