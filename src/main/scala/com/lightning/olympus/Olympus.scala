@@ -122,7 +122,7 @@ class Responder { me =>
       }
 
       val encoded = announces.take(24).map(ann => nodeAnnouncementCodec.encode(ann).require.toHex)
-      val sizes = announces.take(24).map(ann => Router.nodeId2Chans.dict(ann.nodeId).size)
+      val sizes = announces.take(24).map(ann => Router.nodeId2Chans.node2Ids(ann.nodeId).size)
       Tuple2(oK, encoded zip sizes).toJson
 
     // TRANSACTIONS AND SHORT ID

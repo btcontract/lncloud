@@ -7,7 +7,6 @@ import com.lightning.walletapp.ln.wire.AESZygote
 import com.lightning.walletapp.ln.Tools.Bytes
 import com.lightning.olympus.Utils.StringVec
 import fr.acinq.bitcoin.Transaction
-
 import language.implicitConversions
 import scodec.bits.ByteVector
 import java.math.BigInteger

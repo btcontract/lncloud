@@ -37,17 +37,17 @@ case class ChanDirection(shortId: Long, from: PublicKey, to: PublicKey, weight: 
 }
 
 object Router { me =>
+  type PubKeySet = Set[PublicKey]
   type ShortChannelIdSet = Set[Long]
-  type DefFactory = DefaultCharArrayNodeFactory
   type Graph = DirectedWeightedPseudograph[PublicKey, ChanDirection]
   private[this] val chanDirectionClass = classOf[ChanDirection]
 
-  val chanId2Info = mutable.Map.empty[Long, ChanInfo]
   val txId2Info = mutable.Map.empty[String, ChanInfo]
+  val shortChanId2Info = mutable.Map.empty[Long, ChanInfo]
   val nodeId2Announce = mutable.Map.empty[PublicKey, NodeAnnouncement]
   val unprocessedMessages = new ConcurrentLinkedQueue[LightningMessage]
-  val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefFactory)
-  var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty)
+  val searchTrie = new ConcurrentRadixTree[NodeAnnouncement](new DefaultCharArrayNodeFactory)
+  var nodeId2Chans = Node2Channels(mutable.Map.empty withDefaultValue Set.empty, mutable.Map.empty withDefaultValue Set.empty)
   var finder = GraphFinder(Map.empty)
 
   def rmNode(node: NodeAnnouncement) =
@@ -65,42 +65,48 @@ object Router { me =>
     nodeId2Announce(node.nodeId) = node
   }
 
-  case class Node2Channels(dict: mutable.Map[PublicKey, ShortChannelIdSet] = mutable.Map.empty) {
-    // Too big nodes have a 50% change to get dampened down, relatively well connected nodes have a 10% chance to pop up
+  case class Node2Channels(node2Ids: mutable.Map[PublicKey, ShortChannelIdSet], node2Peers: mutable.Map[PublicKey, PubKeySet] = mutable.Map.empty) { me =>
+    // Too big nodes have a 50% change of getting dampened down, relatively well connected nodes have a 10% chance of poping up to add more connections
     def between(size: Long, min: Long, max: Long, chance: Double) = random.nextDouble < chance && size > min & size < max
+    def isDeadEnd(nodeId: PublicKey) = node2Peers(nodeId).size < 2
 
-    lazy val scoredNodeSuggestions = dict.toSeq.map {
+    lazy val scoredNodeSuggestions = node2Ids.toSeq.map {
       case key \ chanIds if between(chanIds.size, 300, Long.MaxValue, 0.5D) => key -> chanIds.size / 10
       case key \ chanIds if between(chanIds.size, 30, 300, 0.1D) => key -> chanIds.size * 10
       case key \ chanIds => key -> chanIds.size
     }.sortWith(_._2 > _._2).map(_._1)
 
     def plusShortChanId(info: ChanInfo) = {
-      dict(info.ca.nodeId1) += info.ca.shortChannelId
-      dict(info.ca.nodeId2) += info.ca.shortChannelId
-      Node2Channels(dict)
+      // So far we don't need to account for all peers, knowing there are > 1 is enough
+      if (me isDeadEnd info.ca.nodeId1) node2Peers(info.ca.nodeId1) += info.ca.nodeId2
+      if (me isDeadEnd info.ca.nodeId2) node2Peers(info.ca.nodeId2) += info.ca.nodeId1
+      node2Ids(info.ca.nodeId1) += info.ca.shortChannelId
+      node2Ids(info.ca.nodeId2) += info.ca.shortChannelId
+      Node2Channels(node2Ids, node2Peers)
     }
 
     def minusShortChanId(info: ChanInfo) = {
-      dict(info.ca.nodeId1) -= info.ca.shortChannelId
-      dict(info.ca.nodeId2) -= info.ca.shortChannelId
+      node2Peers(info.ca.nodeId1) -= info.ca.nodeId2
+      node2Peers(info.ca.nodeId2) -= info.ca.nodeId1
+      node2Ids(info.ca.nodeId1) -= info.ca.shortChannelId
+      node2Ids(info.ca.nodeId2) -= info.ca.shortChannelId
       // Remove empty mappings to not acumulate useless data
-      val dict1 = dict filter { case _ \ set => set.nonEmpty }
-      Node2Channels(dict1)
+      val node2Ids1 = node2Ids filter { case _ \ set => set.nonEmpty }
+      val node2Peers1 = node2Peers filter { case _ \ set => set.nonEmpty }
+      Node2Channels(node2Ids1, node2Peers1)
     }
   }
 
   case class GraphFinder(updates: Map[ChanDirection, ChannelUpdate] = Map.empty) {
-    def chanUpdateIdentity(cu: ChannelUpdate) = s"${cu.cltvExpiryDelta}-${cu.htlcMinimumMsat}-${cu.feeBaseMsat}-${cu.feeProportionalMillionths}"
     def rmRandEdge(directions: Seq[ChanDirection], targetGraph: Graph) = runAnd(targetGraph)(targetGraph removeEdge shuffle(directions).head)
-    val toHops: Vector[ChanDirection] => PaymentRoute = _.map(dir => updates(dir) toHop dir.from)
+    val toHops: Vector[ChanDirection] => PaymentRoute = chanDirections => chanDirections.map(dir => updates(dir) toHop dir.from)
     // This works because every map update also replaces a GraphFinder object
     lazy val mixed = shuffle(updates.keys)
 
-    def findPaths(xn: Set[PublicKey], xc: ShortChannelIdSet, from: Set[PublicKey], to: PublicKey, sat: Long) = {
+    def findPaths(xn: PubKeySet, xc: ShortChannelIdSet, from: PubKeySet, to: PublicKey, sat: Long) = {
       // Filter out chans with insufficient capacity, nodes and chans excluded by user, not useful nodes and chans
       // We can't use rmRandomEdge if destination node has only one channel since it can possibly be removed
-      val singleChanTarget = nodeId2Chans.dict(to).size == 1
+      val singleChanTarget = nodeId2Chans.node2Ids(to).size == 1
       val baseGraph = new Graph(chanDirectionClass)
 
       def find(acc: PaymentRouteVec, graph: Graph, stop: Int, source: PublicKey): PaymentRouteVec =
@@ -114,10 +120,10 @@ object Router { me =>
 
       mixed foreach {
         // Use sequence of guards for lazy evaluation
-        case dir if chanId2Info(dir.shortId).capacity < sat =>
+        case dir if shortChanId2Info(dir.shortId).capacity < sat =>
         case dir if xc.contains(dir.shortId) || xn.contains(dir.from) || xn.contains(dir.to) =>
-        case dir if !from.contains(dir.from) && nodeId2Chans.dict(dir.from).size < 2 =>
-        case dir if to != dir.to && nodeId2Chans.dict(dir.to).size < 2 =>
+        case dir if !from.contains(dir.from) && nodeId2Chans.isDeadEnd(dir.from) =>
+        case dir if to != dir.to && !nodeId2Chans.isDeadEnd(dir.to) =>
 
         case dir =>
           baseGraph.addVertex(dir.to)
@@ -158,20 +164,20 @@ object Router { me =>
 
         case chanInfo =>
           nodeId2Chans = nodeId2Chans plusShortChanId chanInfo
-          chanId2Info(chanInfo.ca.shortChannelId) = chanInfo
+          shortChanId2Info(chanInfo.ca.shortChannelId) = chanInfo
           txId2Info(chanInfo.txid) = chanInfo
       }
 
     case node: NodeAnnouncement if node.addresses.isEmpty => Tools log s"Ignoring node without public addresses $node"
     case node: NodeAnnouncement if nodeId2Announce.get(node.nodeId).exists(_.timestamp >= node.timestamp) => Tools log s"Outdated $node"
-    case node: NodeAnnouncement if !nodeId2Chans.dict.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
+    case node: NodeAnnouncement if !nodeId2Chans.node2Ids.contains(node.nodeId) => Tools log s"Ignoring node without channels $node"
     case node: NodeAnnouncement => wrap(me addNode node)(me rmNode node) // Might be an update
 
-    case cu: ChannelUpdate if !chanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
+    case cu: ChannelUpdate if !shortChanId2Info.contains(cu.shortChannelId) => Tools log s"Ignoring update without channels $cu"
     case cu: ChannelUpdate if isOutdated(cu) => Tools log s"Ignoring outdated update $cu"
 
     case cu: ChannelUpdate =>
-      val info = chanId2Info(cu.shortChannelId)
+      val info = shortChanId2Info(cu.shortChannelId)
       val isEnabled = Announcements isEnabled cu.channelFlags
       val (chainHeight, _, _) = fromShortId(cu.shortChannelId)
       // More fee: +weight, more capacity: -weight, more height: +weight
@@ -197,14 +203,14 @@ object Router { me =>
     for (info <- infos) {
       Tools log s"Removing channel with txid ${info.txid}"
       nodeId2Chans = nodeId2Chans minusShortChanId info
-      chanId2Info -= info.ca.shortChannelId
+      shortChanId2Info -= info.ca.shortChannelId
       txId2Info -= info.txid
     }
 
     // Removal may result in lost nodes so all nodes with now zero channels are removed
-    nodeId2Announce.filterKeys(nodeId => nodeId2Chans.dict(nodeId).isEmpty).values foreach rmNode
-    // And finally we need to remove all the lost updates which have no channel announcements left
-    val upd1 = finder.updates filter { case direction \ _ => chanId2Info contains direction.shortId }
+    nodeId2Announce.filterKeys(nodeId => nodeId2Chans.node2Ids(nodeId).isEmpty).values foreach rmNode
+    // And finally we need to remove all the lost updates which have no channel announcements left now
+    val upd1 = finder.updates filter { case direction \ _ => shortChanId2Info contains direction.shortId }
     finder = GraphFinder(upd1)
     Tools log what
   }
@@ -213,7 +219,7 @@ object Router { me =>
     // Considered outdated if it is older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
-  Obs.interval(5.minutes) foreach { _ =>
+  Obs.interval(1.minutes) foreach { _ =>
     // Removing directions also affects the next check since it makes nodes without chans
     val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
     Tools log s"Had ${finder.updates.size} updates, ${updates1.size} updates now"
