@@ -123,7 +123,7 @@ object Router { me =>
         case dir if shortChanId2Info(dir.shortId).capacity < sat =>
         case dir if xc.contains(dir.shortId) || xn.contains(dir.from) || xn.contains(dir.to) =>
         case dir if !from.contains(dir.from) && nodeId2Chans.isDeadEnd(dir.from) =>
-        case dir if to != dir.to && !nodeId2Chans.isDeadEnd(dir.to) =>
+        case dir if to != dir.to && nodeId2Chans.isDeadEnd(dir.to) =>
 
         case dir =>
           baseGraph.addVertex(dir.to)
