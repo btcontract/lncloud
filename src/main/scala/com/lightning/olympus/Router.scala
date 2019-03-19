@@ -219,7 +219,7 @@ object Router { me =>
     // Considered outdated if it is older than two weeks
     cu.timestamp < System.currentTimeMillis / 1000 - 1209600
 
-  Obs.interval(1.minutes) foreach { _ =>
+  Obs.interval(5.minutes) foreach { _ =>
     // Removing directions also affects the next check since it makes nodes without chans
     val updates1 = finder.updates filterNot { case _ \ update => me isOutdated update }
     Tools log s"Had ${finder.updates.size} updates, ${updates1.size} updates now"
