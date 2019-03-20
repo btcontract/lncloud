@@ -105,7 +105,7 @@ eclair {
 ```
 git clone https://github.com/btcontract/olympus.git  
 cd olympus  
-sbt  
+sbt "set test in assembly := {}" clean assembly
 assembly  
 ```
 
