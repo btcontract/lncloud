@@ -7,10 +7,13 @@ import com.lightning.walletapp.ln.wire.AESZygote
 import com.lightning.walletapp.ln.Tools.Bytes
 import com.lightning.olympus.Utils.StringVec
 import fr.acinq.bitcoin.Transaction
+
 import language.implicitConversions
 import scodec.bits.ByteVector
 import java.math.BigInteger
 import java.util.Date
+
+import com.lightning.walletapp.ln.Tools
 
 
 abstract class Database {
@@ -97,6 +100,17 @@ class MongoDatabase extends Database {
 
     ivVec = ByteVector.view(record as[Bytes] "iv")
     ciphertextVec = ByteVector.view(record as[Bytes] "ciphertext")
-    easz = AESZygote(record as[Int] "v", ivVec, ciphertextVec)
-  } yield Tuple2(record as[String] "halfTxId", easz)
+    aesz = AESZygote(record as[Int] "v", ivVec, ciphertextVec)
+  } yield Tuple2(record as[String] "halfTxId", aesz)
+
+  def migrateWatched = for {
+    record <- watchedTxs("watchedTxs").find
+    ivVec = ByteVector.view(record as[Bytes] "iv")
+    ciphertextVec = ByteVector.view(record as[Bytes] "ciphertext")
+    aesz = AESZygote(record as[Int] "v", ivVec, ciphertextVec)
+  } putWatched(aesz, record as[String] "halfTxId")
+
+  Tools log "Migrating watched..."
+  migrateWatched
+  Tools log "Done migrating"
 }

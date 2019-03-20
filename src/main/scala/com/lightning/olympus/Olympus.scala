@@ -9,8 +9,7 @@ import scala.collection.JavaConverters._
 import com.lightning.walletapp.ln.wire._
 import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
-import java.net.{InetAddress, InetSocketAddress}
-import scodec.bits.{BitVector, ByteVector}
+
 import org.http4s.{HttpService, Response}
 import rx.lang.scala.{Observable => Obs}
 import akka.actor.{ActorSystem, Props}
@@ -28,6 +27,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import language.implicitConversions
 import org.http4s.server.ServerApp
 import org.bitcoinj.core.ECKey
+import scodec.bits.ByteVector
 import scalaz.concurrent.Task
 import java.math.BigInteger
 import java.nio.file.Paths
@@ -41,11 +41,11 @@ object Olympus extends ServerApp {
 
     args match {
       case List("testrun") =>
-        val description = "Storage tokens for backup Olympus server at 127.0.0.1"
-        val eclairProvider = EclairProvider(500000L, 50, description, "http://127.0.0.1:8080", "pass")
+        val description = "Storage tokens for backup Olympus server at 192.3.114.77"
+        val eclairProvider = EclairProvider(500000L, 50, description, "http://192.3.114.77:8089", "watermel0n")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "5.9.138.164",
-          eclairSockPort = 9735, eclairNodeId = "0351e197ce9dda4cf37a228a7d5f7b3ab0f9e386ae833412fd2da5528fbc2bd037",
+          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "192.3.114.77",
+          eclairSockPort = 9935, eclairNodeId = "02330d13587b67a85c0a36ea001c4dba14bcd48dda8988f7303275b040bffb6abd",
           rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 250000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
 
@@ -56,9 +56,8 @@ object Olympus extends ServerApp {
     LNParams.setup(random getBytes 32)
     val httpLNCloudServer = new Responder
     val postLift = UrlFormLifter(httpLNCloudServer.http)
-//    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
-//    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
-    BlazeBuilder.bindHttp(values.port, values.ip).mountService(postLift).start
+    val sslInfo = StoreInfo(Paths.get(values.sslFile).toAbsolutePath.toString, values.sslPass)
+    BlazeBuilder.withSSL(sslInfo, values.sslPass).bindHttp(values.port, values.ip).mountService(postLift).start
   }
 }
 
