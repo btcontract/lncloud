@@ -102,15 +102,4 @@ class MongoDatabase extends Database {
     ciphertextVec = ByteVector.view(record as[Bytes] "ciphertext")
     aesz = AESZygote(record as[Int] "v", ivVec, ciphertextVec)
   } yield Tuple2(record as[String] "halfTxId", aesz)
-
-  def migrateWatched = for {
-    record <- watchedTxs("watchedTxs").find
-    ivVec = ByteVector.view(record as[Bytes] "iv")
-    ciphertextVec = ByteVector.view(record as[Bytes] "ciphertext")
-    aesz = AESZygote(record as[Int] "v", ivVec, ciphertextVec)
-  } putWatched(aesz, record as[String] "halfTxId")
-
-  Tools log "Migrating watched..."
-  migrateWatched
-  Tools log "Done migrating"
 }

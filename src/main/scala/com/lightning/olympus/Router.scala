@@ -179,6 +179,8 @@ object Router { me =>
     case cu: ChannelUpdate =>
       val info = shortChanId2Info(cu.shortChannelId)
       val isEnabled = Announcements isEnabled cu.channelFlags
+      val isCheapEnough = cu.feeProportionalMillionths <= 10000L
+
       val (chainHeight, _, _) = fromShortId(cu.shortChannelId)
       // More fee: +weight, more capacity: -weight, more height: +weight
       val feeEstimate = cu.feeBaseMsat + cu.feeProportionalMillionths * 10
@@ -189,10 +191,10 @@ object Router { me =>
         case false => ChanDirection(cu.shortChannelId, info.ca.nodeId2, info.ca.nodeId1, weight)
       }
 
-      val updates1 = finder.updates - direction
-      val updates2 = if (isEnabled) updates1.updated(direction, cu) else updates1
+      val upd1 = finder.updates - direction
+      val upd2 = if (isEnabled && isCheapEnough) upd1.updated(direction, cu) else upd1
       val isFresh = finder.updates.get(direction).forall(_.timestamp < cu.timestamp)
-      if (isFresh) finder = GraphFinder(updates2)
+      if (isFresh) finder = GraphFinder(upd2)
 
     case _ =>
   }

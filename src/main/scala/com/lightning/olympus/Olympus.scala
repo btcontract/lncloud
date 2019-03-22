@@ -111,7 +111,7 @@ class Responder { me =>
 
     case req @ POST -> Root / "router" / "routesplus" =>
       val InRoutesPlus(sat, nodes, chans, from, dest) = req.params andThen hex2String andThen to[InRoutesPlus] apply "params"
-      val paths = Router.finder.findPaths(nodes take 160, chans take 160, from take 4, dest, sat = (sat * 1.1).toLong)
+      val paths = Router.finder.findPaths(nodes take 240, chans take 240, from take 16, dest, sat = (sat * 1.1).toLong)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
