@@ -164,15 +164,14 @@ class ZMQActor(db: Database) extends Actor {
     self ! 'checkMsg
   }
 
-  def rescanBlocks = {
-    val currentPoint = bitcoin.getBlockCount
-    val pastPoint = currentPoint - values.rewindRange
-    val blocks = pastPoint to currentPoint map bitcoin.getBlock
-    for (block <- blocks) for (lst <- listeners) lst onNewBlock block
-    log("Done rescanning blocks")
-  }
 
-  rescanBlocks
+  val currentPoint = bitcoin.getBlockCount
+  val pastPoint = currentPoint - values.rewindRange
+  val blocks = pastPoint to currentPoint map bitcoin.getBlock
+  log(s"Starting blocks rescan $currentPoint - $pastPoint")
+  for (block <- blocks) for (lst <- listeners) lst onNewBlock block
+  log("Done rescanning blocks")
+
   self ! 'checkEvent
   self ! 'checkMsg
 }
