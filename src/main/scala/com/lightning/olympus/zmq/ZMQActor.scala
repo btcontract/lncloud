@@ -82,6 +82,7 @@ class ZMQActor(db: Database) extends Actor {
       val halfTxIds = for (txid <- collectedTxIds) yield txid take 16
       val half2FullMap = halfTxIds.zip(collectedTxIds).toMap
       log(s"Checking ${txidAccumulator.size} spends")
+      val timer = System.currentTimeMillis
       txidAccumulator.clear
 
       for {
@@ -97,6 +98,9 @@ class ZMQActor(db: Database) extends Actor {
         parentTx <- blockchain.getRawTxData(fullTxid).map(Transaction.read)
         rcp = Helpers.Closing.claimRevokedRemoteCommitTxOutputs(ri, parentTx)
       } publishes.put(fullTxid, rcp)
+
+      val span = System.currentTimeMillis - timer
+      log(s"Watched txs fetching took $span msecs")
 
       for {
         txId \ RevokedCommitPublished(claimMain, claimTheirMainPenalty, htlcPenalty, _) <- publishes
@@ -164,11 +168,10 @@ class ZMQActor(db: Database) extends Actor {
     self ! 'checkMsg
   }
 
-
   val currentPoint = bitcoin.getBlockCount
   val pastPoint = currentPoint - values.rewindRange
-  val blocks = pastPoint to currentPoint map bitcoin.getBlock
   log(s"Starting blocks rescan $currentPoint - $pastPoint")
+  val blocks = pastPoint to currentPoint map bitcoin.getBlock
   for (block <- blocks) for (lst <- listeners) lst onNewBlock block
   log("Done rescanning blocks")
 
