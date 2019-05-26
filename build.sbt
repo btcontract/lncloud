@@ -15,7 +15,6 @@ libraryDependencies += "org.zeromq" % "jeromq" % "0.5.0"
 // Mongo with logging
 libraryDependencies += "org.mongodb" % "casbah_2.11" % "3.1.1"
 libraryDependencies += "org.slf4j" % "slf4j-simple" % "1.7.12"
-libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.12"
 
 // Misc
 libraryDependencies += "com.softwaremill.quicklens" % "quicklens_2.11" % "1.4.11"
@@ -26,26 +25,9 @@ libraryDependencies += "com.madgag.spongycastle" % "core" % "1.58.0.0"
 libraryDependencies += "org.scodec" % "scodec-core_2.11" % "1.11.3"
 libraryDependencies += "org.bitcoinj" % "bitcoinj-core" % "0.14.5"
 libraryDependencies += "io.reactivex" % "rxscala_2.11" % "0.26.5"
+libraryDependencies += "commons-codec" % "commons-codec" % "1.9"
 libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.1.0"
 libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.1.0"
-
-// Exchanges
-libraryDependencies += "org.knowm.xchange" % "xchange-mercadobitcoin" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-bitcoinaverage" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-coinbasepro" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-btcmarkets" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-coinmate" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-gatecoin" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-bitfinex" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-bitstamp" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-coinbase" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-paymium" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-lakebtc" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-quoine" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-kraken" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-okcoin" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-exmo" % "4.3.11"
-libraryDependencies += "org.knowm.xchange" % "xchange-core" % "4.3.11"
 
 val workaround = {
   sys.props += "packaging.type" -> "jar"

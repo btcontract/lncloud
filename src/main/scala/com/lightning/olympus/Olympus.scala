@@ -9,7 +9,6 @@ import scala.collection.JavaConverters._
 import com.lightning.walletapp.ln.wire._
 import com.lightning.walletapp.lnutils.ImplicitJsonFormats._
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
-
 import org.http4s.{HttpService, Response}
 import rx.lang.scala.{Observable => Obs}
 import akka.actor.{ActorSystem, Props}
@@ -44,7 +43,7 @@ object Olympus extends ServerApp {
         val description = "Storage tokens for backup Olympus server at 192.3.114.77"
         val eclairProvider = EclairProvider(500000L, 50, description, "http://192.3.114.77:8089", "watermel0n")
         values = Vals(privKey = "33337641954423495759821968886025053266790003625264088739786982511471995762588",
-          btcApi = "http://foo:bar@127.0.0.1:18332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "192.3.114.77",
+          btcApi = "http://foo:bar@127.0.0.1:8332", zmqApi = "tcp://127.0.0.1:29000", eclairSockIp = "192.3.114.77",
           eclairSockPort = 9935, eclairNodeId = "02330d13587b67a85c0a36ea001c4dba14bcd48dda8988f7303275b040bffb6abd",
           rewindRange = 2, ip = "127.0.0.1", port = 9103, eclairProvider, minCapacity = 250000L,
           sslFile = "/home/anton/Desktop/olympus/keystore.jks", sslPass = "pass123")
@@ -111,7 +110,7 @@ class Responder { me =>
 
     case req @ POST -> Root / "router" / "routesplus" =>
       val InRoutesPlus(sat, nodes, chans, from, dest) = req.params andThen hex2String andThen to[InRoutesPlus] apply "params"
-      val paths = Router.finder.findPaths(nodes take 240, chans take 240, from take 16, dest, sat = (sat * 1.1).toLong)
+      val paths = Router.finder.findPaths(nodes take 240, chans take 240, from take 16, dest, sat = (sat * 1.2).toLong)
       Tuple2(oK, paths).toJson
 
     case req @ POST -> Root / "router" / "nodes" =>
@@ -173,13 +172,13 @@ class Responder { me =>
 
     case POST -> Root / "rates" / "get" =>
       val feesPerBlock = for (k \ v <- feeRates.rates) yield (k.toString, v getOrElse 0D)
-      val fiatRates = for (cur <- exchangeRates.currencies) yield (cur.code, cur.average)
-      val response = Tuple2(feesPerBlock.toMap, fiatRates.toMap)
+      val response = Tuple2(feesPerBlock.toMap, exchangeRates.cache)
       Tuple2(oK, response).toJson
 
     case GET -> Root / "rates" / "state" =>
-      val fiat = exchangeRates.displayState mkString "\r\n\r\n"
-      Ok(s"${feeRates.rates.toString}\r\n======\r\n$fiat")
+      val bitcoinPart = s"${feeRates.rates.toString}\r\n===\r\n"
+      val fiatPart = s"${exchangeRates.cache}\r\n===\r\n${exchangeRates.updated}"
+      Ok(s"$bitcoinPart$fiatPart")
   }
 
   def verify(params: HttpParams)(next: => TaskResponse): TaskResponse = {

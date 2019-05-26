@@ -3,6 +3,7 @@ package com.lightning.walletapp.lnutils
 import spray.json._
 import fr.acinq.bitcoin._
 import com.lightning.olympus._
+import com.lightning.olympus.ExchangeRates._
 import com.lightning.walletapp.ln.wire.LightningMessageCodecs._
 import com.lightning.olympus.Router.PubKeySet
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -62,11 +63,9 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
   implicit val hopFmt = sCodecJsonFmt(hopCodec)
   implicit val pointFmt = sCodecJsonFmt(point)
 
-  implicit val milliSatoshiFmt = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "amount")
   implicit val satoshiFmt = jsonFormat[Long, Satoshi](Satoshi.apply, "amount")
-
-  implicit val chargeFmt = jsonFormat[String, String, String, Boolean,
-    Charge](Charge.apply, "payment_hash", "id", "payment_request", "paid")
+  implicit val milliSatoshiFmt = jsonFormat[Long, MilliSatoshi](MilliSatoshi.apply, "amount")
+  implicit val chargeFmt = jsonFormat[String, String, String, Boolean, Charge](Charge.apply, "payment_hash", "id", "payment_request", "paid")
 
   implicit val strikeProviderFmt =
     taggedJsonFmt(jsonFormat[Long, Int, String, String, String,
@@ -103,6 +102,11 @@ object ImplicitJsonFormats extends DefaultJsonProtocol { me =>
 
   implicit val inRoutesPlusFmt = jsonFormat[Long, PubKeySet, Set[Long], PubKeySet, PublicKey,
     InRoutesPlus](InRoutesPlus.apply, "sat", "badNodes", "badChans", "from", "to")
+
+  implicit val bitpayItemFmt = jsonFormat[String, Double, BitpayItem](BitpayItem.apply, "code", "rate")
+  implicit val coinGeckoItemFmt = jsonFormat[String, Double, CoinGeckoItem](CoinGeckoItem.apply, "unit", "value")
+  implicit val coinGeckoFmt = jsonFormat[CoinGeckoItemMap, CoinGecko](CoinGecko.apply, "rates")
+  implicit val bitpayFmt = jsonFormat[BitpayItemList, Bitpay](Bitpay.apply, "data")
 }
 
 case class InRoutesPlus(sat: Long,
