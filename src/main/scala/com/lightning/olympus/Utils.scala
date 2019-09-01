@@ -14,8 +14,9 @@ import scala.language.implicitConversions
 import fr.acinq.bitcoin.Crypto.PublicKey
 import wf.bitcoin.javabitcoindrpcclient
 import org.bitcoinj.core.Utils.HEX
-import scodec.bits.ByteVector
 import java.math.BigInteger
+import java.net.URLEncoder
+import scala.util.Try
 
 
 object Utils {
@@ -79,18 +80,18 @@ case class StrikeProvider(priceMsat: Long, quantity: Int, description: String, u
 }
 
 case class EclairProvider(priceMsat: Long, quantity: Int, description: String, url: String, pass: String) extends PaymentProvider {
-  def request = HttpRequest.post(url).basic("eclair-cli", pass).contentType("application/json").connectTimeout(5000)
+  def request(way: String) = HttpRequest.post(s"$url/$way").basic("eclair-cli", pass).connectTimeout(5000)
 
-  def generateInvoice = {
-    val content = s"""{ "params": [$priceMsat, "$description"], "method": "receive" }"""
-    val raw = request.send(content).body.parseJson.asJsObject.fields("result").convertTo[String]
-
-    val payHash = PaymentRequest.read(raw).paymentHash.toHex
-    Charge(payHash, payHash, paymentRequest = raw, paid = false)
+  def generateInvoice: Charge = {
+    val encodedDescription = URLEncoder.encode(description, "UTF-8")
+    val req = request("createinvoice").send(s"description=$encodedDescription&amountMsat=$priceMsat")
+    val serializedPaymentRequest = req.body.parseJson.asJsObject.fields("serialized").convertTo[String]
+    val payHash = PaymentRequest.read(serializedPaymentRequest).paymentHash.toHex
+    Charge(payHash, payHash, serializedPaymentRequest, paid = false)
   }
 
-  def isPaid(data: BlindData) = {
-    val content = s"""{ "params": ["${data.paymentHash}"], "method": "checkpayment" }"""
-    request.send(content).body.parseJson.asJsObject.fields("result").convertTo[Boolean]
-  }
+  def isPaid(data: BlindData): Boolean = Try {
+    val req = request("getreceivedinfo").send(s"paymentHash=${data.paymentHash}")
+    req.body.parseJson.asJsObject.fields("receivedAt").convertTo[Long] > 0L
+  }.isSuccess
 }

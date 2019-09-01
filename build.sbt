@@ -3,7 +3,7 @@ name := "olympus"
 
 version := "1.0"
 
-scalaVersion := "2.11.11"
+scalaVersion := "2.11.12"
 
 // Network
 libraryDependencies += "org.http4s" % "http4s-dsl_2.11" % "0.15.5"
@@ -29,7 +29,7 @@ libraryDependencies += "commons-codec" % "commons-codec" % "1.9"
 libraryDependencies += "org.jgrapht" % "jgrapht-core" % "1.1.0"
 libraryDependencies += "org.jgrapht" % "jgrapht-ext" % "1.1.0"
 
-val workaround = {
+val workaround: Unit = {
   sys.props += "packaging.type" -> "jar"
   ()
 }
