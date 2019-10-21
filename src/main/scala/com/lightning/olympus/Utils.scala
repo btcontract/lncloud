@@ -92,6 +92,6 @@ case class EclairProvider(priceMsat: Long, quantity: Int, description: String, u
 
   def isPaid(data: BlindData): Boolean = Try {
     val req = request("getreceivedinfo").send(s"paymentHash=${data.paymentHash}")
-    req.body.parseJson.asJsObject.fields("receivedAt").convertTo[Long] > 0L
+    req.body.parseJson.asJsObject.fields("status").asJsObject.fields("receivedAt").convertTo[Long] > 0L
   }.isSuccess
 }
