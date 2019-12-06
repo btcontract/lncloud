@@ -23,15 +23,23 @@ class ExchangeRates {
   var cache = Map.empty[String, Double]
   var updated = System.currentTimeMillis
 
-  def reloadData = random nextInt 2 match {
-    case 0 => to[Bitpay](get("https://bitpay.com/rates").body).res
-    case 1 => to[CoinGecko](get("https://api.coingecko.com/api/v3/exchange_rates").body).res
+  def reloadData = try {
+    random nextInt 2 match {
+      case 0 => to[Bitpay](get("https://bitpay.com/rates").body).res
+      case 1 => to[CoinGecko](get("https://api.coingecko.com/api/v3/exchange_rates").body).res
+    }
+  } catch {
+    case error: Throwable =>
+      val info = error.getMessage
+      Tools.log(s"ExchangeRates: $info")
+      // Rethrow to let retry do its job
+      throw error
   }
 
   // In case of failure repeatedly try to fetch rates with increasing delays between tries
-  val fetch = retry(obsOnIO.map(_ => reloadData), pickInc, 0 to 1000 by 10).repeatWhen(_ delay 60.minutes)
+  val fetch = retry(obsOnIO.map(_ => reloadData), pickInc, 0 to 10000 by 20).repeatWhen(_ delay 60.minutes)
 
-  fetch.subscribe { freshFiatRates =>
+  fetch.foreach { freshFiatRates =>
     updated = System.currentTimeMillis
     cache = freshFiatRates.toMap
   }

@@ -184,7 +184,7 @@ object Router { me =>
       val (chainHeight, _, _) = fromShortId(cu.shortChannelId)
       // More fee: +weight, more capacity: -weight, more height: +weight
       val feeEstimate = cu.feeBaseMsat + cu.feeProportionalMillionths * 10
-      val weight = feeEstimate + 50000000L / info.capacity + chainHeight / 500
+      val weight = feeEstimate + 500000000L / info.capacity + chainHeight / 500
 
       val direction = Announcements isNode1 cu.channelFlags match {
         case true => ChanDirection(cu.shortChannelId, info.ca.nodeId1, info.ca.nodeId2, weight)
