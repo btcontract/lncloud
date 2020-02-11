@@ -25,8 +25,8 @@ class ExchangeRates {
 
   def reloadData = try {
     random nextInt 2 match {
-      case 0 => to[Bitpay](get("https://bitpay.com/rates").trustAllCerts.trustAllHosts.body).res
-      case 1 => to[CoinGecko](get("https://api.coingecko.com/api/v3/exchange_rates").trustAllCerts.trustAllHosts.body).res
+      case 0 => to[Bitpay](get("https://bitpay.com/rates").body).res
+      case 1 => to[CoinGecko](get("https://api.coingecko.com/api/v3/exchange_rates").body).res
     }
   } catch {
     case error: Throwable =>
