@@ -74,8 +74,8 @@ trait PaymentProvider {
 
 case class Charge(paymentHash: String, id: String, paymentRequest: String, paid: Boolean)
 case class StrikeProvider(priceMsat: Long, quantity: Int, description: String, url: String, privKey: String) extends PaymentProvider {
-  def isPaid(bd: BlindData) = to[Charge](HttpRequest.get(url + "/" + bd.id).basic(privKey, "").trustAllCerts.trustAllHosts.userAgent("curl/7.47.0").connectTimeout(10000).body).paid
-  def generateInvoice = to[Charge](HttpRequest.post(url).basic(privKey, "").trustAllCerts.trustAllHosts.userAgent("curl/7.47.0").form(parameters).connectTimeout(10000).body)
+  def isPaid(bd: BlindData) = to[Charge](HttpRequest.get(url + "/" + bd.id).basic(privKey, "").userAgent("curl/7.47.0").connectTimeout(10000).body).paid
+  def generateInvoice = to[Charge](HttpRequest.post(url).basic(privKey, "").userAgent("curl/7.47.0").form(parameters).connectTimeout(10000).body)
   val parameters = Map("amount" -> (priceMsat / 1000L).toString, "currency" -> "btc", "description" -> description).asJava
 }
 
